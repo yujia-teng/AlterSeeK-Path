@@ -1,0 +1,9 @@
+numpy>=1.26
+matplotlib>=3.9
+scipy>=1.13
+sympy>=1.12
+spglib>=2.6
+spinspg>=0.1.6
+ase>=3.22
+seekpath>=2.1
+pymatgen>=2024.1

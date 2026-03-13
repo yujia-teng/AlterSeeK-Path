@@ -1,0 +1,32 @@
+ SYSTEM=SrVO3
+
+ Startparameter for this Run:
+   NWRITE =      2;   LPETIM=F     write-flag & timer
+   ISTART =      0                 job   : 0-new  1-cont  2-samecut
+   ISPIN  =      2                 spin polarized calculation?
+ MAGMOM =  8 -8 4*0                
+ LDAU =.TRUE.
+ LDAUTYPE = 2
+ LDAUL =  3 -1 -1
+ LDAUU =  6.00 0.00 0.00
+ LDAUJ =  0.00 0.00 0.00
+ LDAUPRINT = 2
+tt ICHARG =11
+  LORBIT=11                             for band structure, set to 12
+  LWAVE  = .FALSE.                write wavefunctions to file
+ LMAXMIX = 6
+
+ Electronic Relaxation 1
+   EDIFF  = 1.0E-08              stopping-criterion for ELM
+
+ Parallelization setup: (for usual Linux cluster)
+  NPAR   = 4                      number of bands in parallel treatment
+tt  NBANDS = 48 
+ DOS related values:
+  ENCUT = 600
+
+  ISMEAR = 0 ;   SIGMA =  0.2  broadening in eV -4-tet -1-fermi 0-gaus
+  NEDOS  = 2000
+  EMIN   = -15;   EMAX  = 15      DOS plot range
+ 
+
