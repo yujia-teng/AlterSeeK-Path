@@ -1,0 +1,32 @@
+# Found 6 spin-flipping operations
+# Original Indices: [2, 4, 6, 7, 9, 11]
+Operation_1
+1 -1 0
+1 0 0
+0 0 1
+
+Operation_2
+-1 0 0
+0 -1 0
+0 0 1
+
+Operation_3
+0 1 0
+-1 1 0
+0 0 1
+
+Operation_4
+0 1 0
+1 0 0
+0 0 1
+
+Operation_5
+1 -1 0
+0 -1 0
+0 0 1
+
+Operation_6
+-1 0 0
+-1 1 0
+0 0 1
+

@@ -1,0 +1,154 @@
+========================================
+SPIN SYMMETRY LOG
+========================================
+
+Non-Magnetic Label: P6_3mc (186)
+Spin-Only Group Type: COLLINEAR(axis=[0. 0. 1.])
+Magnetic Space Group Label: Not found (spglib too old?)
+
+Total Symmetry Operations: 12
+----------------------------------------
+Operation 1:
+  Rotation:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
+Operation 2:
+  Rotation:
+[[ 1 -1  0]
+ [ 1  0  0]
+ [ 0  0  1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 3:
+  Rotation:
+[[ 0 -1  0]
+ [ 1 -1  0]
+ [ 0  0  1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
+Operation 4:
+  Rotation:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 5:
+  Rotation:
+[[-1  1  0]
+ [-1  0  0]
+ [ 0  0  1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
+Operation 6:
+  Rotation:
+[[ 0  1  0]
+ [-1  1  0]
+ [ 0  0  1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 7:
+  Rotation:
+[[0 1 0]
+ [1 0 0]
+ [0 0 1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 8:
+  Rotation:
+[[ 1  0  0]
+ [ 1 -1  0]
+ [ 0  0  1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
+Operation 9:
+  Rotation:
+[[ 1 -1  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 10:
+  Rotation:
+[[ 0 -1  0]
+ [-1  0  0]
+ [ 0  0  1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
+Operation 11:
+  Rotation:
+[[-1  0  0]
+ [-1  1  0]
+ [ 0  0  1]]
+  Translation:
+[0.  0.  0.5]
+  Spin Rotation:
+[[ 1.  0.  0.]
+ [ 0.  1.  0.]
+ [ 0.  0. -1.]]
+--------------------
+Operation 12:
+  Rotation:
+[[-1  1  0]
+ [ 0  1  0]
+ [ 0  0  1]]
+  Translation:
+[0. 0. 0.]
+  Spin Rotation:
+[[1. 0. 0.]
+ [0. 1. 0.]
+ [0. 0. 1.]]
+--------------------
