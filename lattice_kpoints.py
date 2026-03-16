@@ -601,41 +601,47 @@ LATTICE_DATA['ORCI'] = {
 }
 
 # -------------------------------------------------------
-# ORCC - C-Centered Orthorhombic (Table 12)
-# Convention: a < b
+# ORCC - C-Centered Orthorhombic (seekpath/HPKOT Table 83, oS)
+# Convention: a > b (oC) or b > c (oA); seekpath primitive basis
+# Q^{-1} = [[1,1,0],[-1,1,0],[0,0,1]]
+# ζ = (1/4)(1 + b²/a²)  [oC convention, a > b]
+# Path: Γ-Y-F0 | Δ0-Γ-Z-B0 | G0-T-Y | Γ-S-R-Z-T
 # -------------------------------------------------------
 def _orcc_params(a, b, c=None, alpha=None):
-    zeta = (1 + a**2 / b**2) / 4
+    # seekpath uses a > b for oC; ζ = (1 + b²/a²)/4
+    zeta = (1 + b**2 / a**2) / 4
     return {'zeta': zeta}
 
 
 def _orcc_kpoints(p):
     zeta = p['zeta']
     return {
-        'Γ': [0, 0, 0],
-        'A': [zeta, zeta, 1/2],
-        'A1': [-zeta, 1 - zeta, 1/2],
-        'R': [0, 1/2, 1/2],
-        'S': [0, 1/2, 0],
-        'T': [-1/2, 1/2, 1/2],
-        'X': [zeta, zeta, 0],
-        'X1': [-zeta, 1 - zeta, 0],
-        'Y': [-1/2, 1/2, 0],
-        'Z': [0, 0, 1/2],
+        'Γ':  [0,           0,         0  ],
+        'Y':  [1/2,         1/2,       0  ],
+        'T':  [1/2,         1/2,       1/2],
+        'Z':  [0,           0,         1/2],
+        'S':  [0,           1/2,       0  ],
+        'R':  [0,           1/2,       1/2],
+        'Δ0': [-zeta,       zeta,      0  ],
+        'F0': [zeta,        1 - zeta,  0  ],
+        'B0': [-zeta,       zeta,      1/2],
+        'G0': [zeta,        1 - zeta,  1/2],
     }
 
 LATTICE_DATA['ORCC'] = {
     'params_func': _orcc_params,
     'kpoints_func': _orcc_kpoints,
     'kpath': [
-        ('Γ', 'X'), ('X', 'S'), ('S', 'R'), ('R', 'A'),
-        ('A', 'Z'), ('Z', 'Γ'), ('Γ', 'Y'), ('Y', 'X1'),
-        ('X1', 'A1'), ('A1', 'T'), ('T', 'Y'), ('Z', 'T'),
+        ('Γ', 'Y'), ('Y', 'F0'),
+        ('Δ0', 'Γ'), ('Γ', 'Z'), ('Z', 'B0'),
+        ('G0', 'T'), ('T', 'Y'),
+        ('Γ', 'S'), ('S', 'R'), ('R', 'Z'), ('Z', 'T'),
     ],
     'display_labels': {
-        'Γ': r'$\Gamma$', 'A': 'A', 'A1': r'$A_1$',
-        'R': 'R', 'S': 'S', 'T': 'T',
-        'X': 'X', 'X1': r'$X_1$', 'Y': 'Y', 'Z': 'Z',
+        'Γ': r'$\Gamma$',
+        'Y': 'Y', 'T': 'T', 'Z': 'Z', 'S': 'S', 'R': 'R',
+        'Δ0': r'$\Delta_0$', 'F0': r'$F_0$',
+        'B0': r'$B_0$', 'G0': r'$G_0$',
     },
 }
 
