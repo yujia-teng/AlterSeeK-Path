@@ -181,11 +181,11 @@ def seekpath_to_sc_type(sp_result):
         return 'ORCI', conv_params
 
     # --- Base-centered orthorhombic (seekpath variants: oS, oC, oA, oB) ---
-    # seekpath ORCC convention: a > b  (ζ = (1 + b²/a²)/4)
+    # ORCC1: a < b (Table 82, ζ = (1 + a²/b²)/4)
+    # ORCC2: a > b (Table 83, ζ = (1 + b²/a²)/4)
     if bravais in ('oS', 'oC', 'oA', 'oB'):
-        if a < b: a, b = b, a
         conv_params['a'], conv_params['b'] = a, b
-        return 'ORCC', conv_params
+        return ('ORCC1' if a < b else 'ORCC2'), conv_params
 
     # --- Simple monoclinic ---
     if bravais == 'mP':
@@ -558,10 +558,10 @@ def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
 # ============================================================================
 # Main Pipeline
 # ============================================================================
-def run(filename, output_dir=None, show_plot=True):
+def run(filename, output_dir=None):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
-    basename = "BZ"
+    basename = os.path.splitext(os.path.basename(filename))[0]
 
     print("=" * 60)
     print(f"Processing: {filename}")
@@ -691,70 +691,47 @@ def run(filename, output_dir=None, show_plot=True):
     bz_center = np.mean(all_bz_pts, axis=0)
     bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
-    if show_plot:
-        # ---- Interactive plots (all-solid BZ edges, rotate freely) ----
-        fig1, ax1 = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
-                                bz_loops, b_matrix, bz_center, bz_span)
-        plot_ibz(ax1, kpoints_cart, kpath, display_labels, hull, centroid_cart)
-        plt.tight_layout()
+    # ---- Interactive plots (all-solid BZ edges, rotate freely) ----
+    fig1, ax1 = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
+                            bz_loops, b_matrix, bz_center, bz_span)
+    plot_ibz(ax1, kpoints_cart, kpath, display_labels, hull, centroid_cart)
+    plt.tight_layout()
 
-        fig2, ax2 = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
-                                bz_loops, b_matrix, bz_center, bz_span)
-        plot_mapped_bz(ax2, points_arr, hull, centroid_cart, unique_ops)
-        plt.tight_layout()
+    fig2, ax2 = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
+                            bz_loops, b_matrix, bz_center, bz_span)
+    plot_mapped_bz(ax2, points_arr, hull, centroid_cart, unique_ops)
+    plt.tight_layout()
 
-        plt.show()
+    plt.show()
 
-        # ---- Capture view angles & re-render with dashed back-edges ----
-        elev1, azim1 = ax1.elev, ax1.azim
-        elev2, azim2 = ax2.elev, ax2.azim
-        print(f"\nCaptured view angles:")
-        print(f"  Fig1 (IBZ):    elev={elev1:.1f}, azim={azim1:.1f}")
-        print(f"  Fig2 (Mapped): elev={elev2:.1f}, azim={azim2:.1f}")
+    # ---- Capture view angles & re-render with dashed back-edges ----
+    elev1, azim1 = ax1.elev, ax1.azim
+    elev2, azim2 = ax2.elev, ax2.azim
+    print(f"\nCaptured view angles:")
+    print(f"  Fig1 (IBZ):    elev={elev1:.1f}, azim={azim1:.1f}")
+    print(f"  Fig2 (Mapped): elev={elev2:.1f}, azim={azim2:.1f}")
 
-        # Re-render Fig1 with dashed back-edges
-        fig1s, ax1s = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
-                                  bz_loops, b_matrix, bz_center, bz_span,
-                                  elev=elev1, azim=azim1, dashed_back=True)
-        plot_ibz(ax1s, kpoints_cart, kpath, display_labels, hull, centroid_cart)
-        plt.tight_layout()
-        fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_type}.png')
-        plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {fig1_path}")
-        plt.close(fig1s)
+    # Re-render Fig1 with dashed back-edges
+    fig1s, ax1s = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
+                              bz_loops, b_matrix, bz_center, bz_span,
+                              elev=elev1, azim=azim1, dashed_back=True)
+    plot_ibz(ax1s, kpoints_cart, kpath, display_labels, hull, centroid_cart)
+    plt.tight_layout()
+    fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_type}.png')
+#    plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
+    print(f"Saved: {fig1_path}")
+    plt.close(fig1s)
 
-        # Re-render Fig2 with dashed back-edges
-        fig2s, ax2s = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
-                                  bz_loops, b_matrix, bz_center, bz_span,
-                                  elev=elev2, azim=azim2, dashed_back=True)
-        plot_mapped_bz(ax2s, points_arr, hull, centroid_cart, unique_ops)
-        plt.tight_layout()
-        fig2_path = os.path.join(output_dir, f'{basename}_mapped_{sc_type}.png')
-        plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {fig2_path}")
-        plt.close(fig2s)
-    else:
-        # ---- Save plots directly without opening a window ----
-        plt.switch_backend('Agg')
-        fig1s, ax1s = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
-                                  bz_loops, b_matrix, bz_center, bz_span,
-                                  dashed_back=True)
-        plot_ibz(ax1s, kpoints_cart, kpath, display_labels, hull, centroid_cart)
-        plt.tight_layout()
-        fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_type}.png')
-        plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {fig1_path}")
-        plt.close(fig1s)
-
-        fig2s, ax2s = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
-                                  bz_loops, b_matrix, bz_center, bz_span,
-                                  dashed_back=True)
-        plot_mapped_bz(ax2s, points_arr, hull, centroid_cart, unique_ops)
-        plt.tight_layout()
-        fig2_path = os.path.join(output_dir, f'{basename}_mapped_{sc_type}.png')
-        plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {fig2_path}")
-        plt.close(fig2s)
+    # Re-render Fig2 with dashed back-edges
+    fig2s, ax2s = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
+                              bz_loops, b_matrix, bz_center, bz_span,
+                              elev=elev2, azim=azim2, dashed_back=True)
+    plot_mapped_bz(ax2s, points_arr, hull, centroid_cart, unique_ops)
+    plt.tight_layout()
+    fig2_path = os.path.join(output_dir, f'{basename}_mapped_{sc_type}.png')
+#    plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
+    print(f"Saved: {fig2_path}")
+    plt.close(fig2s)
 
     return {
         'sc_type': sc_type,

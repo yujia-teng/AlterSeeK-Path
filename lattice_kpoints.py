@@ -601,19 +601,62 @@ LATTICE_DATA['ORCI'] = {
 }
 
 # -------------------------------------------------------
-# ORCC - C-Centered Orthorhombic (seekpath/HPKOT Table 83, oS)
-# Convention: a > b (oC) or b > c (oA); seekpath primitive basis
+# ORCC1 - C-Centered Orthorhombic, a < b (HPKOT Table 82, oC)
 # Q^{-1} = [[1,1,0],[-1,1,0],[0,0,1]]
-# ζ = (1/4)(1 + b²/a²)  [oC convention, a > b]
+# ζ = (1/4)(1 + a²/b²)  [a < b]
+# Path: Γ-Y-C0 | Σ0-Γ-Z-A0 | E0-T-Y | Γ-S-R-Z-T
+# -------------------------------------------------------
+def _orcc1_params(a, b, c=None, alpha=None):
+    # a < b convention; ζ = (1 + a²/b²)/4
+    zeta = (1 + a**2 / b**2) / 4
+    return {'zeta': zeta}
+
+
+def _orcc1_kpoints(p):
+    zeta = p['zeta']
+    return {
+        'Γ':  [0,           0,         0  ],
+        'Y':  [-1/2,        1/2,       0  ],
+        'T':  [-1/2,        1/2,       1/2],
+        'Z':  [0,           0,         1/2],
+        'S':  [0,           1/2,       0  ],
+        'R':  [0,           1/2,       1/2],
+        'Σ0': [zeta,        zeta,      0  ],
+        'C0': [-zeta,       1 - zeta,  0  ],
+        'A0': [zeta,        zeta,      1/2],
+        'E0': [-zeta,       1 - zeta,  1/2],
+    }
+
+LATTICE_DATA['ORCC1'] = {
+    'params_func': _orcc1_params,
+    'kpoints_func': _orcc1_kpoints,
+    'kpath': [
+        ('Γ', 'Y'), ('Y', 'C0'),
+        ('Σ0', 'Γ'), ('Γ', 'Z'), ('Z', 'A0'),
+        ('E0', 'T'), ('T', 'Y'),
+        ('Γ', 'S'), ('S', 'R'), ('R', 'Z'), ('Z', 'T'),
+    ],
+    'display_labels': {
+        'Γ': r'$\Gamma$',
+        'Y': 'Y', 'T': 'T', 'Z': 'Z', 'S': 'S', 'R': 'R',
+        'Σ0': r'$\Sigma_0$', 'C0': r'$C_0$',
+        'A0': r'$A_0$', 'E0': r'$E_0$',
+    },
+}
+
+# -------------------------------------------------------
+# ORCC2 - C-Centered Orthorhombic, a > b (HPKOT Table 83, oC)
+# Q^{-1} = [[1,1,0],[-1,1,0],[0,0,1]]
+# ζ = (1/4)(1 + b²/a²)  [a > b]
 # Path: Γ-Y-F0 | Δ0-Γ-Z-B0 | G0-T-Y | Γ-S-R-Z-T
 # -------------------------------------------------------
-def _orcc_params(a, b, c=None, alpha=None):
-    # seekpath uses a > b for oC; ζ = (1 + b²/a²)/4
+def _orcc2_params(a, b, c=None, alpha=None):
+    # a > b convention; ζ = (1 + b²/a²)/4
     zeta = (1 + b**2 / a**2) / 4
     return {'zeta': zeta}
 
 
-def _orcc_kpoints(p):
+def _orcc2_kpoints(p):
     zeta = p['zeta']
     return {
         'Γ':  [0,           0,         0  ],
@@ -628,9 +671,9 @@ def _orcc_kpoints(p):
         'G0': [zeta,        1 - zeta,  1/2],
     }
 
-LATTICE_DATA['ORCC'] = {
-    'params_func': _orcc_params,
-    'kpoints_func': _orcc_kpoints,
+LATTICE_DATA['ORCC2'] = {
+    'params_func': _orcc2_params,
+    'kpoints_func': _orcc2_kpoints,
     'kpath': [
         ('Γ', 'Y'), ('Y', 'F0'),
         ('Δ0', 'Γ'), ('Γ', 'Z'), ('Z', 'B0'),
@@ -644,6 +687,9 @@ LATTICE_DATA['ORCC'] = {
         'B0': r'$B_0$', 'G0': r'$G_0$',
     },
 }
+
+# Keep 'ORCC' as alias for ORCC2 for backward compatibility
+LATTICE_DATA['ORCC'] = LATTICE_DATA['ORCC2']
 
 # -------------------------------------------------------
 # HEX - Hexagonal (Table 13)
