@@ -19,8 +19,8 @@ where `k` is a general k-point (the volume centroid of the irreducible Brillouin
 ## Installation
 
 ```bash
-git clone https://github.com/yujia-teng/DeepSeeK-Path.git
-cd DeepSeeK-Path
+git clone https://github.com/yujia-teng/AlterSeeK-Path.git
+cd AlterSeeK-Path
 pip install -r requirements.txt
 ```
 
