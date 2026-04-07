@@ -88,94 +88,204 @@ class KPointsModifier:
         k_transformed = R_inv_T @ k
         return k_transformed.tolist()
     
-    def insert_general_kpoints(self, 
+    def insert_general_kpoints(self,
                                general_kpoint: List[float],
                                transformation_matrix: np.ndarray) -> List[List]:
         """
         Insert general k-points into every segment of the high symmetry path.
+        Per-segment butterfly: for each (A,B) segment:
+          - If A not yet opened: A-k | k'-A'
+          - Connect A' to B'
+          - Close: B'-k' | k-B
+        Points already butterflied in earlier chains appear as plain segments.
         """
         if not self.kpoints_data:
             print("Error: No k-points data loaded. Please read KPOINTS file first.")
             return []
-        
-        # Calculate k' (transformed general k-point)
+
         k_prime = self.transform_kpoint(general_kpoint, transformation_matrix)
-        
-        # Find unique points (remove duplicates that create segment boundaries)
-        unique_points = []
-        i = 0
-        while i < len(self.kpoints_data):
-            current_point = self.kpoints_data[i]
-            unique_points.append(current_point)
-            # Skip duplicate points
-            while (i + 1 < len(self.kpoints_data) and
-                   abs(current_point[0] - self.kpoints_data[i + 1][0]) < 1e-6 and
-                   abs(current_point[1] - self.kpoints_data[i + 1][1]) < 1e-6 and
-                   abs(current_point[2] - self.kpoints_data[i + 1][2]) < 1e-6):
-                i += 1
-            i += 1
-        
-        # --- ORIGINAL PRINTS PRESERVED ---
-        print(f"Found {len(unique_points)} unique high-symmetry points")
-        for i, point in enumerate(unique_points):
-            print(f"  {i}: {point[3]} = ({point[0]:.4f}, {point[1]:.4f}, {point[2]:.4f})")
-        # ---------------------------------
-        
-        # Create new path sequence
-        path_sequence = []
-        
-        # Process each segment between consecutive high-symmetry points
-        for i in range(0,len(unique_points) - 2,2):
-            current_point = unique_points[i]
-            next_point = unique_points[i + 1]
-            next_next_point = unique_points[i + 2]
+        kpt = general_kpoint
+        kp  = k_prime
 
-            # Add the original segment: X-Y (no duplication)
-            path_sequence.append(current_point.copy())
-            path_sequence.append(next_point.copy())
-            
-            # Add Y-k (Y to general k-point)
-            path_sequence.append([general_kpoint[0], general_kpoint[1], general_kpoint[2], "k"])
-            
-            # Add k'-Y_transformed
-            path_sequence.append([k_prime[0], k_prime[1], k_prime[2], "k'"])
-            if next_point[3].upper() in ['G', 'GAMMA', 'Γ']:
-                path_sequence.append(next_point.copy())
-            else:            
-                # Transform the point
-                transformed_coords = self.transform_kpoint(next_point, transformation_matrix)
-                transformed_next = [
-                    transformed_coords[0], 
-                    transformed_coords[1], 
-                    transformed_coords[2], 
-                    f"{next_point[3]}'"
-                ]
-                
-                path_sequence.append(transformed_next.copy())
-       
-            # Add Y_transformed-Z_transformed
-            if next_next_point[3].upper() in ['G', 'GAMMA', 'Gamma', 'Γ']:
-                path_sequence.append(next_next_point.copy())
+        def coords_eq(p, q, tol=1e-6):
+            return abs(p[0]-q[0]) < tol and abs(p[1]-q[1]) < tol and abs(p[2]-q[2]) < tol
+
+        def pt_key(p):
+            return (round(p[0], 6), round(p[1], 6), round(p[2], 6))
+
+        def is_gamma(p):
+            return p[3].upper() in ['G', 'GAMMA', 'Γ']
+
+        def get_prime(p):
+            """Return primed version of p (Gamma stays unprimed)."""
+            if is_gamma(p):
+                return p.copy()
+            tc = self.transform_kpoint(p, transformation_matrix)
+            return [tc[0], tc[1], tc[2], f"{p[3]}'"]
+
+        # --- Step 1: group flat kpoints_data into segment pairs ---
+        raw = self.kpoints_data
+        seg_pairs = [(raw[i], raw[i+1]) for i in range(0, len(raw) - 1, 2)]
+
+        # --- Step 2: build connected chains ---
+        chains = []
+        current_chain = [seg_pairs[0][0], seg_pairs[0][1]]
+        for sp_start, sp_end in seg_pairs[1:]:
+            if coords_eq(current_chain[-1], sp_start):
+                current_chain.append(sp_end)
             else:
-                transformed_coords_2 = self.transform_kpoint(next_next_point, transformation_matrix)
-                transformed_next_next = [
-                    transformed_coords_2[0],
-                    transformed_coords_2[1],
-                    transformed_coords_2[2],
-                    f"{next_next_point[3]}'"
-                ]
- 
-                path_sequence.append(transformed_next_next.copy())
-             
-            # Add Z_transformed-k'
-            path_sequence.append([k_prime[0], k_prime[1], k_prime[2], "k'"])
+                chains.append(current_chain)
+                current_chain = [sp_start, sp_end]
+        chains.append(current_chain)
 
-            # add k-Z
-            path_sequence.append([general_kpoint[0], general_kpoint[1], general_kpoint[2], "k"])
-            path_sequence.append(next_next_point.copy())
+        # Display the original high-symmetry path for reference
+        hs_parts = []
+        for ci, chain in enumerate(chains):
+            labels = [p[3] for p in chain]
+            if ci > 0:
+                hs_parts.append('|')
+            hs_parts.append('-'.join(labels))
+        print(f"High-symmetry path: {''.join(hs_parts)}")
+        print(f"Found {len(chains)} path segment(s):")
+        for ci, chain in enumerate(chains):
+            labels = [p[3] for p in chain]
+            print(f"  Part {ci+1}: {' - '.join(labels)}")
 
-        if len(unique_points) % 2 == 0:
-            path_sequence.append(unique_points[-1])
+        # --- Step 3: alternating plain / butterfly segments ---
+        #
+        # Pattern:
+        #   Even-indexed segment → plain  (emit A, B)
+        #   Odd-indexed segment  → butterfly (emit A, k, k', A', B', k', k, B)
+        #
+        # First chain: parity 0 → segment 0 is plain, segment 1 is butterfly, ...
+        # Other chains: parity 1 → segment 0 is butterfly, segment 1 is plain, ...
+        #
+        # Consecutive segments share an endpoint; the duplicate is suppressed by
+        # the same-label skip in write_kpoints_file and the display builder.
+        # GAMMA is self-conjugate: get_prime(GAMMA) = GAMMA.
+        path_sequence = []
+
+        def emit_plain(A, B):
+            path_sequence.append(A.copy())
+            path_sequence.append(B.copy())
+
+        def emit_butterfly(A, B):
+            path_sequence.append(A.copy())
+            path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
+            path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
+            path_sequence.append(get_prime(A))
+            path_sequence.append(get_prime(B))
+            # Universal rule: skip close if B already received butterfly treatment.
+            # Applies to all points equally (GAMMA, X, W, etc.).
+            if pt_key(B) not in butterflied:
+                path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
+                path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
+                path_sequence.append(B.copy())
+
+        butterflied = set()  # pt_key of points that have received butterfly treatment
+
+        for ci, chain in enumerate(chains):
+            # Dedup within chain (by coordinates, not labels)
+            unique = []
+            for pt in chain:
+                if not unique or not coords_eq(unique[-1], pt):
+                    unique.append(pt)
+
+            # Degenerate chain: all points share the same coordinates
+            # (e.g. U_0 ≡ T for certain lattice parameters). Skip silently.
+            if len(unique) < 2:
+                labels = [p[3] for p in chain]
+                print(f"  [Note] Part {ci+1} ({' - '.join(labels)}) skipped: "
+                      f"endpoints coincide in coordinates")
+                continue
+
+            if ci > 0:
+                path_sequence.append(None)
+
+            start_parity = 0 if ci == 0 else 1
+
+            parity = start_parity  # tracks alternation independently of s
+            for s, (A, B) in enumerate(zip(unique, unique[1:])):
+                A_key = pt_key(A)
+                B_key = pt_key(B)
+                is_last = (s == len(unique) - 2)
+                # If A was already butterflied, emit plain (skip re-opening)
+                if A_key in butterflied:
+                    emit_plain(A, B)
+                    # B is a new endpoint → partial butterfly B-k|k'-B'
+                    if B_key not in butterflied and is_last:
+                        path_sequence.append(B.copy())
+                        path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
+                        path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
+                        path_sequence.append(get_prime(B))
+                        butterflied.add(B_key)
+                    # Only hold parity when butterflied-A overrides a butterfly slot;
+                    # if parity is already even (plain slot), advance normally.
+                    if parity % 2 == 0:
+                        parity += 1
+                elif parity % 2 == 1:
+                    emit_butterfly(A, B)
+                    butterflied.add(A_key)
+                    butterflied.add(B_key)
+                    parity += 1
+                else:
+                    emit_plain(A, B)
+                    parity += 1
+
+            # After processing all segments in this chain, check if the last
+            # point still lacks butterfly treatment (happens when chain 0 has
+            # only 1 segment → the single plain pair leaves B un-butterflied).
+            last_key = pt_key(unique[-1])
+            if last_key not in butterflied:
+                last_pt = unique[-1]
+                path_sequence.append(last_pt.copy())
+                path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
+                path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
+                path_sequence.append(get_prime(last_pt))
+                butterflied.add(last_key)
+
+        # Remove trailing sentinel
+        if path_sequence and path_sequence[-1] is None:
+            path_sequence.pop()
+
+        # Print generated path as label string
+        tokens = []  # list of label strings or '|' for breaks
+        prev = None
+        i = 0
+        while i < len(path_sequence) - 1:
+            cur = path_sequence[i]
+            nxt = path_sequence[i + 1]
+            # Chain boundary sentinel → insert break
+            if cur is None or nxt is None:
+                if tokens and tokens[-1] != '|':
+                    tokens.append('|')
+                i += 1
+                continue
+            # k↔k' connection → insert break
+            if (cur[3] == "k" and nxt[3] == "k'") or \
+               (cur[3] == "k'" and nxt[3] == "k"):
+                if tokens and tokens[-1] != '|':
+                    tokens.append('|')
+                i += 1
+                continue
+            # same label → skip
+            if cur[3] == nxt[3]:
+                i += 1
+                continue
+            if prev != cur[3]:
+                tokens.append(cur[3])
+            tokens.append(nxt[3])
+            prev = nxt[3]
+            i += 1
+        # Build display string: labels joined by '-', breaks become '|'
+        display = ''
+        for t in tokens:
+            if t == '|':
+                display = display.rstrip('-') + '|'
+            else:
+                display += t + '-'
+        display = display.rstrip('-').rstrip('|')
+        print(f"Generated path: {display}")
 
         return path_sequence
     
@@ -200,7 +310,12 @@ class KPointsModifier:
                 while i < len(new_kpoints) - 1:
                     start_point = new_kpoints[i]
                     end_point = new_kpoints[i + 1]
-                    
+
+                    # Skip chain boundary sentinels
+                    if start_point is None or end_point is None:
+                        i += 1
+                        continue
+
                     # Skip any k to k' connections (there should be none)
                     if start_point[3] == "k" and end_point[3] == "k'":
                         i += 1
@@ -238,11 +353,10 @@ class KPointsModifier:
         BOLD  = "\033[1m"
         RESET = "\033[0m"
         print("=== Altermagnetic K-Path Generator ===")
-        print("Recommend to use continues high symmetry kpath as input like G-M-K-G rather than L-M|H-K, otherwise there will be duplicated paths.")
 
         # Step 0: Compute spin-flip operations from structure
         print(f"\n{BOLD}>>> Step 0: Compute spin-flip symmetry operations{RESET}")
-        print("Enter structure file name (default: POSCAR): ", end='', flush=True)
+        print("Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): ", end='', flush=True)
         struct_file = input().strip()
         if not struct_file: struct_file = "POSCAR"
 
@@ -253,31 +367,110 @@ class KPointsModifier:
             print("[Note] find_sf_operations.py not found. Skipping Step 0.")
             struct_file = None
         else:
-            print("Enter magnetic moments (space-separated, e.g., '1 -1'):")
-            print("Moments: ", end='', flush=True)
-            moments_str = input().strip()
+            is_mcif = struct_file.lower().endswith('.mcif')
+            if is_mcif:
+                print("Detected .mcif file — magnetic moments will be read from file.")
+                moments_str = ""
+            else:
+                print("Enter magnetic moments in atom order from structure file (space-separated).")
+                print("  Trailing non-magnetic atoms auto-fill to 0 (e.g., just '1 -1' if mag atoms come first).")
+                print("  If non-magnetic atoms appear first, include 0s (e.g., '0 0 1 -1').")
+                print("Moments: ", end='', flush=True)
+                moments_str = input().strip()
             find_sf_run(struct_file, moments_str)
 
-        # Step 1: Read KPOINTS file
-        print(f"\n{BOLD}>>> Step 1: Reading KPOINTS file...{RESET}")
-        print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
-        filename = input().strip()
-        if not filename: filename = "KPATH.in"
-        if not self.read_kpoints_file(filename): return
+        # Step 1: High-symmetry k-path (auto from seekpath or user file)
+        print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
+        centroid_result = None
+
+        if struct_file and CENTROID_AVAILABLE:
+            try:
+                print(f"Computing IBZ centroid and k-path from '{struct_file}'...")
+                centroid_result = compute_centroid(struct_file, output_dir='.', show_plot=True)
+                sp_path   = centroid_result['sp_path']
+                sp_coords = centroid_result['sp_point_coords']
+                # Build human-readable path string for display
+                parts = []
+                prev_end = None
+                for seg_s, seg_e in sp_path:
+                    if seg_s != prev_end:
+                        parts.append(f"|{seg_s}-{seg_e}" if prev_end else f"{seg_s}-{seg_e}")
+                    else:
+                        parts.append(seg_e)
+                    prev_end = seg_e
+                print(f"Auto-generated path: {'-'.join(parts)}")
+                print("Press [Enter] to use this path, or type a filename to load your own: ", end='', flush=True)
+                path_choice = input().strip()
+                if not path_choice:
+                    # Build kpoints_data from seekpath result
+                    self.kpoints_data = []
+                    self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
+                    for seg_start, seg_end in sp_path:
+                        for label in (seg_start, seg_end):
+                            coords = sp_coords[label]
+                            self.kpoints_data.append([coords[0], coords[1], coords[2], label])
+                    print(f"Using auto-generated path ({len(sp_path)} segments, {len(self.kpoints_data)} k-points)")
+                else:
+                    if not self.read_kpoints_file(path_choice): return
+            except Exception as e:
+                print(f"[Warning] Auto path generation failed: {e}")
+                print("Falling back to manual file input.")
+                print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
+                filename = input().strip()
+                if not filename: filename = "KPATH.in"
+                if not self.read_kpoints_file(filename): return
+        else:
+            print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
+            filename = input().strip()
+            if not filename: filename = "KPATH.in"
+            if not self.read_kpoints_file(filename): return
+
+        # Triclinic (space groups 1, 2): no altermagnetic splitting possible.
+        # Write the seekpath path directly as KPOINTS without butterfly insertion.
+        is_triclinic = (centroid_result is not None
+                        and centroid_result.get('spacegroup', 0) in (1, 2))
+        if is_triclinic:
+            print(f"\n[Note] Triclinic system (space group {centroid_result['spacegroup']}) detected.")
+            print("  No altermagnetic splitting — writing standard seekpath k-path.")
+            print(f"\n{BOLD}>>> Step 5: Save modified file{RESET}")
+            print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
+            output_file = input().strip()
+            if not output_file:
+                output_file = "KPOINTS_modified"
+            # Write the plain seekpath path (no butterfly, no transformation)
+            self.write_kpoints_file(self.kpoints_data, output_file, None)
+            print(f"\nProcess completed successfully!")
+            return
 
         # Step 2: Auto-compute or manually enter general k-point
         print(f"\n{BOLD}>>> Step 2: Enter general k-point coordinates{RESET}")
         general_kpoint = None
 
-        if struct_file and CENTROID_AVAILABLE:
+        if centroid_result is not None:
+            try:
+                c = centroid_result['centroid_frac']
+                general_kpoint = [c[0], c[1], c[2]]
+                print(f"General k-point (IBZ centroid): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
+            except Exception as e:
+                print(f"[Warning] Centroid retrieval failed: {e}")
+        elif struct_file and CENTROID_AVAILABLE:
             try:
                 print(f"Computing IBZ centroid from '{struct_file}'...")
-                result = compute_centroid(struct_file, output_dir='.')
+                result = compute_centroid(struct_file, output_dir='.', show_plot=True)
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]
                 print(f"General k-point (IBZ centroid): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
             except Exception as e:
                 print(f"[Warning] Centroid computation failed: {e}")
+
+        # Append centroid to spin_operations.txt for reference
+        if general_kpoint is not None:
+            try:
+                with open("spin_operations.txt", "a") as f:
+                    f.write(f"\nGeneral k-point (IBZ centroid, fractional): "
+                            f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
+            except Exception:
+                pass
 
         if general_kpoint is None:
             print("Format: kx ky kz (space-separated)")
@@ -308,6 +501,8 @@ class KPointsModifier:
                     row_str = " ".join([f"{x: .0f}" if x.is_integer() else f"{x: .2f}" for x in row])
                     print(f"    [ {row_str} ]")
 
+            print(f"\n  Note: all options produce equivalent band structures —")
+            print(f"  k' = R⁻ᵀk always lands in the opposite-spin IBZ for any spin-flip R.")
             print(f"\nSelect an operation number (1-{len(flip_ops)})")
             print("Press [Enter] for default (1), or type number: ", end='', flush=True)
             choice = input().strip()
@@ -357,8 +552,6 @@ class KPointsModifier:
             new_kpoints = self.insert_general_kpoints(general_kpoint, R)
             
             if new_kpoints:
-                print(f"\nModified k-points (original: {len(self.kpoints_data)}, new: {len(new_kpoints)}):")
-                
                 # Step 5: Save modified file
                 print(f"\n{BOLD}>>> Step 5: Save modified file{RESET}")
                 print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)

@@ -28,20 +28,59 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-Place your `POSCAR` and `KPATH.in` (line-mode KPOINTS file, e.g. from VASPKIT) in the same directory as the scripts, then run:
+Run:
 
 ```bash
 python generate_kpath.py
 ```
 
-The script will guide you through 5 steps interactively:
+The script guides you through 5 steps interactively. The two most important choices are your **structure file** and your **k-path source**:
+
+---
+
+### Workflow A — Magnetic CIF (`.mcif`)
+
+If you have a magnetic CIF file, magnetic moments are detected automatically:
+
+```
+Enter structure file name (default: POSCAR): MnF2.mcif
+# → moments extracted automatically, no manual input needed
+```
+
+---
+
+### Workflow B — POSCAR with manual moments
+
+If you use a POSCAR, you will be prompted to enter moments:
+
+```
+Enter structure file name (default: POSCAR): POSCAR
+Enter magnetic moments in atom order from structure file (space-separated).
+  Trailing non-magnetic atoms auto-fill to 0 (e.g., just '1 -1' if mag atoms come first).
+  If non-magnetic atoms appear first, include 0s (e.g., '0 0 1 -1').
+Moments: 1 -1
+```
+
+Moments are entered **in atom order** as they appear in the POSCAR. Only type moments for magnetic atoms — trailing non-magnetic atoms are filled with 0 automatically.
+
+---
+
+### K-path: auto-generate or provide file
+
+**Option 1 — Auto-generate (recommended):** Just press Enter at the KPOINTS prompt. The path is generated automatically via seekpath.
+
+**Option 2 — Provide your own file:** Place a line-mode `KPATH.in` in the same directory (e.g. from VASPKIT task 303), then enter the filename when prompted.
+
+---
+
+### Step summary
 
 | Step | What it does | Input needed |
 |------|-------------|--------------|
-| **0** | Finds spin-flip symmetry operations from structure | Structure file name, magnetic moments |
-| **1** | Reads the high-symmetry k-path | KPOINTS file name |
-| **2** | Auto-computes the general k-point (IBZ centroid) | *(automatic — no input needed)* |
-| **3** | Selects the spin-flip transformation matrix | Choose from list, or press Enter for default |
+| **0** | Finds spin-flip symmetry operations from structure | Structure file name; magnetic moments (manual for POSCAR, auto for mcif) |
+| **1** | Reads the high-symmetry k-path | KPOINTS file name (or Enter for auto) |
+| **2** | Auto-computes the general k-point (IBZ centroid) | *(automatic)* |
+| **3** | Selects the spin-flip transformation matrix | Choose from list, or press Enter for default — any choice gives an equivalent band structure, since k' always lands in the opposite-spin IBZ |
 | **4** | Generates the enriched k-path | *(automatic)* |
 | **5** | Saves the output file | Output file name |
 
@@ -51,13 +90,13 @@ The script will guide you through 5 steps interactively:
 
 ## Input Files
 
-### Structure file (`POSCAR` or `cif` file)
-Standard structure file.
+### Structure file
+- **POSCAR** — standard VASP structure file; magnetic moments entered manually at prompt
+- **`.mcif` file** — magnetic CIF; moments extracted automatically
+- **`.cif` file** — standard CIF; magnetic moments entered manually at prompt
 
-### `KPATH.in`
-Line-mode KPOINTS file with the high-symmetry path. Generate with [VASPKIT](https://vaspkit.com/) (task 303) or [seekpath](https://www.materialscloud.org/work/tools/seekpath).
-
-> **Tip:** Use a **continuous** path (e.g. `Γ-M-K-Γ-A-L-H-A`) rather than disconnected segments (e.g. `Γ-M | H-K`). Disconnected segments cause duplicate k-points in the output.
+### `KPATH.in` (optional)
+Line-mode KPOINTS file with the high-symmetry path. If not provided, the path is auto-generated via seekpath. To generate manually: [VASPKIT](https://vaspkit.com/) (task 303) or [seekpath](https://www.materialscloud.org/work/tools/seekpath).
 
 ---
 
@@ -73,30 +112,31 @@ Line-mode KPOINTS file with the high-symmetry path. Generate with [VASPKIT](http
 
 ---
 
-## Example usage
+## Example
+
 ```
 $ python generate_kpath.py
 === Altermagnetic K-Path Generator ===
-Recommend to use continues high symmetry kpath as input like G-M-K-G rather than L-M|H-K, otherwise there will be duplicated paths.
 
 >>> Step 0: Compute spin-flip symmetry operations
-Enter structure file name (default: POSCAR): 
-Enter magnetic moments (space-separated, e.g., '1 -1'):
+Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): 
+Enter magnetic moments in atom order from structure file (space-separated).
+  Trailing non-magnetic atoms auto-fill to 0 (e.g., just '1 -1' if mag atoms come first).
+  If non-magnetic atoms appear first, include 0s (e.g., '0 0 1 -1').
 Moments: 1 -1
-========================================
+========================================        
 1. Structure Loading
-========================================
+========================================        
 Successfully loaded 'POSCAR' containing 6 atoms.
 
-========================================
+========================================        
 2. Non-Magnetic Space Group Analysis
-========================================
+========================================        
 Space Group: P6_3mc (186)
 
-========================================
-3. Magnetic Configuration Input
-========================================
-Enter magnetic moments (space-separated, e.g., '1 -1'):
+========================================        
+3. Magnetic Configuration
+========================================        
 Moments: 1 -1
 Using magnetic moments:
 [[ 0.  0.  1.]
@@ -110,7 +150,6 @@ Using magnetic moments:
 4. Spin Space Group Analysis
 ========================================
 Spin-Only Group Type: COLLINEAR(axis=[0. 0. 1.])
-Magnetic Space Group: Not found (spglib too old?)
 Total Symmetry Operations: 12
 
 ========================================
@@ -119,12 +158,8 @@ Total Symmetry Operations: 12
 [INFO] All operations written to 'spin_operations.txt'
 [INFO] 6 spin-flipping matrices written to 'flip_spin_operations.txt'
 
->>> Step 1: Reading KPOINTS file...
-Enter KPOINTS file name (default: KPATH.in): 
-Successfully read 14 k-points from KPATH.in
-
->>> Step 2: Enter general k-point coordinates
-Computing IBZ centroid from 'POSCAR'...
+>>> Step 1: High-symmetry k-path
+Computing IBZ centroid and k-path from 'POSCAR'...
 ============================================================
 Processing: POSCAR
 ============================================================
@@ -132,43 +167,16 @@ Processing: POSCAR
 Space Group: 186 (P6_3mc)
 Point Group: 6mm
 Seekpath Bravais: hP2
-Setyawan-Curtarolo type: HEX
-
-High-symmetry k-points (6):
-  Γ       : [  0.0000,   0.0000,   0.0000]
-  A       : [  0.0000,   0.0000,   0.5000]
-  H       : [  0.3333,   0.3333,   0.5000]
-  K       : [  0.3333,   0.3333,   0.0000]
-  L       : [  0.5000,   0.0000,   0.5000]
-  M       : [  0.5000,   0.0000,   0.0000]
 
 Symmetry operations: 12
 With time-reversal: 24
+Saved: .\POSCAR_ibz_HEX.png
+Saved: .\POSCAR_mapped_HEX.png
+Auto-generated path: GAMMA-M-K-GAMMA-A-L-H-A-|L-M-|H-K
+Press [Enter] to use this path, or type a filename to load your own:
+Using auto-generated path (9 segments, 18 k-points)
 
-==================================================
-NUMERICAL VOLUME CENTROID
-==================================================
-Cartesian:  [0.394158, 0.409621, 0.211766]
-Fractional: [0.277778, 0.111111, 0.250000]
-IBZ Volume: 8.205802e-02
-
-==================================================
-SYMBOLIC VOLUME CENTROID
-==================================================
-  k1 = 5/18
-  k2 = 1/9
-  k3 = 1/4
-
-Verification:
-  Symbolic:   [0.277778, 0.111111, 0.250000]
-  Numerical:  [0.277778, 0.111111, 0.250000]
-==================================================
-
-Captured view angles:
-  Fig1 (IBZ):    elev=25.0, azim=-55.0
-  Fig2 (Mapped): elev=25.0, azim=-55.0
-Saved: ./BZ_ibz_HEX.png
-Saved: ./BZ_mapped_HEX.png
+>>> Step 2: Enter general k-point coordinates
 General k-point (IBZ centroid): [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Selecting Transformation Matrix R
@@ -204,8 +212,11 @@ Found 6 pre-calculated spin-flip operations:
     [ -1  1  0 ]
     [  0  0  1 ]
 
+  Note: all options produce equivalent band structures —
+  k' = R⁻ᵀk always lands in the opposite-spin IBZ for any spin-flip R.
+
 Select an operation number (1-6)
-Press [Enter] for default (1), or type number: 
+Press [Enter] for default (1), or type number:
 Selected default: Option 1
 
 >>> Step 4: Processing k-points...
@@ -214,49 +225,46 @@ Using Transformation Matrix R:
   [1. 0. 0.]
   [0. 0. 1.]
 k' (transformed k): [-0.1111, 0.3889, 0.2500]
-Found 8 unique high-symmetry points
-  0: GAMMA = (0.0000, 0.0000, 0.0000)
-  1: M = (0.5000, 0.0000, 0.0000)
-  2: K = (0.3333, 0.3333, 0.0000)
-  3: GAMMA = (0.0000, 0.0000, 0.0000)
-  4: A = (0.0000, 0.0000, 0.5000)
-  5: L = (0.5000, 0.0000, 0.5000)
-  6: H = (0.3333, 0.3333, 0.5000)
-  7: A = (0.0000, 0.0000, 0.5000)
-
-Modified k-points (original: 14, new: 28):
+High-symmetry path: GAMMA-M-K-GAMMA-A-L-H-A|L-M|H-K
+Found 3 path segment(s):
+  Part 1: GAMMA - M - K - GAMMA - A - L - H - A
+  Part 2: L - M
+  Part 3: H - K
+Generated path: GAMMA-M-k|k'-M'-K'-k'|k-K-GAMMA-k|k'-GAMMA-A'-k'|k-A-L-k|k'-L'-H'-k'|k-H-A|L-M|H-K
 
 >>> Step 5: Save modified file
-Enter output filename (default: KPOINTS_modified): 
+Enter output filename (default: KPOINTS_modified):
 Modified KPOINTS file written to: KPOINTS_modified
 
 Process completed successfully!
 ```
+
 ---
+
 ## Additional Utilities
 
 ### Standalone spin-flip analysis
 ```bash
-python3 find_sf_operations.py
+python find_sf_operations.py
 ```
 Runs Step 0 independently. Useful if you already have `flip_spin_operations.txt` and only need to re-run the k-path generation.
 
 ### IBZ centroid for a single structure
 ```bash
-python3 compute_centroid_hybrid.py POSCAR
+python compute_centroid_hybrid.py POSCAR
 ```
 Computes the IBZ centroid for any structure file and produces 3D plots. Supports all 14 Bravais lattice types.
 
 ### Batch processing (multiple structures)
 ```bash
-python3 batch_centroid_hybrid.py /path/to/structures/ --output summary.csv
-python3 batch_centroid_hybrid.py file1.vasp file2.cif file3.vasp
+python batch_centroid_hybrid.py /path/to/structures/ --output summary.csv
+python batch_centroid_hybrid.py file1.vasp file2.cif file3.vasp
 ```
 Processes a directory of structure files and writes a CSV summary of all centroids.
 
 ### Monoclinic IRBZ vertex finder
 ```bash
-python3 find_irbz_vertices.py
+python find_irbz_vertices.py
 ```
 Advanced diagnostic for C-centered monoclinic (MCLC1 / C2/m) structures. Finds all IRBZ vertices by computing Voronoi + symmetry-plane intersections, and identifies any unlabeled vertices not covered by the standard Setyawan-Curtarolo tables.
 
@@ -274,7 +282,9 @@ pip install -r requirements.txt
 ---
 
 ## Note
-Doesn't work for triclinic system at the moment.
+Triclinic systems (space groups 1–2) have no altermagnetic splitting. The tool writes a plain seekpath k-path for these cases and exits.
+
+---
 
 ## Please cite
 Bibtex:
@@ -293,7 +303,4 @@ Bibtex:
   doi = {10.1103/v3fg-6smc},
   url = {https://link.aps.org/doi/10.1103/v3fg-6smc}
 }
-
 ```
-
-

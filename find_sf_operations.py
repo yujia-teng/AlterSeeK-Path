@@ -4,6 +4,8 @@ import spinspg
 from ase.io import read
 import sys
 import os
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
 # --- HELPER 1: Write FULL details for human reading ---
 def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info):
@@ -72,20 +74,34 @@ def run(structure_file, moments_str):
     try:
         if not os.path.exists(structure_file):
             raise FileNotFoundError
-        structure = read(structure_file)
-        print(f"Successfully loaded '{structure_file}' containing {len(structure)} atoms.")
+        is_mcif = structure_file.lower().endswith('.mcif')
+        if is_mcif:
+            from pymatgen.io.cif import CifParser
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                parser = CifParser(structure_file)
+                pmg_struct = parser.parse_structures(primitive=False)[0]
+            lattice   = np.array(pmg_struct.lattice.matrix)
+            positions = np.array([site.frac_coords for site in pmg_struct])
+            numbers   = np.array([site.specie.Z for site in pmg_struct])
+            num_atoms = len(pmg_struct)
+            structure = None   # not used for mcif path
+            print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
+        else:
+            structure = read(structure_file)
+            lattice   = structure.get_cell()
+            positions = structure.get_scaled_positions()
+            numbers   = structure.get_atomic_numbers()
+            num_atoms = len(structure)
+            pmg_struct = None
+            print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
     except FileNotFoundError:
         print(f"Error: File '{structure_file}' not found.")
         return False
     except Exception as e:
         print(f"Error reading file: {e}")
         return False
-
-    # Extract data
-    lattice = structure.get_cell()
-    positions = structure.get_scaled_positions()
-    numbers = structure.get_atomic_numbers()
-    num_atoms = len(structure)
 
     # --- PART 2: Non-Magnetic Space Group (SPG) ---
     print("\n" + "="*40)
@@ -104,29 +120,40 @@ def run(structure_file, moments_str):
 
     # --- PART 3: Magnetic Configuration ---
     print("\n" + "="*40)
-    print("3. Magnetic Configuration Input")
+    print("3. Magnetic Configuration")
     print("="*40)
-    print("Enter magnetic moments (space-separated, e.g., '1 -1'):")
-    print(f"Moments: {moments_str}")
 
-    try:
-        if not moments_str:
-            user_mags = []
-        else:
-            user_mags = [float(x) for x in moments_str.split()]
-    except ValueError:
-        print("Error: Invalid input. Please enter numbers.")
-        return False
+    is_mcif = structure_file.lower().endswith('.mcif')
+    magmoms = None
 
-    if len(user_mags) < num_atoms:
-        user_mags.extend([0.0] * (num_atoms - len(user_mags)))
-    elif len(user_mags) > num_atoms:
-        user_mags = user_mags[:num_atoms]
+    if is_mcif and pmg_struct is not None:
+        try:
+            magmoms = np.array([
+                np.array(site.properties['magmom'].moment)
+                if 'magmom' in site.properties else np.zeros(3)
+                for site in pmg_struct
+            ])
+            print(f"Read moments from mcif:\n{magmoms}")
+        except Exception as e:
+            print(f"[Warning] Could not read moments from mcif: {e}. Falling back to manual input.")
 
-    # Format as (N, 3) matrix
-    magmoms = np.zeros((num_atoms, 3))
-    for i, m in enumerate(user_mags):
-        magmoms[i] = [0, 0, m]
+    if magmoms is None:
+        print(f"Moments: {moments_str}")
+        try:
+            if not moments_str:
+                user_mags = []
+            else:
+                user_mags = [float(x) for x in moments_str.split()]
+        except ValueError:
+            print("Error: Invalid input. Please enter numbers.")
+            return False
+        if len(user_mags) < num_atoms:
+            user_mags.extend([0.0] * (num_atoms - len(user_mags)))
+        elif len(user_mags) > num_atoms:
+            user_mags = user_mags[:num_atoms]
+        magmoms = np.zeros((num_atoms, 3))
+        for i, m in enumerate(user_mags):
+            magmoms[i] = [0, 0, m]
 
     print(f"Using magnetic moments:\n{magmoms}")
 
@@ -155,7 +182,8 @@ def run(structure_file, moments_str):
 
     # Print info
     print(f"Spin-Only Group Type: {sog}")
-    print(f"Magnetic Space Group: {msg_label}")
+    if msg_label != "Not found (spglib too old?)":
+        print(f"Magnetic Space Group: {msg_label}")
     print(f"Total Symmetry Operations: {len(rotations)}")
 
     # --- PART 5: Output Files ---

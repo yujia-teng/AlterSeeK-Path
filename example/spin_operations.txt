@@ -152,3 +152,10 @@ Operation 12:
  [0. 1. 0.]
  [0. 0. 1.]]
 --------------------
+
+Symbolic IBZ centroid (fractional):
+  k1 = 5/18
+  k2 = 1/9
+  k3 = 1/4
+
+General k-point (IBZ centroid, fractional): [0.277778, 0.111111, 0.250000]

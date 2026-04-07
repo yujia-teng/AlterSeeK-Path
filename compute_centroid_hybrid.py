@@ -509,9 +509,11 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
 
 def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart):
     points_list = list(kpoints_cart.values())
-    ibz_faces = [[points_list[s] for s in simplex] for simplex in hull.simplices]
-    ax.add_collection3d(Poly3DCollection(
-        ibz_faces, facecolor='steelblue', alpha=0.15, edgecolor='none'))
+    # Draw IBZ faces (skip for triclinic where hull is None)
+    if hull is not None:
+        ibz_faces = [[points_list[s] for s in simplex] for simplex in hull.simplices]
+        ax.add_collection3d(Poly3DCollection(
+            ibz_faces, facecolor='steelblue', alpha=0.15, edgecolor='none'))
     for k1, k2 in kpath:
         if k1 in kpoints_cart and k2 in kpoints_cart:
             p1, p2 = kpoints_cart[k1], kpoints_cart[k2]
@@ -532,9 +534,10 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart):
                 display_labels.get(label, label),
                 fontsize=20, color='black',
                 zorder=111, ha='center', va='center')
-    ax.scatter(*centroid_cart, c='gold', marker='*', s=400,
-               edgecolors='k', zorder=112, label="Vol. Centroid")
-    ax.legend(loc='upper right')
+    if hull is not None:
+        ax.scatter(*centroid_cart, c='gold', marker='*', s=400,
+                   edgecolors='k', zorder=112, label="Vol. Centroid")
+        ax.legend(loc='upper right')
 
 
 def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
@@ -542,9 +545,10 @@ def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
     num_ops = len(unique_ops)
     for i, R in enumerate(unique_ops):
         mapped_pts = (R @ points_arr.T).T
-        ax.plot_trisurf(mapped_pts[:,0], mapped_pts[:,1], mapped_pts[:,2],
-                        triangles=hull.simplices, color=colormap(i/num_ops),
-                        edgecolor='none', alpha=0.2, shade=False)
+        if hull is not None:
+            ax.plot_trisurf(mapped_pts[:,0], mapped_pts[:,1], mapped_pts[:,2],
+                            triangles=hull.simplices, color=colormap(i/num_ops),
+                            edgecolor='none', alpha=0.2, shade=False)
         mc = R @ centroid_cart
         ax.scatter(mc[0], mc[1], mc[2], c='gold', marker='*', s=250,
                    edgecolors='k', zorder=200,
@@ -558,7 +562,7 @@ def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
 # ============================================================================
 # Main Pipeline
 # ============================================================================
-def run(filename, output_dir=None):
+def run(filename, output_dir=None, show_plot=True):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
@@ -623,67 +627,92 @@ def run(filename, output_dir=None):
         'MCLC3': 'MCLC5',
     }
     sc_display = _hpkot_to_sc.get(sc_type, sc_type)
-    print(f"Setyawan-Curtarolo type: {sc_display}")
 
     # ---- Get IRBZ k-points ----
-    # Monoclinic uses the HPKOT tables in lattice_kpoints.py.
-    kpoints_frac = get_kpoints(sc_type,
-                               conv_params['a'], conv_params.get('b'),
-                               conv_params.get('c'), conv_params.get('alpha'))
-    kpath = get_kpath(sc_type)
-    display_labels = get_display_labels(sc_type)
-    params = get_params(sc_type,
-                        conv_params['a'], conv_params.get('b'),
-                        conv_params.get('c'), conv_params.get('alpha'))
-    if params:
-        print(f"Parameters: {', '.join(f'{k}={v:.6f}' for k, v in params.items())}")
+    # For doubled IBZ variants (HEX2, CUB2, etc.), use the base type for
+    # centroid computation — the band path uses the standard IBZ shape,
+    # so the general k-point should be its centroid, not the doubled one.
+    _centroid_base = {
+        'HEX2': 'HEX', 'CUB2': 'CUB', 'FCC2': 'FCC', 'BCC2': 'BCC', 'TET2': 'TET'
+    }
+    centroid_type = _centroid_base.get(sc_type, sc_type)
+    if centroid_type != sc_type:
+        print(f"[Note] Using base IBZ type '{centroid_type}' for centroid (band path uses standard IBZ)")
 
-    print(f"\nHigh-symmetry k-points ({len(kpoints_frac)}):")
-    for label, coords in kpoints_frac.items():
-        print(f"  {label:8s}: [{coords[0]:8.4f}, {coords[1]:8.4f}, {coords[2]:8.4f}]")
+    if sg in (1, 2):
+        # Triclinic: use seekpath k-points directly
+        # (lattice_kpoints.py TRI types have convention issues)
+        print("[Note] Triclinic — using seekpath k-points for visualization")
+        sp_coords = sp_result['point_coords']
+        kpoints_frac = {k: list(v) for k, v in sp_coords.items()}
+        kpath = list(sp_result['path'])
+        display_labels = {k: ('Γ' if k == 'GAMMA' else k) for k in sp_coords}
+        sc_display = sp_result['bravais_lattice_extended']
+        kpoints_cart = {k: v[0]*b1 + v[1]*b2 + v[2]*b3
+                        for k, v in sp_coords.items()}
+        kpoints_frac_centroid = kpoints_frac
+        kpoints_cart_centroid = dict(kpoints_cart)
+    else:
+        # Full IBZ k-points for plotting (sc_type, may include extra vertices)
+        kpoints_frac = get_kpoints(sc_type,
+                                   conv_params['a'], conv_params.get('b'),
+                                   conv_params.get('c'), conv_params.get('alpha'))
+        kpath = get_kpath(sc_type)
+        display_labels = get_display_labels(sc_type)
+        params = get_params(sc_type,
+                            conv_params['a'], conv_params.get('b'),
+                            conv_params.get('c'), conv_params.get('alpha'))
+        if params:
+            print(f"Parameters: {', '.join(f'{k}={v:.6f}' for k, v in params.items())}")
 
-    kpoints_cart = {k: v[0]*b1 + v[1]*b2 + v[2]*b3 for k, v in kpoints_frac.items()}
+        kpoints_cart = {k: v[0]*b1 + v[1]*b2 + v[2]*b3 for k, v in kpoints_frac.items()}
+
+        # Base IBZ k-points for centroid (centroid_type)
+        kpoints_frac_centroid = get_kpoints(centroid_type,
+                                   conv_params['a'], conv_params.get('b'),
+                                   conv_params.get('c'), conv_params.get('alpha'))
+        kpoints_cart_centroid = {k: v[0]*b1 + v[1]*b2 + v[2]*b3
+                                 for k, v in kpoints_frac_centroid.items()}
 
     # ---- Symmetry operations ----
     sym_ops_cart, unique_ops = get_symmetry_operations(b_matrix, dataset)
     print(f"\nSymmetry operations: {len(sym_ops_cart)}")
     print(f"With time-reversal: {len(unique_ops)}")
 
-    # ---- Convex Hull & Centroid ----
-    labels_list = list(kpoints_cart.keys())
-    points_arr = np.array([kpoints_cart[k] for k in labels_list])
-    hull = ConvexHull(points_arr)
-    centroid_cart, ibz_vol = calculate_volume_centroid(hull)
-    centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+    # ---- Convex Hull & Centroid (using base IBZ) ----
+    labels_list = list(kpoints_cart_centroid.keys())
+    points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
 
-    print(f"\n{'='*50}")
-    print("NUMERICAL VOLUME CENTROID")
-    print(f"{'='*50}")
-    print(f"Cartesian:  [{centroid_cart[0]:.6f}, {centroid_cart[1]:.6f}, {centroid_cart[2]:.6f}]")
-    print(f"Fractional: [{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
-    print(f"IBZ Volume: {ibz_vol:.6e}")
+    if sg in (1, 2):
+        # Triclinic: IBZ boundary is hard to define on Wigner-Seitz BZ.
+        # Skip hull/centroid — not needed (no altermagnetic splitting).
+        hull = None
+        centroid_cart = np.mean(points_arr, axis=0)
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        ibz_vol = 0.0
+        print(f"\n[Note] Triclinic: IBZ shading skipped (IBZ = {'full BZ' if sg == 1 else 'half BZ'})")
+        print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
+    else:
+        hull = ConvexHull(points_arr)
+        centroid_cart, ibz_vol = calculate_volume_centroid(hull)
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
 
-    # ---- Symbolic Centroid ----
-    print(f"\n{'='*50}")
-    print("SYMBOLIC VOLUME CENTROID")
-    print(f"{'='*50}")
-    try:
-        sym_centroid, param_syms = compute_symbolic_centroid(
-            kpoints_frac, hull, labels_list, sc_type, conv_params)
-        if sym_centroid is not None:
-            for i, ax_name in enumerate(['k1', 'k2', 'k3']):
-                print(f"  {ax_name} = {sym_centroid[i]}")
-            if param_syms:
-                subs = [(param_syms[k], params[k]) for k in param_syms if k in params]
-                verify = [float(sym_centroid[i].subs(subs)) for i in range(3)]
-            else:
-                verify = [float(sym_centroid[i]) for i in range(3)]
-            print(f"\nVerification:")
-            print(f"  Symbolic:   [{verify[0]:.6f}, {verify[1]:.6f}, {verify[2]:.6f}]")
-            print(f"  Numerical:  [{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
-    except Exception as e:
-        print(f"  Symbolic computation failed: {e}")
-    print(f"{'='*50}")
+        # ---- Symbolic Centroid (saved to file, not printed) ----
+        try:
+            sym_centroid, param_syms = compute_symbolic_centroid(
+                kpoints_frac_centroid, hull, labels_list, centroid_type, conv_params)
+            if sym_centroid is not None:
+                sym_lines = "\n".join(
+                    f"  {ax_name} = {sym_centroid[i]}"
+                    for i, ax_name in enumerate(['k1', 'k2', 'k3'])
+                )
+                try:
+                    with open("spin_operations.txt", "a") as f:
+                        f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ---- Plotting ----
     bz_loops = get_bz_loops(b_matrix)
@@ -691,47 +720,61 @@ def run(filename, output_dir=None):
     bz_center = np.mean(all_bz_pts, axis=0)
     bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
-    # ---- Interactive plots (all-solid BZ edges, rotate freely) ----
-    fig1, ax1 = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
-                            bz_loops, b_matrix, bz_center, bz_span)
-    plot_ibz(ax1, kpoints_cart, kpath, display_labels, hull, centroid_cart)
-    plt.tight_layout()
+    # For plotting: use base type k-points, kpath and display labels
+    # (hull was computed from centroid type, so faces must use same point set)
+    if sg in (1, 2):
+        kpath_plot = kpath
+        display_labels_plot = display_labels
+    else:
+        kpath_plot = get_kpath(centroid_type)
+        display_labels_plot = get_display_labels(centroid_type)
 
-    fig2, ax2 = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
-                            bz_loops, b_matrix, bz_center, bz_span)
-    plot_mapped_bz(ax2, points_arr, hull, centroid_cart, unique_ops)
-    plt.tight_layout()
+    # ---- Plotting ----
+    fig1_title = (f"BZ: {basename} ({sc_display})" if sg in (1, 2)
+                  else f"IBZ + BZ: {basename} ({sc_display})")
 
-    plt.show()
+    if show_plot:
+        # Interactive mode (standalone use): let user rotate, then re-render at chosen angle
+        fig1, ax1 = setup_3d_ax(fig1_title,
+                                bz_loops, b_matrix, bz_center, bz_span)
+        plot_ibz(ax1, kpoints_cart_centroid, kpath_plot, display_labels_plot, hull, centroid_cart)
+        plt.tight_layout()
+        if sg not in (1, 2):
+            fig2, ax2 = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
+                                    bz_loops, b_matrix, bz_center, bz_span)
+            plot_mapped_bz(ax2, points_arr, hull, centroid_cart, unique_ops)
+            plt.tight_layout()
+        plt.show()
+        elev1, azim1 = ax1.elev, ax1.azim
+        if sg not in (1, 2):
+            elev2, azim2 = ax2.elev, ax2.azim
+    else:
+        # Automated mode (called from generate_kpath): use default angles, no window
+        elev1, azim1 = 25, -55
+        if sg not in (1, 2):
+            elev2, azim2 = 25, -55
 
-    # ---- Capture view angles & re-render with dashed back-edges ----
-    elev1, azim1 = ax1.elev, ax1.azim
-    elev2, azim2 = ax2.elev, ax2.azim
-    print(f"\nCaptured view angles:")
-    print(f"  Fig1 (IBZ):    elev={elev1:.1f}, azim={azim1:.1f}")
-    print(f"  Fig2 (Mapped): elev={elev2:.1f}, azim={azim2:.1f}")
-
-    # Re-render Fig1 with dashed back-edges
-    fig1s, ax1s = setup_3d_ax(f"IBZ + BZ: {basename} ({sc_display})",
+    # Render with dashed back-edges and save
+    fig1s, ax1s = setup_3d_ax(fig1_title,
                               bz_loops, b_matrix, bz_center, bz_span,
                               elev=elev1, azim=azim1, dashed_back=True)
-    plot_ibz(ax1s, kpoints_cart, kpath, display_labels, hull, centroid_cart)
+    plot_ibz(ax1s, kpoints_cart_centroid, kpath_plot, display_labels_plot, hull, centroid_cart)
     plt.tight_layout()
     fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_type}.png')
-#    plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
+    plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
     print(f"Saved: {fig1_path}")
     plt.close(fig1s)
 
-    # Re-render Fig2 with dashed back-edges
-    fig2s, ax2s = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
-                              bz_loops, b_matrix, bz_center, bz_span,
-                              elev=elev2, azim=azim2, dashed_back=True)
-    plot_mapped_bz(ax2s, points_arr, hull, centroid_cart, unique_ops)
-    plt.tight_layout()
-    fig2_path = os.path.join(output_dir, f'{basename}_mapped_{sc_type}.png')
-#    plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
-    print(f"Saved: {fig2_path}")
-    plt.close(fig2s)
+    if sg not in (1, 2):
+        fig2s, ax2s = setup_3d_ax(f"Mapped BZ: {basename} — {len(unique_ops)} ops",
+                                  bz_loops, b_matrix, bz_center, bz_span,
+                                  elev=elev2, azim=azim2, dashed_back=True)
+        plot_mapped_bz(ax2s, points_arr, hull, centroid_cart, unique_ops)
+        plt.tight_layout()
+        fig2_path = os.path.join(output_dir, f'{basename}_mapped_{sc_type}.png')
+        plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
+        print(f"Saved: {fig2_path}")
+        plt.close(fig2s)
 
     return {
         'sc_type': sc_type,
@@ -744,6 +787,8 @@ def run(filename, output_dir=None):
         'centroid_frac': centroid_frac,
         'ibz_volume': ibz_vol,
         'n_symmetry_ops': len(unique_ops),
+        'sp_path': sp_result['path'],
+        'sp_point_coords': sp_result['point_coords'],
     }
 
 
