@@ -9,3 +9,7 @@ __pycache__/
 # OS
 .DS_Store
 .claude/
+CODEX_MEMORY.md
+spin_operations.txt
+flip_spin_operations.txt
+preserve_spin_operations.txt

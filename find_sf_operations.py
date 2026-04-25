@@ -7,8 +7,30 @@ import os
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
+
+def _laue_group_from_point_group(point_group):
+    pg = str(point_group).strip().replace(' ', '')
+    pg = pg.replace('−', '-').replace('bar', '-')
+    mapping = {
+        '1': '-1', '-1': '-1',
+        '2': '2/m', 'm': '2/m', '2/m': '2/m',
+        '222': 'mmm', 'mm2': 'mmm', 'mmm': 'mmm',
+        '4': '4/m', '-4': '4/m', '4/m': '4/m',
+        '422': '4/mmm', '4mm': '4/mmm', '-42m': '4/mmm',
+        '-4m2': '4/mmm', '4/mmm': '4/mmm',
+        '3': '-3', '-3': '-3',
+        '32': '-3m', '3m': '-3m', '-3m': '-3m',
+        '6': '6/m', '-6': '6/m', '6/m': '6/m',
+        '622': '6/mmm', '6mm': '6/mmm', '-6m2': '6/mmm',
+        '-62m': '6/mmm', '6/mmm': '6/mmm',
+        '23': 'm-3', 'm-3': 'm-3',
+        '432': 'm-3m', '-43m': 'm-3m', 'm-3m': 'm-3m',
+    }
+    return mapping.get(pg)
+
+
 # --- HELPER 1: Write FULL details for human reading ---
-def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info):
+def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info, verbose=True):
     """Writes all spin symmetry operations to a text file."""
     with open(filename, 'w') as f:
         f.write("="*40 + "\n")
@@ -23,26 +45,34 @@ def write_operations_to_file(filename, rotations, translations, spin_rotations, 
             f.write(f"  Translation:\n{translations[i]}\n")
             f.write(f"  Spin Rotation:\n{spin_rotations[i]}\n")
             f.write("-" * 20 + "\n")
-    print(f"[INFO] All operations written to '{filename}'")
+    if verbose:
+        print(f"[INFO] All operations written to '{filename}'")
 
 # --- HELPER 2: Write ONLY Flip Operations for automation ---
-def write_flip_ops_to_file(filename, rotations, spin_rotations):
+def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
     """
     Filters operations where Spin Rotation is a flip (det approx -1).
-    Writes ONLY the spatial rotation matrices for the K-path generator.
+    For each spin-flip spatial operation R, also include the inversion-extended
+    partner -R, then deduplicate. Translations do not affect reciprocal-space
+    k-point mapping.
     """
     flip_ops = []
     flip_indices = []
 
     for i, s_rot in enumerate(spin_rotations):
-        # Check if determinant is approx -1 (Spin Flip)
-        if np.isclose(np.linalg.det(s_rot), -1):
-            flip_ops.append(rotations[i])
-            flip_indices.append(i + 1)
+        if not np.isclose(np.linalg.det(s_rot), -1):
+            continue
+
+        for rot in (np.array(rotations[i], dtype=int),
+                    -np.array(rotations[i], dtype=int)):
+            if not any(np.array_equal(rot, ex) for ex in flip_ops):
+                flip_ops.append(rot)
+                flip_indices.append(i + 1)
 
     if not flip_ops:
-        print("\n[WARNING] No spin-flipping operations found! File not created.")
-        return
+        if verbose:
+            print("\n[WARNING] No spin-flipping operations found! File not created.")
+        return 0
 
     with open(filename, 'w') as f:
         f.write(f"# Found {len(flip_ops)} spin-flipping operations\n")
@@ -54,22 +84,54 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations):
                 f.write(f"{row[0]} {row[1]} {row[2]}\n")
             f.write("\n")
 
-    print(f"[INFO] {len(flip_ops)} spin-flipping matrices written to '{filename}'")
+    if verbose:
+        print(f"[INFO] {len(flip_ops)} spin-flipping matrices written to '{filename}'")
+    return len(flip_ops)
 
+
+def write_preserve_ops_to_file(filename, rotations, spin_rotations, verbose=True):
+    """Write deduplicated spatial rotations with det(spin_rotation) != -1."""
+    preserve_ops = []
+    preserve_indices = []
+
+    for i, s_rot in enumerate(spin_rotations):
+        if np.isclose(np.linalg.det(s_rot), -1):
+            continue
+        rot = np.array(rotations[i], dtype=int)
+        if not any(np.array_equal(rot, ex) for ex in preserve_ops):
+            preserve_ops.append(rot)
+            preserve_indices.append(i + 1)
+
+    if not preserve_ops:
+        return 0
+
+    with open(filename, 'w') as f:
+        f.write(f"# Found {len(preserve_ops)} spin-preserving operations\n")
+        f.write(f"# Original Indices: {preserve_indices}\n")
+        for i, rot in enumerate(preserve_ops):
+            f.write(f"Operation_{i+1}\n")
+            for row in rot:
+                f.write(f"{row[0]} {row[1]} {row[2]}\n")
+            f.write("\n")
+
+    if verbose:
+        print(f"[INFO] {len(preserve_ops)} spin-preserving matrices written to '{filename}'")
+    return len(preserve_ops)
 
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
-def run(structure_file, moments_str):
+def run(structure_file, moments_str, verbose=True):
     """
     Run spin-flip operations analysis.
     Called by auto-generate-general-kpath.py or used standalone.
     Returns True on success, False on failure.
     """
     # 1. Structure Loading
-    print("="*40)
-    print("1. Structure Loading")
-    print("="*40)
+    if verbose:
+        print("="*40)
+        print("1. Structure Loading")
+        print("="*40)
 
     try:
         if not os.path.exists(structure_file):
@@ -87,7 +149,8 @@ def run(structure_file, moments_str):
             numbers   = np.array([site.specie.Z for site in pmg_struct])
             num_atoms = len(pmg_struct)
             structure = None   # not used for mcif path
-            print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
+            if verbose:
+                print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
         else:
             structure = read(structure_file)
             lattice   = structure.get_cell()
@@ -95,7 +158,8 @@ def run(structure_file, moments_str):
             numbers   = structure.get_atomic_numbers()
             num_atoms = len(structure)
             pmg_struct = None
-            print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
+            if verbose:
+                print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
     except FileNotFoundError:
         print(f"Error: File '{structure_file}' not found.")
         return False
@@ -104,24 +168,32 @@ def run(structure_file, moments_str):
         return False
 
     # --- PART 2: Non-Magnetic Space Group (SPG) ---
-    print("\n" + "="*40)
-    print("2. Non-Magnetic Space Group Analysis")
-    print("="*40)
+    if verbose:
+        print("\n" + "="*40)
+        print("2. Non-Magnetic Space Group Analysis")
+        print("="*40)
 
     cell = (lattice, positions, numbers)
     dataset = spglib.get_symmetry_dataset(cell)
 
     non_mag_label = "Unknown"
+    point_group = "Unknown"
+    laue_group = "Unknown"
     if dataset:
         non_mag_label = f"{dataset.international} ({dataset.number})"
-        print(f"Space Group: {non_mag_label}")
+        point_group = dataset.pointgroup
+        laue_group = _laue_group_from_point_group(point_group) or "Unknown"
+        if verbose:
+            print(f"Space Group: {non_mag_label}")
     else:
-        print("Non-magnetic symmetry detection failed.")
+        if verbose:
+            print("Non-magnetic symmetry detection failed.")
 
     # --- PART 3: Magnetic Configuration ---
-    print("\n" + "="*40)
-    print("3. Magnetic Configuration")
-    print("="*40)
+    if verbose:
+        print("\n" + "="*40)
+        print("3. Magnetic Configuration")
+        print("="*40)
 
     is_mcif = structure_file.lower().endswith('.mcif')
     magmoms = None
@@ -133,12 +205,15 @@ def run(structure_file, moments_str):
                 if 'magmom' in site.properties else np.zeros(3)
                 for site in pmg_struct
             ])
-            print(f"Read moments from mcif:\n{magmoms}")
+            if verbose:
+                print(f"Read moments from mcif:\n{magmoms}")
         except Exception as e:
-            print(f"[Warning] Could not read moments from mcif: {e}. Falling back to manual input.")
+            if verbose:
+                print(f"[Warning] Could not read moments from mcif: {e}. Falling back to manual input.")
 
     if magmoms is None:
-        print(f"Moments: {moments_str}")
+        if verbose:
+            print(f"Moments: {moments_str}")
         try:
             if not moments_str:
                 user_mags = []
@@ -155,41 +230,72 @@ def run(structure_file, moments_str):
         for i, m in enumerate(user_mags):
             magmoms[i] = [0, 0, m]
 
-    print(f"Using magnetic moments:\n{magmoms}")
+    if verbose:
+        print(f"Using magnetic moments:\n{magmoms}")
+
+    # Run spglib for Magnetic Space Group Label (if available).
+    # spglib's magnetic API expects magnetic moments as the 4th item of the
+    # cell tuple: (lattice, positions, numbers, magmoms).
+    msg_label = "Not found"
+    try:
+        mag_cell = (lattice, positions, numbers, magmoms)
+        mag_dataset = spglib.get_magnetic_symmetry_dataset(
+            mag_cell, symprec=1e-5
+        )
+        if mag_dataset:
+            uni_number = getattr(mag_dataset, 'uni_number', None)
+            msg_type = getattr(mag_dataset, 'msg_type', None)
+            if uni_number is None and hasattr(mag_dataset, 'get'):
+                uni_number = mag_dataset.get('uni_number')
+                msg_type = mag_dataset.get('msg_type')
+
+            if uni_number is not None:
+                msg_type_info = spglib.get_magnetic_spacegroup_type(int(uni_number))
+                if msg_type_info:
+                    bns_number = getattr(msg_type_info, 'bns_number', None)
+                    og_number = getattr(msg_type_info, 'og_number', None)
+                    litvin_number = getattr(msg_type_info, 'litvin_number', None)
+                    msg_number = getattr(msg_type_info, 'number', None)
+                    if bns_number is None and hasattr(msg_type_info, 'get'):
+                        bns_number = msg_type_info.get('bns_number')
+                        og_number = msg_type_info.get('og_number')
+                        litvin_number = msg_type_info.get('litvin_number')
+                        msg_number = msg_type_info.get('number')
+
+                    msg_label = (
+                        f"BNS {bns_number}, OG {og_number} "
+                        f"(UNI {uni_number}, Litvin {litvin_number}, "
+                        f"parent SG {msg_number}, type {msg_type})"
+                    )
+                else:
+                    msg_label = f"UNI {uni_number} (type {msg_type})"
+    except Exception as e:
+        msg_label = f"Not found ({e})"
+
+    if verbose:
+        print(f"Magnetic Space Group: {msg_label}")
 
     # --- PART 4: Spin Space Group (SpinSPG) ---
-    print("\n" + "="*40)
-    print("4. Spin Space Group Analysis")
-    print("="*40)
+    if verbose:
+        print("\n" + "="*40)
+        print("4. Spin Space Group Analysis")
+        print("="*40)
 
     # Run spinspg
     sog, rotations, translations, spin_rotations = spinspg.get_spin_symmetry(
         lattice, positions, numbers, magmoms, symprec=1e-5
     )
 
-    # Run spglib for Magnetic Space Group Label (if available)
-    msg_label = "Not found (spglib too old?)"
-    try:
-        mag_dataset = spglib.get_magnetic_symmetry_dataset(
-            (lattice, positions, numbers), magmoms=user_mags, symprec=1e-5
-        )
-        if mag_dataset and 'uni_symbol' in mag_dataset:
-             msg_label = f"{mag_dataset['uni_symbol']} (MSG No. {mag_dataset['uni_number']})"
-        elif mag_dataset and 'international' in mag_dataset:
-             msg_label = mag_dataset['international']
-    except Exception:
-        pass
-
     # Print info
-    print(f"Spin-Only Group Type: {sog}")
-    if msg_label != "Not found (spglib too old?)":
-        print(f"Magnetic Space Group: {msg_label}")
-    print(f"Total Symmetry Operations: {len(rotations)}")
+    if verbose:
+        print(f"Spin-Only Group Type: {sog}")
+        print(f"Total Symmetry Operations: {len(rotations)}")
 
     # --- PART 5: Output Files ---
-    print("\n" + "="*40)
-    print("5. Saving Results")
-    print("="*40)
+    if verbose:
+        print("\n" + "="*40)
+        print("5. Saving Results")
+        print("="*40)
 
     # Prepare label info for text file
     label_info_str = f"""Non-Magnetic Label: {non_mag_label}
@@ -197,11 +303,29 @@ Spin-Only Group Type: {sog}
 Magnetic Space Group Label: {msg_label}"""
 
     # 1. Write the full readable log with LABELS
-    write_operations_to_file("spin_operations.txt", rotations, translations, spin_rotations, label_info_str)
+    write_operations_to_file("spin_operations.txt", rotations, translations, spin_rotations, label_info_str, verbose=verbose)
 
     # 2. Write the automation file
-    write_flip_ops_to_file("flip_spin_operations.txt", rotations, spin_rotations)
-    return True
+    flip_count = write_flip_ops_to_file("flip_spin_operations.txt", rotations, spin_rotations, verbose=verbose)
+    preserve_count = write_preserve_ops_to_file("preserve_spin_operations.txt", rotations, spin_rotations, verbose=verbose)
+    return {
+        'structure_file': structure_file,
+        'num_atoms': num_atoms,
+        'moments': magmoms,
+        'space_group': non_mag_label,
+        'point_group': point_group,
+        'laue_group': laue_group,
+        'magnetic_space_group': msg_label,
+        'spin_group': str(sog),
+        'total_operations': len(rotations),
+        'spin_flip_operations': flip_count,
+        'spin_preserve_operations': preserve_count,
+        'saved_files': [
+            'spin_operations.txt',
+            'flip_spin_operations.txt',
+            'preserve_spin_operations.txt',
+        ],
+    }
 
 
 # ==========================================

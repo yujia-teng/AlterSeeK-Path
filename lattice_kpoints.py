@@ -61,37 +61,31 @@ def get_bravais_type(spacegroup_number, conv_a, conv_b, conv_c,
     if 177 <= sg <= 194:
         return 'HEX'
     
-    # --- Hexagonal 6/m (SG 168-176) —doubled IBZ ---
+    # --- Hexagonal 6/m (SG 168-176) ?doubled IBZ ---
     if 168 <= sg <= 176:
         return 'HEX2'
 
-    # --- Trigonal -3m (SG 149-167) ---
+    # --- Trigonal -3m / 3m / 32 (SG 149-167) ---
+    # Laue group = -3m (D-d, 12 ops); holohedry 6/mmm = 24 ops ? IBZ doubled
     if 149 <= sg <= 167:
         if centering == 'R':
-            # Rhombohedral: need primitive cell angle
-            # Convention: use alpha of the rhombohedral primitive cell
-            # RHL1: alpha < 90, RHL2: alpha > 90
-            # Note: conv_alpha here should be the rhombohedral angle
             if conv_alpha < 90.0:
                 return 'RHL1'
             else:
                 return 'RHL2'
         else:
-            return 'HEX'
-    
-    # --- Trigonal -3 (SG 143-148) ---
+            return 'HEX2'
+
+    # --- Trigonal -3 / 3 (SG 143-148) ---
+    # Laue group = -3 (S-, 6 ops); holohedry 6/mmm = 24 ops ? IBZ quadrupled
     if 143 <= sg <= 148:
         if centering == 'R':
-            # Rhombohedral: need primitive cell angle
-            # Convention: use alpha of the rhombohedral primitive cell
-            # RHL1: alpha < 90, RHL2: alpha > 90
-            # Note: conv_alpha here should be the rhombohedral angle
             if conv_alpha < 90.0:
-                return 'RHL1'
+                return 'RHL1_2'
             else:
-                return 'RHL2'
+                return 'RHL2_2'
         else:
-            return 'HEX'
+            return 'HEX4'
 
     # --- Tetragonal 4/mmm (SG 89-142) ---
     if 89 <= sg <= 142:
@@ -103,7 +97,7 @@ def get_bravais_type(spacegroup_number, conv_a, conv_b, conv_c,
         else:
             return 'TET'
 
-    # --- Tetragonal 4/m (SG 75-88) —doubled IBZ ---
+    # --- Tetragonal 4/m (SG 75-88) ?doubled IBZ ---
     if 75 <= sg <= 88:
         if centering == 'I':
             if conv_c < conv_a:
@@ -425,6 +419,101 @@ LATTICE_DATA['BCT2'] = {
 }
 
 # -------------------------------------------------------
+# BCT1_2 - Body-Centered Tetragonal 1, doubled IBZ for C4h/S4/C4 (SG 75-88, c < a)
+# D4h has ?_d(110) which maps (kx,ky,kz)?(ky,kx,kz); C4h lacks this mirror.
+# The doubled IBZ is BCT1 ? ?_d(BCT1).  New vertices (?_d images of non-invariant pts):
+#   M  = [-1/2, 1/2, 1/2] ? M' = [1/2, -1/2, 1/2]
+#   N  = [0, 1/2, 0]      ? N' = [1/2, 0, 0]
+#   Z1 = [-?,1-?,?]       ? Z1'= [1-?,-?,?]
+# -------------------------------------------------------
+def _bct1_2_params(a, b=None, c=None, alpha=None):
+    eta = (1 + c**2 / a**2) / 4
+    return {'eta': eta}
+
+
+def _bct1_2_kpoints(p):
+    eta = p['eta']
+    return {
+        'Γ':   [0, 0, 0],
+        'M':   [-1/2, 1/2, 1/2],
+        'M_p': [1/2, -1/2, 1/2],
+        'N':   [0, 1/2, 0],
+        'N_p': [1/2, 0, 0],
+        'P':   [1/4, 1/4, 1/4],
+        'X':   [0, 0, 1/2],
+        'Z':   [eta, eta, -eta],
+        'Z1':  [-eta, 1 - eta, eta],
+        'Z1_p':[1 - eta, -eta, eta],
+    }
+
+
+LATTICE_DATA['BCT1_2'] = {
+    'params_func': _bct1_2_params,
+    'kpoints_func': _bct1_2_kpoints,
+    'kpath': [
+        ('Γ', 'X'), ('X', 'M'), ('M', 'Γ'), ('Γ', 'Z'),
+        ('Z', 'P'), ('P', 'N'), ('N', 'Z1'), ('Z1', 'M'), ('X', 'P'),
+        ('M_p', 'Γ'), ('P', 'N_p'), ('N_p', 'Z1_p'), ('Z1_p', 'M_p'),
+    ],
+    'display_labels': {
+        'Γ': r'$\Gamma$', 'M': 'M', 'M_p': r"$M'$",
+        'N': 'N', 'N_p': r"$N'$", 'P': 'P',
+        'X': 'X', 'Z': 'Z', 'Z1': r'$Z_1$', 'Z1_p': r"$Z_1'$",
+    },
+}
+
+# -------------------------------------------------------
+# BCT2_2 - Body-Centered Tetragonal 2, doubled IBZ for C4h/S4/C4 (SG 75-88, c > a)
+# New vertices (?_d images of non-invariant pts):
+#   N  = [0, 1/2, 0]        ? N'  = [1/2, 0, 0]
+#   ?  = [-?, ?, ?]         ? ?'  = [?, -?, ?]
+#   ?1 = [?, 1-?, -?]       ? ?1' = [1-?, ?, -?]
+#   Y  = [-?, ?, 1/2]       ? Y'  = [?, -?, 1/2]
+# -------------------------------------------------------
+def _bct2_2_params(a, b=None, c=None, alpha=None):
+    eta = (1 + a**2 / c**2) / 4
+    zeta = a**2 / (2 * c**2)
+    return {'eta': eta, 'zeta': zeta}
+
+
+def _bct2_2_kpoints(p):
+    eta, zeta = p['eta'], p['zeta']
+    return {
+        'Γ':    [0, 0, 0],
+        'N':    [0, 1/2, 0],
+        'N_p':  [1/2, 0, 0],
+        'P':    [1/4, 1/4, 1/4],
+        'Σ':    [-eta, eta, eta],
+        'Σ_p':  [eta, -eta, eta],
+        'Σ1':   [eta, 1 - eta, -eta],
+        'Σ1_p': [1 - eta, eta, -eta],
+        'X':    [0, 0, 1/2],
+        'Y':    [-zeta, zeta, 1/2],
+        'Y_p':  [zeta, -zeta, 1/2],
+        'Y1':   [1/2, 1/2, -zeta],
+        'Z':    [1/2, 1/2, -1/2],
+    }
+
+
+LATTICE_DATA['BCT2_2'] = {
+    'params_func': _bct2_2_params,
+    'kpoints_func': _bct2_2_kpoints,
+    'kpath': [
+        ('Γ', 'X'), ('X', 'Y'), ('Y', 'Σ'), ('Σ', 'Γ'),
+        ('Γ', 'Z'), ('Z', 'Σ1'), ('Σ1', 'N'), ('N', 'P'),
+        ('P', 'Y1'), ('Y1', 'Z'), ('X', 'P'),
+        ('X', 'Y_p'), ('Y_p', 'Σ_p'), ('Σ_p', 'Γ'),
+        ('Z', 'Σ1_p'), ('Σ1_p', 'N_p'), ('N_p', 'P'),
+    ],
+    'display_labels': {
+        'Γ': r'$\Gamma$', 'N': 'N', 'N_p': r"$N'$", 'P': 'P',
+        'Σ': r'$\Sigma$', 'Σ_p': r"$\Sigma'$",
+        'Σ1': r'$\Sigma_1$', 'Σ1_p': r"$\Sigma_1'$",
+        'X': 'X', 'Y': 'Y', 'Y_p': r"$Y'$", 'Y1': r'$Y_1$', 'Z': 'Z',
+    },
+}
+
+# -------------------------------------------------------
 # ORC - Simple Orthorhombic (Table 8)
 # Convention: a < b < c
 # -------------------------------------------------------
@@ -603,11 +692,11 @@ LATTICE_DATA['ORCI'] = {
 # -------------------------------------------------------
 # ORCC1 - C-Centered Orthorhombic, a < b (HPKOT Table 82, oC)
 # Q^{-1} = [[1,1,0],[-1,1,0],[0,0,1]]
-# ζ = (1/4)(1 + a²/b²)  [a < b]
-# Path: Γ-Y-C0 | Σ0-Γ-Z-A0 | E0-T-Y | Γ-S-R-Z-T
+# ? = (1/4)(1 + a2/b2)  [a < b]
+# Path: ?-Y-C0 | ?0-?-Z-A0 | E0-T-Y | ?-S-R-Z-T
 # -------------------------------------------------------
 def _orcc1_params(a, b, c=None, alpha=None):
-    # a < b convention; ζ = (1 + a²/b²)/4
+    # a < b convention; ? = (1 + a2/b2)/4
     zeta = (1 + a**2 / b**2) / 4
     return {'zeta': zeta}
 
@@ -647,11 +736,11 @@ LATTICE_DATA['ORCC1'] = {
 # -------------------------------------------------------
 # ORCC2 - C-Centered Orthorhombic, a > b (HPKOT Table 83, oC)
 # Q^{-1} = [[1,1,0],[-1,1,0],[0,0,1]]
-# ζ = (1/4)(1 + b²/a²)  [a > b]
-# Path: Γ-Y-F0 | Δ0-Γ-Z-B0 | G0-T-Y | Γ-S-R-Z-T
+# ? = (1/4)(1 + b2/a2)  [a > b]
+# Path: ?-Y-F0 | ?0-?-Z-B0 | G0-T-Y | ?-S-R-Z-T
 # -------------------------------------------------------
 def _orcc2_params(a, b, c=None, alpha=None):
-    # a > b convention; ζ = (1 + b²/a²)/4
+    # a > b convention; ? = (1 + b2/a2)/4
     zeta = (1 + b**2 / a**2) / 4
     return {'zeta': zeta}
 
@@ -716,7 +805,7 @@ LATTICE_DATA['HEX'] = {
 
 # -------------------------------------------------------
 # HEX2 - Hexagonal with doubled IBZ (6/m, -6, 6 point groups)
-# For SG 168-176: the IBZ is a 60° sector (double the 30° HEX wedge)
+# For SG 168-176: the IBZ is a 60? sector (double the 30? HEX wedge)
 # 8 vertices forming a quadrilateral prism
 # -------------------------------------------------------
 LATTICE_DATA['HEX2'] = {
@@ -744,7 +833,82 @@ LATTICE_DATA['HEX2'] = {
 }
 
 # -------------------------------------------------------
-# RHL1 - Rhombohedral 1, alpha < 90° (Table 14)
+# HEX2_ALT - Hexagonal doubled-IBZ in the alternate trigonal setting
+# For trigonal P settings like P312 / P31m / P-31m, the same 60° volume
+# is rotated so the sector is bounded by Γ-K and Γ-K2 instead of Γ-M and Γ-MA.
+# -------------------------------------------------------
+LATTICE_DATA['HEX2_ALT'] = {
+    'kpoints': {
+        'Γ': [0, 0, 0],
+        'A': [0, 0, 1/2],
+        'K': [1/3, 1/3, 0],
+        'H': [1/3, 1/3, 1/2],
+        'MA': [0, 1/2, 0],
+        'LA': [0, 1/2, 1/2],
+        'K2': [-1/3, 2/3, 0],
+        'H2': [-1/3, 2/3, 1/2],
+    },
+    'kpath': [
+        ('Γ', 'K'), ('K', 'MA'), ('MA', 'K2'), ('K2', 'Γ'),
+        ('Γ', 'A'),
+        ('A', 'H'), ('H', 'LA'), ('LA', 'H2'), ('H2', 'A'),
+        ('H', 'K'), ('LA', 'MA'), ('H2', 'K2'),
+    ],
+    'display_labels': {
+        'Γ': r'$\Gamma$', 'A': 'A',
+        'K': 'K', 'H': 'H',
+        'MA': r'$M_A$', 'LA': r'$L_A$',
+        'K2': r'$K_2$', 'H2': r'$H_2$',
+    },
+}
+
+# -------------------------------------------------------
+# HEX4 - Hexagonal with quadrupled IBZ (trigonal 3, -3 point groups on P lattice)
+# For SG 143-148 (P): Laue group = -3 (S-, 6 ops); holohedry 6/mmm has 24 ops ? factor 4.
+# IBZ is a 120? sector of the hexagonal prism.
+# 12 vertices: bottom face ?,M,K,MA,K2,MB + top face A,L,H,LA,H2,LB
+# Fractional coords (b1,b2,b3):
+#   M =[1/2, 0,   0]  K =[ 1/3, 1/3, 0]  MA=[0,  1/2, 0]
+#   K2=[-1/3,2/3, 0]  MB=[-1/2, 1/2, 0]
+#   (top face adds kz=1/2 for each)
+# -------------------------------------------------------
+LATTICE_DATA['HEX4'] = {
+    'kpoints': {
+        'Γ':  [0,     0,    0  ],
+        'A':  [0,     0,    1/2],
+        'M':  [1/2,   0,    0  ],
+        'L':  [1/2,   0,    1/2],
+        'K':  [1/3,   1/3,  0  ],
+        'H':  [1/3,   1/3,  1/2],
+        'MA': [0,     1/2,  0  ],
+        'LA': [0,     1/2,  1/2],
+        'K2': [-1/3,  2/3,  0  ],
+        'H2': [-1/3,  2/3,  1/2],
+        'MB': [-1/2,  1/2,  0  ],
+        'LB': [-1/2,  1/2,  1/2],
+    },
+    'kpath': [
+        # Bottom face: 120? sector
+        ('Γ', 'M'), ('M', 'K'), ('K', 'MA'), ('MA', 'K2'), ('K2', 'MB'), ('MB', 'Γ'),
+        # z-axis
+        ('Γ', 'A'),
+        # Top face: same sector
+        ('A', 'L'), ('L', 'H'), ('H', 'LA'), ('LA', 'H2'), ('H2', 'LB'), ('LB', 'A'),
+        # Vertical edges
+        ('L', 'M'), ('H', 'K'), ('LA', 'MA'), ('H2', 'K2'), ('LB', 'MB'),
+    ],
+    'display_labels': {
+        'Γ': r'$\Gamma$', 'A': 'A',
+        'M': 'M',  'L': 'L',
+        'K': 'K',  'H': 'H',
+        'MA': r'$M_A$', 'LA': r'$L_A$',
+        'K2': r'$K_2$', 'H2': r'$H_2$',
+        'MB': r'$M_B$', 'LB': r'$L_B$',
+    },
+}
+
+# -------------------------------------------------------
+# RHL1 - Rhombohedral 1, alpha < 90? (Table 14)
 # -------------------------------------------------------
 def _rhl1_params(a, b=None, c=None, alpha=None):
     """alpha is the rhombohedral angle in degrees."""
@@ -789,7 +953,58 @@ LATTICE_DATA['RHL1'] = {
 }
 
 # -------------------------------------------------------
-# RHL2 - Rhombohedral 2, alpha > 90° (Table 15)
+# RHL1_2 - Rhombohedral 1, doubled IBZ for R3 / R-3
+# SG 146 and 148 have only the trigonal axis (plus inversion for R-3).
+# Compared with the RHL holohedry used by S-C, one mirror coset is absent.
+# RHL1 is doubled with the k1 <-> k2 mirror coset; RHL2 uses k2 <-> k3.
+# -------------------------------------------------------
+def _rhl_mirror_k1_k2(k):
+    return [k[1], k[0], k[2]]
+
+
+def _rhl_mirror_k2_k3(k):
+    return [k[0], k[2], k[1]]
+
+
+def _rhl_doubled_kpoints(base_points, mirror_func):
+    pts = {label: list(frac) for label, frac in base_points.items()}
+    existing = [np.array(frac, dtype=float) for frac in pts.values()]
+    for label, frac in base_points.items():
+        mirrored = mirror_func(frac)
+        m_arr = np.array(mirrored, dtype=float)
+        if any(np.allclose(m_arr, ex, atol=1e-10) for ex in existing):
+            continue
+        pts[f'{label}_p'] = mirrored
+        existing.append(m_arr)
+    return pts
+
+
+def _rhl1_2_kpoints(p):
+    return _rhl_doubled_kpoints(_rhl1_kpoints(p), _rhl_mirror_k1_k2)
+
+
+def _prime_display_map(base_labels):
+    labels = dict(base_labels)
+    for label in base_labels:
+        if label == 'Γ':
+            continue
+        labels[f'{label}_p'] = rf"${label}'$"
+    return labels
+
+
+LATTICE_DATA['RHL1_2'] = {
+    'params_func': _rhl1_params,
+    'kpoints_func': _rhl1_2_kpoints,
+    'kpath': LATTICE_DATA['RHL1']['kpath'] + [
+        ('Γ', 'L_p'), ('L_p', 'B1_p'),
+        ('B_p', 'Z'), ('Z', 'Γ'), ('Γ', 'X_p'),
+        ('Q_p', 'F'), ('F', 'P1'), ('P1', 'Z'),
+        ('L_p', 'P_p'),
+    ],
+    'display_labels': _prime_display_map(LATTICE_DATA['RHL1']['display_labels']),
+}
+# -------------------------------------------------------
+# RHL2 - Rhombohedral 2, alpha > 90? (Table 15)
 # -------------------------------------------------------
 def _rhl2_params(a, b=None, c=None, alpha=None):
     """alpha is the rhombohedral angle in degrees."""
@@ -827,6 +1042,23 @@ LATTICE_DATA['RHL2'] = {
     },
 }
 
+# -------------------------------------------------------
+# RHL2_2 - Rhombohedral 2, doubled IBZ for R3 / R-3
+# -------------------------------------------------------
+def _rhl2_2_kpoints(p):
+    return _rhl_doubled_kpoints(_rhl2_kpoints(p), _rhl_mirror_k2_k3)
+
+
+LATTICE_DATA['RHL2_2'] = {
+    'params_func': _rhl2_params,
+    'kpoints_func': _rhl2_2_kpoints,
+    'kpath': LATTICE_DATA['RHL2']['kpath'] + [
+        ('Γ', 'P_p'), ('P_p', 'Z_p'), ('Z_p', 'Q'), ('Q', 'Γ'),
+        ('Γ', 'F_p'), ('F_p', 'P1'), ('P1', 'Q1'), ('Q1', 'L'),
+        ('L', 'Z_p'),
+    ],
+    'display_labels': _prime_display_map(LATTICE_DATA['RHL2']['display_labels']),
+}
 # -------------------------------------------------------
 # MCL - Simple Monoclinic (HPKOT/seekpath mP1, Table 87)
 # Crystallographic convention (unique axis b): beta is non-right angle
@@ -1080,7 +1312,7 @@ LATTICE_DATA['MCLC5'] = LATTICE_DATA['MCLC3']
 
 # -------------------------------------------------------
 # TRI1a - Triclinic 1a (Table 20)
-# All reciprocal angles < 90° k_alpha* < 90, k_beta* < 90, k_gamma* < 90
+# All reciprocal angles < 90? k_alpha* < 90, k_beta* < 90, k_gamma* < 90
 # -------------------------------------------------------
 LATTICE_DATA['TRI1a'] = {
     'kpoints': {
@@ -1105,7 +1337,7 @@ LATTICE_DATA['TRI1a'] = {
 
 # -------------------------------------------------------
 # TRI1b - Triclinic 1b (Table 20)
-# Some reciprocal angles = 90°
+# Some reciprocal angles = 90?
 # Same k-points as TRI1a, different path
 # -------------------------------------------------------
 LATTICE_DATA['TRI1b'] = {
@@ -1119,7 +1351,7 @@ LATTICE_DATA['TRI1b'] = {
 
 # -------------------------------------------------------
 # TRI2a - Triclinic 2a (Table 21)
-# All reciprocal angles > 90° k_alpha* > 90, k_beta* > 90, k_gamma* > 90
+# All reciprocal angles > 90? k_alpha* > 90, k_beta* > 90, k_gamma* > 90
 # -------------------------------------------------------
 LATTICE_DATA['TRI2a'] = {
     'kpoints': {
@@ -1144,7 +1376,7 @@ LATTICE_DATA['TRI2a'] = {
 
 # -------------------------------------------------------
 # TRI2b - Triclinic 2b (Table 21)
-# Some reciprocal angles = 90°
+# Some reciprocal angles = 90?
 # Same k-points as TRI2a, different path
 # -------------------------------------------------------
 LATTICE_DATA['TRI2b'] = {
@@ -1224,6 +1456,7 @@ if __name__ == '__main__':
     for lt in ALL_LATTICE_TYPES:
         kp = get_kpoints(lt, a=5.0, b=6.0, c=7.0, alpha=60.0)
         print(f"{lt:8s}: {len(kp)} k-points, {len(get_kpath(lt))} path segments")
+
 
 
 
