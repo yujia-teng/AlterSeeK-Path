@@ -391,7 +391,7 @@ def run(structure_file, moments_str, verbose=True):
             f"{counts['extended_spin_preserve_point_operations']} spin-preserving"
         )
         if spin_split_diagnostic:
-            print(f"Diagnostic: {spin_split_diagnostic}")
+            print(f"\033[1mWarning! {spin_split_diagnostic}\033[0m")
 
     # --- PART 5: Output Files ---
     if verbose:

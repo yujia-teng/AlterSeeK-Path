@@ -495,7 +495,7 @@ class KPointsModifier:
                       f"({sf_result['extended_spin_flip_operations']} + "
                       f"{sf_result['extended_spin_preserve_operations']} with translations)")
                 if sf_result['spin_split_diagnostic']:
-                    print(f"Diagnostic: {sf_result['spin_split_diagnostic']}")
+                    print(f"{BOLD}Warning! {sf_result['spin_split_diagnostic']}{RESET}")
                 print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
         # Step 1: High-symmetry k-path (auto from seekpath or user file)

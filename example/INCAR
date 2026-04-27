@@ -1,19 +1,19 @@
- SYSTEM=In2Se3
+ SYSTEM=SrVO3
 
  Startparameter for this Run:
    ISTART =      0                 job   : 0-new  1-cont  2-samecut
    ISPIN  =      2                 spin polarized calculation?
-  MAGMOM =  5 -5 2*0                
-# LDAU =.TRUE.
-# LDAUTYPE = 2
-# LDAUL =  2 -1 -1
-# LDAUU =  4.00 0.00 0.00
-# LDAUJ =  0.00 0.00 0.00
-# LDAUPRINT = 2
+ MAGMOM =  8 -8 4*0                
+ LDAU =.TRUE.
+ LDAUTYPE = 2
+ LDAUL =  3 -1 -1
+ LDAUU =  6.00 0.00 0.00
+ LDAUJ =  0.00 0.00 0.00
+ LDAUPRINT = 2
 ICHARG = 11
   LORBIT=11                             for band structure, set to 12
   LWAVE  = .FALSE.                write wavefunctions to file
- LMAXMIX = 4
+ LMAXMIX = 6
 
  Electronic Relaxation 1
    EDIFF  = 1.0E-06              stopping-criterion for ELM
@@ -22,14 +22,10 @@ ICHARG = 11
   NPAR   = 4                      number of bands in parallel treatment
 NBANDS = 96
  DOS related values:
-  ENCUT = 250
+  ENCUT = 500
 
-  ISMEAR = -5 ;   SIGMA =  0.001  broadening in eV -4-tet -1-fermi 0-gaus
+ISMEAR = 0
   NEDOS  = 2000
   EMIN   = -15;   EMAX  = 15      DOS plot range
  
 
-#  AMIX  = 0.2
-#  BMIX  = 0.0001
-#  AMIX_MAG = 0.8
-#  BMIX_MAG = 0.0001
