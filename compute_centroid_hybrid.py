@@ -95,6 +95,35 @@ from lattice_kpoints import (
 NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 
 
+def _figure_output_paths(output_path):
+    """Return the requested figure output paths, preserving PNG as the default."""
+    root, ext = os.path.splitext(output_path)
+    default_fmt = ext[1:] if ext else 'png'
+    raw_formats = os.environ.get('ALTERSEEK_BZ_FORMATS', default_fmt)
+    formats = []
+    for item in raw_formats.replace(';', ',').split(','):
+        fmt = item.strip().lower().lstrip('.')
+        if fmt and fmt not in formats:
+            formats.append(fmt)
+    if not formats:
+        formats = [default_fmt]
+    return [f"{root}.{fmt}" for fmt in formats]
+
+
+def _save_figure(fig, output_path, **kwargs):
+    saved_paths = _figure_output_paths(output_path)
+    for path in saved_paths:
+        fig.savefig(path, **kwargs)
+    return saved_paths
+
+
+def _print_saved_paths(saved_paths, verbose=True):
+    if not verbose:
+        return
+    for path in saved_paths:
+        print(f"Saved: {path}")
+
+
 def laue_group_from_point_group(point_group):
     """Return the centrosymmetric Laue group associated with a point group."""
     pg = str(point_group).strip().replace(' ', '')
@@ -803,10 +832,10 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                                             dashed_back=True)
             _draw(ax_save)
             plt.tight_layout()
-            fig_save.savefig(output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
             plt.close(fig_save)
             plt.close(fig)
-            print(f"Saved: {output_path}")
+            _print_saved_paths(saved_paths)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
@@ -827,9 +856,9 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                                     elev=elev, azim=azim, dashed_back=True)
     _draw(ax_save)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
     plt.close(fig_save)
-    print(f"Saved: {output_path}")
+    _print_saved_paths(saved_paths)
     return display_fig
 
 
@@ -945,10 +974,10 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                                             dashed_back=True)
             _draw(ax_save)
             plt.tight_layout()
-            fig_save.savefig(output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
             plt.close(fig_save)
             plt.close(fig)
-            print(f"Saved: {output_path}")
+            _print_saved_paths(saved_paths)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
@@ -965,9 +994,9 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                           elev=elev, azim=azim, dashed_back=True)
     _draw(ax)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
-    print(f"Saved: {output_path}")
+    _print_saved_paths(saved_paths)
     return display_fig
 
 
@@ -1237,16 +1266,16 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig):
-            fig.savefig(output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
             plt.close(fig)
-            print(f"Saved: {output_path}")
+            _print_saved_paths(saved_paths)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
     if show_plot and not defer_show:
         plt.show()
-    fig.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"Saved: {output_path}")
+    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
+    _print_saved_paths(saved_paths)
     plt.close(fig)
     return display_fig
 # ============================================================================
@@ -1449,10 +1478,10 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                          display_labels_plot, hull, centroid_cart,
                          hull_pts=points_arr)
                 plt.tight_layout()
-                fig1s.savefig(fig1_path, dpi=300, bbox_inches='tight')
+                saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
                 plt.close(fig1s)
                 plt.close(fig)
-                print(f"Saved: {fig1_path}")
+                _print_saved_paths(saved_paths)
             fig1._alterseek_save_after_show = _save_fig1_after_show
             display_figures.append(fig1)
             elev1, azim1 = 25, -55
@@ -1471,9 +1500,8 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
                  hull, centroid_cart, hull_pts=points_arr)
         plt.tight_layout()
-        fig1s.savefig(fig1_path, dpi=300, bbox_inches='tight')
-        if verbose:
-            print(f"Saved: {fig1_path}")
+        saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
+        _print_saved_paths(saved_paths, verbose=verbose)
         plt.close(fig1s)
 
     return {

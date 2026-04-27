@@ -134,6 +134,15 @@ Done.
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
 
+BZ figures are written as PNG by default, which is usually enough for quick
+checks and slides. To also write PDF copies for manuscript figures or
+Illustrator editing, set:
+
+```powershell
+$env:ALTERSEEK_BZ_FORMATS = "png,pdf"
+alterseek-path
+```
+
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. The code prints a note and writes the ordinary IBZ path.
 
 ---
