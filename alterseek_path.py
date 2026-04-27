@@ -41,13 +41,19 @@ class KPointsModifier:
     def _display_label(label: str) -> str:
         return 'GAMMA' if str(label).upper() in ('G', 'GAMMA', '螕') else str(label)
 
+    @staticmethod
+    def _kpoints_label(label: str) -> str:
+        """Return labels in a VASP-safe form for KPOINTS files."""
+        label = str(label)
+        return 'GAMMA' if label.strip().upper() in ('G', 'GAMMA') or label == '\u0393' else label
+
     @classmethod
     def _format_path(cls, path_segments) -> str:
         parts = []
         prev_end = None
         for seg_start, seg_end in path_segments:
-            start = cls._display_label(seg_start)
-            end = cls._display_label(seg_end)
+            start = cls._kpoints_label(seg_start)
+            end = cls._kpoints_label(seg_end)
             if seg_start != prev_end:
                 parts.append(f"| {start}-{end}" if prev_end else f"{start}-{end}")
             else:
@@ -382,7 +388,7 @@ class KPointsModifier:
                 else:
                     f.write(f"{self.header_lines[0]}\n")
                 
-                f.write("   50\n")    # Number of points between each segment
+                f.write("   30\n")    # Number of points between each segment
                 f.write(f"{self.header_lines[2]}\n")   # Line-Mode
                 f.write(f"{self.header_lines[3]}\n")   # Reciprocal
                 
@@ -411,8 +417,10 @@ class KPointsModifier:
                         continue
                     
                     # Write segment: start_point -> end_point
-                    f.write(f"   {start_point[0]:.10f}   {start_point[1]:.10f}   {start_point[2]:.10f}     {start_point[3]}\n")
-                    f.write(f"   {end_point[0]:.10f}   {end_point[1]:.10f}   {end_point[2]:.10f}     {end_point[3]}\n")
+                    start_label = self._kpoints_label(start_point[3])
+                    end_label = self._kpoints_label(end_point[3])
+                    f.write(f"   {start_point[0]:.10f}   {start_point[1]:.10f}   {start_point[2]:.10f}     {start_label}\n")
+                    f.write(f"   {end_point[0]:.10f}   {end_point[1]:.10f}   {end_point[2]:.10f}     {end_label}\n")
                     
                     # Check if this creates a discontinuity (k is dead end)
                     if end_point[3] == "k":
