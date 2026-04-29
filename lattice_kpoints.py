@@ -97,6 +97,11 @@ HULL_EXCLUDED_POINTS = {
     "cF2": {"W_2"},
     "hP1": {"H_2"},
     "hP2": {"H_2"},
+    # seekpath includes all symmetry-equivalent copies across the full BZ.
+    # Only the IBZ-wedge vertices (those that appear in the kpath) are kept.
+    "hR1": {"L_4", "F_2", "S_4", "S_6", "H_4", "H_6",
+            "M_8", "M_6"}, 
+    "hR2": {"M", "M_2"}
 }
 
 
@@ -119,6 +124,17 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "X_A": ("1/2", "0", "0"),
         "R_A": ("1/2", "0", "1/2"),
     },
+    ("tI1", range(75, 89)): {
+        "M_p": ("1/2", "-1/2", "1/2"),
+        "N_p": ("1/2", "0", "0"),
+        "Z_0_p": ("1-H", "-H", "H"),
+    },
+    ("tI2", range(75, 89)): {
+        "N_p": ("1/2", "0", "0"),
+        "S_0_p": ("H", "-H", "H"),
+        "S_p": ("1-H", "H", "-H"),
+        "R_p": ("Z", "-Z", "1/2"),
+    },
 
     # Trigonal 3 and -3 point groups on a primitive hexagonal lattice:
     # quadrupled 120-degree project IBZ relative to hP holohedry.
@@ -133,7 +149,11 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
 
     # Trigonal 32, 3m, -3m and hexagonal 6, -6, 6/m point groups:
     # doubled 60-degree project IBZ relative to the highest-symmetry hP wedge.
-    ("hP1", range(149, 164)): {
+    ("hP1", range(149, 168)): {
+        "M_A": ("0", "1/2", "0"),
+        "L_A": ("0", "1/2", "1/2"),
+    },
+    ("hP2", range(149, 168)): {
         "M_A": ("0", "1/2", "0"),
         "L_A": ("0", "1/2", "1/2"),
     },
@@ -167,6 +187,18 @@ PROJECT_HULL_PATH_BY_SG = {
         ("Z", "R"), ("R", "A"), ("A", "R_A"), ("R_A", "Z"),
         ("X", "R"), ("M", "A"), ("X_A", "R_A"),
     ],
+    ("tI1", range(75, 89)): [
+        ("\u0393", "X"), ("X", "M"), ("M", "\u0393"), ("\u0393", "Z"),
+        ("Z", "P"), ("P", "N"), ("N", "Z_0"), ("Z_0", "M"), ("X", "P"),
+        ("M_p", "\u0393"), ("P", "N_p"), ("N_p", "Z_0_p"), ("Z_0_p", "M_p"),
+    ],
+    ("tI2", range(75, 89)): [
+        ("\u0393", "X"), ("X", "R"), ("R", "S_0"), ("S_0", "\u0393"),
+        ("\u0393", "M"), ("M", "S"), ("S", "N"), ("N", "P"),
+        ("P", "G"), ("G", "M"), ("X", "P"),
+        ("X", "R_p"), ("R_p", "S_0_p"), ("S_0_p", "\u0393"),
+        ("M", "S_p"), ("S_p", "N_p"), ("N_p", "P"),
+    ],
     ("hP1", range(143, 149)): [
         ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "K_A"),
         ("K_A", "M_B"), ("M_B", "\u0393"),
@@ -176,7 +208,13 @@ PROJECT_HULL_PATH_BY_SG = {
         ("L", "M"), ("H", "K"), ("L_A", "M_A"), ("H_A", "K_A"),
         ("L_B", "M_B"),
     ],
-    ("hP1", range(149, 164)): [
+    ("hP1", range(149, 168)): [
+        ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "\u0393"),
+        ("\u0393", "A"),
+        ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "A"),
+        ("L", "M"), ("H", "K"), ("M_A", "L_A"),
+    ],
+    ("hP2", range(149, 168)): [
         ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "\u0393"),
         ("\u0393", "A"),
         ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "A"),
@@ -218,6 +256,15 @@ def _strip_path_segments(path, segments_to_remove):
 def _format_display_label(label: str) -> str:
     if label.startswith("_"):
         label = label[1:]
+    if label.endswith("_p"):
+        base_label = label[:-2]
+        if base_label in GREEK_INTERNAL_LABELS:
+            return rf"${base_label}'$"
+        if "_" in base_label:
+            base, sub = base_label.split("_", 1)
+            base = GREEK_LABELS.get(base, base)
+            return rf"${base}_{sub}'$"
+        return rf"${base_label}'$"
     if label in GREEK_INTERNAL_LABELS:
         return rf"${label}$"
     if "_" in label:
