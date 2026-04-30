@@ -150,11 +150,16 @@ For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. 
 ## Band Plotting
 
 After VASP and VASPKIT produce spin-resolved reformatted band files in the
-calculation directory, run:
+calculation directory, go to that calculation directory and run either command:
 
 ```bash
 alterseek-path bandplot
+# or
+alterseek-bandplot
 ```
+
+`alterseek-bandplot` is only a shorter standalone shortcut. It calls the same
+band-plotting code as `alterseek-path bandplot`.
 
 By default this reads:
 
@@ -170,7 +175,37 @@ and writes:
 alterband.png
 ```
 
-Use PNG for quick checks and PowerPoint slides:
+### Plot settings with `alterband.toml`
+
+If a file named `alterband.toml` exists in the same directory, the band plotter
+uses it automatically. A typical file is:
+
+```toml
+emin = -2
+emax = 2
+fig_width = 16
+fig_height = 5
+gap_frac = 0.004
+output = "alterband.png"
+```
+
+Then run:
+
+```bash
+alterseek-bandplot
+```
+
+Command-line options override the TOML file. For example, this uses the TOML
+energy window and figure size, but writes a PDF:
+
+```bash
+alterseek-bandplot -o alterband.pdf
+```
+
+### PNG and PDF outputs
+
+Matplotlib chooses the file format from the output extension. Use PNG for quick
+checks and PowerPoint slides:
 
 ```bash
 alterseek-path bandplot -o alterband.png
@@ -182,10 +217,12 @@ Use PDF for manuscript figures and Adobe Illustrator editing:
 alterseek-path bandplot -o alterband.pdf
 ```
 
-Matplotlib chooses the file format from the output extension. PDF is usually the
-most convenient vector format for editing scientific plots in Illustrator, while
-PNG is usually the most convenient raster format for presentations. If you want
-both outputs, run the command twice with different `-o` values.
+If you want both outputs, run the command twice:
+
+```bash
+alterseek-bandplot -o alterband.png
+alterseek-bandplot -o alterband.pdf
+```
 
 Optional arguments:
 
@@ -193,9 +230,6 @@ Optional arguments:
 alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
 ```
-
-The standalone command `alterseek-bandplot` is also installed, but
-`alterseek-path bandplot` is the recommended workflow for cluster runs.
 
 ---
 
