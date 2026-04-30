@@ -4,6 +4,7 @@ import spinspg
 from ase.io import read
 import sys
 import os
+import re
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
@@ -201,6 +202,38 @@ def altermagnetic_diagnostic(rotations, translations, spin_rotations):
         return ""
     return "No spin-flip point operation detected."
 
+
+def parse_magmoms(moments_str):
+    """
+    Parse scalar collinear moments from manual input.
+
+    Supports both expanded input, e.g. ``0 0 0 0 1 1``, and VASP MAGMOM-style
+    shorthand, e.g. ``4*0 2*1``.  Whitespace around ``*`` is accepted.
+    """
+    if not moments_str:
+        return []
+
+    float_pat = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    normalized = re.sub(
+        rf"(\d+)\s*\*\s*({float_pat})",
+        r"\1*\2",
+        moments_str.strip(),
+    )
+
+    values = []
+    for token in normalized.split():
+        if "*" in token:
+            parts = token.split("*")
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                raise ValueError(f"invalid MAGMOM token '{token}'")
+            count = int(parts[0])
+            if count < 0:
+                raise ValueError(f"negative repeat count in '{token}'")
+            values.extend([float(parts[1])] * count)
+        else:
+            values.append(float(token))
+    return values
+
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
@@ -301,9 +334,9 @@ def run(structure_file, moments_str, verbose=True):
             if not moments_str:
                 user_mags = []
             else:
-                user_mags = [float(x) for x in moments_str.split()]
+                user_mags = parse_magmoms(moments_str)
         except ValueError:
-            print("Error: Invalid input. Please enter numbers.")
+            print("Error: Invalid input. Please enter numbers or VASP-style repeats like '4*0 2*1'.")
             return False
         if len(user_mags) < num_atoms:
             user_mags.extend([0.0] * (num_atoms - len(user_mags)))

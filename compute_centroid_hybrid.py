@@ -127,8 +127,10 @@ def _figure_output_paths(output_path):
 
 def _save_figure(fig, output_path, **kwargs):
     saved_paths = _figure_output_paths(output_path)
-    for path in saved_paths:
-        fig.savefig(path, **kwargs)
+    # TEMP 2026-04-29: disable BZ figure file writes during HPC input
+    # preparation. The formal/paper workflow should re-enable this save loop.
+    # for path in saved_paths:
+    #     fig.savefig(path, **kwargs)
     return saved_paths
 
 

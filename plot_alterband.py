@@ -5,6 +5,12 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 fallback
+    tomllib = None
 
 import matplotlib as mpl
 
@@ -27,6 +33,7 @@ from matplotlib import pyplot as plt
 
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_GAP_FRAC = 0.004
+DEFAULT_FIG_SIZE = (10.0, 5.0)
 GREY_COLOR = "0.65"
 BAND_LW = 0.7
 BAND_UP_COLOR = "black"
@@ -36,6 +43,18 @@ VLINE_COLOR = "black"
 FERMI_LW = 1.2
 FERMI_COLOR = "0"
 FONT_SIZE = 14
+
+GREEK_LABELS = {
+    "G": r"\Gamma",
+    "GAMMA": r"\Gamma",
+    "DELTA": r"\Delta",
+    "LAMBDA": r"\Lambda",
+    "SIGMA": r"\Sigma",
+    "\u0393": r"\Gamma",
+    "\u0394": r"\Delta",
+    "\u039b": r"\Lambda",
+    "\u03a3": r"\Sigma",
+}
 
 
 def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
@@ -57,6 +76,74 @@ def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
     return labels, positions
 
 
+def _parse_simple_toml_value(value: str) -> Any:
+    value = value.strip()
+    if value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        return value[1:-1]
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported TOML value: {value}") from exc
+
+
+def _read_plot_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+
+    if tomllib is not None:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"Config file must contain key-value settings: {path}")
+        return data
+
+    config: dict[str, Any] = {}
+    with path.open() as f:
+        for raw_line in f:
+            line = raw_line.split("#", 1)[0].strip()
+            if not line or line.startswith("["):
+                continue
+            if "=" not in line:
+                raise ValueError(f"Invalid config line in {path}: {raw_line.rstrip()}")
+            key, value = line.split("=", 1)
+            config[key.strip()] = _parse_simple_toml_value(value)
+    return config
+
+
+def _format_tick_label(label: str) -> str:
+    """Return Matplotlib mathtext for Greek names, subscripts, and primes."""
+    if "|" in label:
+        return "|".join(_format_tick_label(part) for part in label.split("|"))
+
+    prime_count = 0
+    while label.endswith("'"):
+        prime_count += 1
+        label = label[:-1]
+
+    if "_" in label:
+        base, subscript = label.split("_", 1)
+    else:
+        base, subscript = label, None
+
+    base = GREEK_LABELS.get(base.upper(), GREEK_LABELS.get(base, base))
+    if base.startswith("\\") or subscript is not None or prime_count:
+        body = base
+        if subscript is not None:
+            body += f"_{{{subscript}}}"
+        body += "'" * prime_count
+        return rf"${body}$"
+
+    return label
+
+
 def plot_alterband(
     *,
     klabels: str | Path = "KLABELS",
@@ -64,6 +151,7 @@ def plot_alterband(
     band_down: str | Path = "REFORMATTED_BAND_DW.dat",
     output: str | Path = "alterband.png",
     elim: tuple[float, float] = DEFAULT_ELIM,
+    fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
     gap_frac: float = DEFAULT_GAP_FRAC,
 ) -> Path:
     """Create the spin-resolved band plot and return the output path."""
@@ -76,7 +164,7 @@ def plot_alterband(
     x_total = positions[-1] - positions[0]
     gap_half = x_total * gap_frac
 
-    tick_lab = [r"$\Gamma$" if label == "GAMMA" else label for label in labels]
+    tick_lab = [_format_tick_label(label) for label in labels]
     alt_gap = {"k|k'", "k'|k"}
     non_gap_pos = [p for label, p in zip(labels, positions) if label not in alt_gap]
     gap_pos = [p for label, p in zip(labels, positions) if label in alt_gap]
@@ -94,7 +182,7 @@ def plot_alterband(
     bands_up = bands_up[:, in_window]
     bands_dw = bands_dw[:, in_window]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=fig_size)
 
     for i in range(len(positions) - 1):
         if "k" not in labels[i] and "k" not in labels[i + 1]:
@@ -137,24 +225,35 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Plot spin-resolved AlterSeeK band output from VASPKIT files."
     )
-    parser.add_argument("--klabels", default="KLABELS", help="KLABELS file path.")
     parser.add_argument(
-        "--up", default="REFORMATTED_BAND_UP.dat", help="Spin-up band data file."
+        "--config",
+        default=None,
+        help="Optional TOML config file. Defaults to alterband.toml if present.",
+    )
+    parser.add_argument("--klabels", default=None, help="KLABELS file path.")
+    parser.add_argument(
+        "--up", default=None, help="Spin-up band data file."
     )
     parser.add_argument(
-        "--down", default="REFORMATTED_BAND_DW.dat", help="Spin-down band data file."
+        "--down", default=None, help="Spin-down band data file."
     )
-    parser.add_argument("-o", "--output", default="alterband.png", help="Output PNG.")
+    parser.add_argument("-o", "--output", default=None, help="Output PNG.")
     parser.add_argument(
-        "--emin", type=float, default=DEFAULT_ELIM[0], help="Minimum plotted energy."
+        "--emin", type=float, default=None, help="Minimum plotted energy."
     )
     parser.add_argument(
-        "--emax", type=float, default=DEFAULT_ELIM[1], help="Maximum plotted energy."
+        "--emax", type=float, default=None, help="Maximum plotted energy."
+    )
+    parser.add_argument(
+        "--fig-width", type=float, default=None, help="Figure width in inches."
+    )
+    parser.add_argument(
+        "--fig-height", type=float, default=None, help="Figure height in inches."
     )
     parser.add_argument(
         "--gap-frac",
         type=float,
-        default=DEFAULT_GAP_FRAC,
+        default=None,
         help="Half-width of k|k' gap as a fraction of the total k-path.",
     )
     return parser
@@ -162,13 +261,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    config_path = Path(args.config) if args.config else Path("alterband.toml")
+    config = _read_plot_config(config_path) if args.config or config_path.exists() else {}
+
+    def option(name: str, default: Any) -> Any:
+        arg_value = getattr(args, name)
+        if arg_value is not None:
+            return arg_value
+        return config.get(name, default)
+
+    emin = float(option("emin", DEFAULT_ELIM[0]))
+    emax = float(option("emax", DEFAULT_ELIM[1]))
+    fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
+    fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
     output = plot_alterband(
-        klabels=args.klabels,
-        band_up=args.up,
-        band_down=args.down,
-        output=args.output,
-        elim=(args.emin, args.emax),
-        gap_frac=args.gap_frac,
+        klabels=option("klabels", "KLABELS"),
+        band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
+        band_down=option("down", config.get("band_down", "REFORMATTED_BAND_DW.dat")),
+        output=option("output", "alterband.png"),
+        elim=(emin, emax),
+        fig_size=(fig_width, fig_height),
+        gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
     )
     print(f"Band plot written to: {output}")
 
