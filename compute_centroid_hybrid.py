@@ -1501,8 +1501,8 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     elif 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
         tetragonal_extra = {
             'tP1': ["X_A", "R_A"],
-            'tI1': ["M_p", "N_p", "Z_0_p"],
-            'tI2': ["R_p", "S_0_p", "S_p", "N_p"],
+            'tI1': ["M_A", "N_A", "Z_0A"],
+            'tI2': ["R_A", "S_0A", "S_A", "N_A"],
         }
         extra_general_vertices = [
             label for label in tetragonal_extra[sc_type]

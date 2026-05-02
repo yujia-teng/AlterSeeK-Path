@@ -46,7 +46,6 @@ FERMI_COLOR = "0"
 FONT_SIZE = 14
 
 GREEK_LABELS = {
-    "G": r"$\Gamma$",
     "GAMMA": r"$\Gamma$",
     "DELTA": r"$\Delta$",
     "LAMBDA": r"$\Lambda$",

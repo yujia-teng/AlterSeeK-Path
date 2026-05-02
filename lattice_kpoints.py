@@ -125,15 +125,15 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "R_A": ("1/2", "0", "1/2"),
     },
     ("tI1", range(75, 89)): {
-        "M_p": ("1/2", "-1/2", "1/2"),
-        "N_p": ("1/2", "0", "0"),
-        "Z_0_p": ("1-H", "-H", "H"),
+        "M_A": ("1/2", "-1/2", "1/2"),
+        "N_A": ("1/2", "0", "0"),
+        "Z_0A": ("1-H", "-H", "H"),
     },
     ("tI2", range(75, 89)): {
-        "N_p": ("1/2", "0", "0"),
-        "S_0_p": ("H", "-H", "H"),
-        "S_p": ("1-H", "H", "-H"),
-        "R_p": ("Z", "-Z", "1/2"),
+        "N_A": ("1/2", "0", "0"),
+        "S_0A": ("H", "-H", "H"),
+        "S_A": ("1-H", "H", "-H"),
+        "R_A": ("Z", "-Z", "1/2"),
     },
 
     # Trigonal 3 and -3 point groups on a primitive hexagonal lattice:
@@ -190,14 +190,14 @@ PROJECT_HULL_PATH_BY_SG = {
     ("tI1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"), ("M", "\u0393"), ("\u0393", "Z"),
         ("Z", "P"), ("P", "N"), ("N", "Z_0"), ("Z_0", "M"), ("X", "P"),
-        ("M_p", "\u0393"), ("P", "N_p"), ("N_p", "Z_0_p"), ("Z_0_p", "M_p"),
+        ("M_A", "\u0393"), ("P", "N_A"), ("N_A", "Z_0A"), ("Z_0A", "M_A"),
     ],
     ("tI2", range(75, 89)): [
         ("\u0393", "X"), ("X", "R"), ("R", "S_0"), ("S_0", "\u0393"),
         ("\u0393", "M"), ("M", "S"), ("S", "N"), ("N", "P"),
         ("P", "G"), ("G", "M"), ("X", "P"),
-        ("X", "R_p"), ("R_p", "S_0_p"), ("S_0_p", "\u0393"),
-        ("M", "S_p"), ("S_p", "N_p"), ("N_p", "P"),
+        ("X", "R_A"), ("R_A", "S_0A"), ("S_0A", "\u0393"),
+        ("M", "S_A"), ("S_A", "N_A"), ("N_A", "P"),
     ],
     ("hP1", range(143, 149)): [
         ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "K_A"),
@@ -256,21 +256,12 @@ def _strip_path_segments(path, segments_to_remove):
 def _format_display_label(label: str) -> str:
     if label.startswith("_"):
         label = label[1:]
-    if label.endswith("_p"):
-        base_label = label[:-2]
-        if base_label in GREEK_INTERNAL_LABELS:
-            return rf"${base_label}'$"
-        if "_" in base_label:
-            base, sub = base_label.split("_", 1)
-            base = GREEK_LABELS.get(base, base)
-            return rf"${base}_{sub}'$"
-        return rf"${base_label}'$"
     if label in GREEK_INTERNAL_LABELS:
         return rf"${label}$"
     if "_" in label:
         base, sub = label.split("_", 1)
         base = GREEK_LABELS.get(base, base)
-        return rf"${base}_{sub}$"
+        return rf"${base}_{{{sub.replace('_', '')}}}$"
     return label
 
 
