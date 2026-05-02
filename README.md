@@ -175,7 +175,7 @@ emin = -2
 emax = 2
 fig_width = 16
 fig_height = 5
-gap_width_inches = 0.04
+gap_width_inches = 0.05
 # Legacy fallback: half-width as a fraction of the full k-path.
 # gap_frac = 0.004
 rotate_xtick_labels = false
