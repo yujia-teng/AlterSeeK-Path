@@ -107,6 +107,8 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
     )
 
     if not flip_ops:
+        if os.path.exists(filename):
+            os.remove(filename)
         if verbose:
             print("\n[WARNING] No spin-flipping operations found! File not created.")
         return 0
@@ -134,6 +136,8 @@ def write_preserve_ops_to_file(filename, rotations, spin_rotations, verbose=True
     )
 
     if not preserve_ops:
+        if os.path.exists(filename):
+            os.remove(filename)
         return 0
 
     with open(filename, 'w') as f:
@@ -412,9 +416,12 @@ Magnetic Space Group Label: {msg_label}"""
     preserve_filename = "spin_preserve_operations.txt"
     flip_count = write_flip_ops_to_file(flip_filename, rotations, spin_rotations, verbose=verbose)
     preserve_count = write_preserve_ops_to_file(preserve_filename, rotations, spin_rotations, verbose=verbose)
+    flip_indices = _operation_class_indices(spin_rotations, flip=True)
+    actual_flip_point_ops, _ = _collect_point_ops(rotations, flip_indices)
     return {
         'structure_file': structure_file,
         'num_atoms': num_atoms,
+        'operation_lattice': np.array(lattice, dtype=float).tolist(),
         'moments': magmoms,
         'space_group': non_mag_label,
         'point_group': point_group,
@@ -431,6 +438,9 @@ Magnetic Space Group Label: {msg_label}"""
         'extended_spin_preserve_operations': counts['extended_spin_preserve_operations'],
         'pt_spin_flip': has_spin_flip_inversion(rotations, spin_rotations),
         'ut_spin_flip': has_spin_flip_translation(rotations, translations, spin_rotations),
+        'actual_spin_flip_point_matrices': [
+            op.astype(int).tolist() for op in actual_flip_point_ops
+        ],
         'spin_split_diagnostic': spin_split_diagnostic,
         'spin_flip_operations': flip_count,
         'spin_preserve_operations': preserve_count,

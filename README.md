@@ -54,6 +54,17 @@ For cluster screening, install AlterSeeK-Path once in the environment used by
 your jobs, then run `alterseek-path` inside each material calculation directory.
 The command reads and writes files in the current directory.
 
+For a 2D/slab calculation, use:
+
+```bash
+alterseek-path --2d
+```
+
+The 2D workflow assumes the input structure is already in slab convention, with
+real-space `c` as the vacuum direction. It builds the path in the reciprocal
+`kz = 0` plane and plots the 2D figures with horizontal `kx` and vertical `ky`.
+The default output file is `KPOINTS_2D`.
+
 ---
 
 ## Inputs
@@ -133,6 +144,17 @@ Done.
 | `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
+
+In 2D/slab mode, the figure names use the `*_2d_ibz_*`,
+`*_2d_spinflip_*`, and `*_2d_spinbz_*` pattern.
+
+BZ figures are PNG by default. To also save PDF copies from `alterseek-path`,
+set:
+
+```powershell
+$env:ALTERSEEK_BZ_FORMATS = "png,pdf"
+alterseek-path
+```
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. The code prints a note and writes the ordinary IBZ path.
 

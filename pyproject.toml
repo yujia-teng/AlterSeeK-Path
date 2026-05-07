@@ -27,6 +27,7 @@ alterseek-bandplot = "plot_alterband:main"
 [tool.setuptools]
 py-modules = [
     "alterseek_path",
+    "alterseek_path_2d",
     "compute_centroid_hybrid",
     "find_sf_operations",
     "lattice_kpoints",

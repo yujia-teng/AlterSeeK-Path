@@ -1507,6 +1507,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         'unique_ops': unique_ops,
         'b_matrix_conv': b_matrix_conv,
         'b_matrix_input': b_matrix_input,
+        'seekpath_rotation_matrix': sp_result.get('rotation_matrix'),
         'display_figures': display_figures,
     }
 

@@ -32,6 +32,27 @@ except ImportError:
     plot_spin_bz_top_view_figure = None
     plt = None
 
+
+def reciprocal_lattice_rows(lattice) -> np.ndarray:
+    """Return reciprocal basis vectors as rows for a real-space row-vector lattice."""
+    return 2 * np.pi * np.linalg.inv(np.array(lattice, dtype=float)).T
+
+
+def convert_real_frac_op_to_primitive_k_basis(
+    R, source_lattice, primitive_b_matrix, standardization_rotation=None
+):
+    """Convert a real-space fractional operation to the seekpath primitive basis."""
+    b_input = reciprocal_lattice_rows(source_lattice)
+    b_prim = np.array(primitive_b_matrix, dtype=float)
+    R_arr = np.array(R, dtype=float)
+    R_cart = b_input.T @ np.linalg.inv(R_arr).T @ np.linalg.inv(b_input.T)
+    if standardization_rotation is not None:
+        q = np.array(standardization_rotation, dtype=float)
+        R_cart = q @ R_cart @ np.linalg.inv(q)
+    R_prim_inv_T = np.linalg.inv(b_prim.T) @ R_cart @ b_prim.T
+    return np.linalg.inv(R_prim_inv_T.T), R_cart
+
+
 class KPointsModifier:
     def __init__(self):
         self.kpoints_data = []
@@ -444,6 +465,7 @@ class KPointsModifier:
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
         _flip_file = 'spin_flip_operations.txt'
+        _spin_operation_lattice = None
 
         if not os.path.exists(struct_file):
             print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing spin_flip_operations.txt")
@@ -468,6 +490,7 @@ class KPointsModifier:
             )
             if isinstance(sf_result, dict):
                 _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
+                _spin_operation_lattice = sf_result.get('operation_lattice')
                 print(f"\nStructure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
                 print(f"Space Group: {sf_result['space_group']}")
                 print(f"Point Group: {sf_result['point_group']}")
@@ -726,10 +749,17 @@ class KPointsModifier:
         R_cart_for_plot = None
         flip_ops_for_plot = flip_ops
         if centroid_result is not None and 'b_matrix' in centroid_result:
-            _b_input = np.array(centroid_result.get('b_matrix_input',
-                                                    centroid_result['b_matrix_conv']), dtype=float)
             _b_prim = np.array(centroid_result['b_matrix'], dtype=float)
             def _convert_input_frac_R_to_prim(_R):
+                if _spin_operation_lattice is not None:
+                    return convert_real_frac_op_to_primitive_k_basis(
+                        _R,
+                        _spin_operation_lattice,
+                        _b_prim,
+                        centroid_result.get('seekpath_rotation_matrix'),
+                    )
+                _b_input = np.array(centroid_result.get('b_matrix_input',
+                                                        centroid_result['b_matrix_conv']), dtype=float)
                 _R_arr = np.array(_R, dtype=float)
                 _R_cart = _b_input.T @ np.linalg.inv(_R_arr).T @ np.linalg.inv(_b_input.T)
                 _R_prim_inv_T = np.linalg.inv(_b_prim.T) @ _R_cart @ _b_prim.T
@@ -860,11 +890,18 @@ class KPointsModifier:
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] in {"-h", "--help"}:
-        print("usage: alterseek-path [bandplot] [options]\n")
+        print("usage: alterseek-path [-2d|--2d|bandplot] [options]\n")
         print("Run without arguments to generate an altermagnetic KPOINTS path interactively.")
         print("Subcommands:")
+        print("  -2d, --2d   Generate a 2D/slab path.")
         print("  bandplot    Plot spin-resolved bands from KLABELS and reformatted band data.")
         print("\nFor band plotting options, run: alterseek-path bandplot --help")
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1].lower() in {"-2d", "--2d", "2d"}:
+        from alterseek_path_2d import main as alterseek_2d_main
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        alterseek_2d_main()
         return
 
     if len(sys.argv) > 1 and sys.argv[1].lower() in {"bandplot", "plot-band", "plot"}:
