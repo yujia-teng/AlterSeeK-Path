@@ -32,6 +32,41 @@ except ImportError:
     plot_spin_bz_top_view_figure = None
     plt = None
 
+
+def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
+    """Record the detected lattice type for later band plotting."""
+    if not lattice_type:
+        return
+
+    line = f'lattice_type = "{lattice_type}"\n'
+    try:
+        if os.path.exists(filename):
+            with open(filename, "r") as f:
+                lines = f.readlines()
+            updated = False
+            new_lines = []
+            for existing in lines:
+                stripped = existing.split("#", 1)[0].strip()
+                if stripped.startswith("lattice_type") and "=" in stripped:
+                    new_lines.append(line)
+                    updated = True
+                else:
+                    new_lines.append(existing)
+            if not updated:
+                if new_lines and not new_lines[-1].endswith("\n"):
+                    new_lines[-1] += "\n"
+                new_lines.append(line)
+            with open(filename, "w") as f:
+                f.writelines(new_lines)
+        else:
+            with open(filename, "w") as f:
+                f.write("# AlterSeeK band-plot settings\n")
+                f.write(line)
+        print(f"Band plot config updated: {filename} ({line.strip()})")
+    except Exception as exc:
+        print(f"[Warning] Could not update band plot config '{filename}': {exc}")
+
+
 class KPointsModifier:
     def __init__(self):
         self.kpoints_data = []
@@ -627,7 +662,10 @@ class KPointsModifier:
             if not output_file:
                 output_file = "KPOINTS_modified"
             # Write the plain IBZ path (no butterfly, no transformation).
-            self.write_kpoints_file(self.kpoints_data, output_file, None)
+            if self.write_kpoints_file(self.kpoints_data, output_file, None):
+                write_bandplot_lattice_config(
+                    centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                )
             print(f"\nDone.")
             if display_figures and plt is not None:
                 print('Displaying generated figure(s)...')
@@ -907,9 +945,13 @@ class KPointsModifier:
                 if not output_file:
                     output_file = "KPOINTS_modified"
                 
-                self.write_kpoints_file(
+                if self.write_kpoints_file(
                     new_kpoints, output_file, R, selected_transformation_label
-                )
+                ):
+                    if centroid_result is not None:
+                        write_bandplot_lattice_config(
+                            centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                        )
                 print(f"\nDone.")
                 if display_figures and plt is not None:
                     print('Displaying generated figures...')

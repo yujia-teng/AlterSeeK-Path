@@ -178,6 +178,8 @@ fig_height = 5
 gap_width_inches = 0.05
 # Legacy fallback: half-width as a fraction of the full k-path.
 # gap_frac = 0.004
+lattice_type = "tI1"
+split_panels = 0
 rotate_xtick_labels = false
 xtick_rotation = 45
 output = "alterband.png"
@@ -197,6 +199,14 @@ Command-line options override the TOML file:
 alterseek-path bandplot -o alterband.pdf
 ```
 
+When `lattice_type` is present, special HPKOT path intervals are shaded light
+grey in the band plot. The main `alterseek-path` workflow writes this value to
+`alterband.toml` after KPOINTS generation; for direct plotting you can set it
+manually, for example `lattice_type = "oF3"`.
+
+Use `split_panels = 2` or `split_panels = 3` for long paths that should be
+rendered as stacked panels. Missing or `0` keeps a single panel.
+
 ### PNG and PDF outputs
 
 ```bash
@@ -210,6 +220,7 @@ Optional arguments:
 alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
 alterseek-path bandplot --gap-width-inches 0.04
+alterseek-path bandplot --lattice-type mC2 --split-panels 2
 ```
 
 `gap_width_inches` sets the full visual width of every `k|k'` gap, which keeps

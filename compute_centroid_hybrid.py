@@ -105,9 +105,104 @@ class _Arrow3D(FancyArrowPatch):
 from lattice_kpoints import (
     LATTICE_DATA, get_kpoints, get_hull_kpoints, get_path_kpoints,
     get_kpath, get_hull_kpath, get_display_labels, get_params,
+    canonical_lattice_type,
 )
 
 NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
+GAMMA_LABEL = "\u0393"
+BZ_SPECIAL_COLORS = {
+    "orange": "#e68613",
+    "purple": "#6b5596",
+}
+BZ_PATH_STYLE_OVERRIDES = {
+    "tI1": {(GAMMA_LABEL, "N"): "orange"},
+    "tI2": {(GAMMA_LABEL, "N"): "orange"},
+    "oF1": {(GAMMA_LABEL, "L"): "orange"},
+    "oF2": {(GAMMA_LABEL, "L"): "orange"},
+    "oF3": {(GAMMA_LABEL, "L"): "orange"},
+    "oI1": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI2": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI3": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oA1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oA2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "hR1": {
+        (GAMMA_LABEL, "L"): "orange",
+        (GAMMA_LABEL, "F"): "orange",
+    },
+    "hR2": {(GAMMA_LABEL, "L"): "orange"},
+    "mP1": {
+        (GAMMA_LABEL, "B"): "orange",
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        ("Z", "D"): "purple",
+        ("Z", "E"): "purple",
+        ("Z", "C_2"): "purple",
+    },
+    "mC1": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+    },
+    "mC2": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        ("M", "Y"): "purple",
+    },
+    "mC3": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+    },
+}
+
+
+def _get_bz_path_style(lattice_type, k1, k2):
+    """Return the display style for a recommended HPKOT path segment."""
+    style = {"color": "red", "lw": 4.0, "alpha": 0.9}
+    if not lattice_type:
+        return style
+
+    try:
+        lattice_key = canonical_lattice_type(lattice_type)
+    except Exception:
+        lattice_key = lattice_type
+
+    overrides = BZ_PATH_STYLE_OVERRIDES.get(lattice_key, {})
+    color_key = overrides.get((k1, k2), overrides.get((k2, k1)))
+    if color_key:
+        style["color"] = BZ_SPECIAL_COLORS.get(color_key, color_key)
+        style["alpha"] = 0.95
+    return style
 
 
 def _figure_output_paths(output_path):
@@ -512,7 +607,7 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
 
 
 def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
-             hull_pts=None):
+             hull_pts=None, lattice_type=None):
     points_list = list(kpoints_cart.values())
     # Draw IBZ faces (skip for triclinic where hull is None)
     if hull is not None:
@@ -523,8 +618,9 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
     for k1, k2 in kpath:
         if k1 in kpoints_cart and k2 in kpoints_cart:
             p1, p2 = kpoints_cart[k1], kpoints_cart[k2]
+            style = _get_bz_path_style(lattice_type, k1, k2)
             ax.plot([p1[0],p2[0]], [p1[1],p2[1]], [p1[2],p2[2]],
-                    c='red', ls='-', lw=2.5, alpha=0.9)
+                    c=style["color"], ls='-', lw=style["lw"], alpha=style["alpha"])
     ibz_center = np.mean(points_list, axis=0)
     ibz_span = np.max(np.ptp(np.array(points_list), axis=0))
     label_offset = ibz_span * 0.1  # scale offset to IBZ size
@@ -1538,7 +1634,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         fig1, ax1 = setup_3d_ax(fig1_title,
                                 bz_loops, b_matrix, bz_center, bz_span)
         plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr)
+                 hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type)
         plt.tight_layout()
         if defer_show:
             def _save_fig1_after_show(fig=fig1, ax=ax1):
@@ -1547,7 +1643,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                                           elev=ax.elev, azim=ax.azim, dashed_back=True)
                 plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
                          display_labels_plot, hull, centroid_cart,
-                         hull_pts=points_arr)
+                         hull_pts=points_arr, lattice_type=sc_type)
                 plt.tight_layout()
                 saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
                 plt.close(fig1s)
@@ -1569,7 +1665,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                                   bz_loops, b_matrix, bz_center, bz_span,
                                   elev=elev1, azim=azim1, dashed_back=True)
         plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr)
+                 hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type)
         plt.tight_layout()
         saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
         _print_saved_paths(saved_paths, verbose=verbose)
