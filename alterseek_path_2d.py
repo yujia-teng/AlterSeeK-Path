@@ -1363,9 +1363,7 @@ def interactive_2d():
             "Projecting k' back to the 2D plane for KPOINTS output."
         )
     k_prime[axis] = 0.0
-    new_kpoints = modifier.insert_general_kpoints(
-        general_kpoint, R_for_kpts, modifier.extra_general_points
-    )
+    new_kpoints = modifier.insert_general_kpoints(general_kpoint, R_for_kpts)
     for point in new_kpoints:
         if point is not None:
             point[axis] = 0.0
@@ -1373,7 +1371,7 @@ def interactive_2d():
     print(f"\n{BOLD}>>> Step 5: Save{RESET}")
     print("Enter output filename (default: KPOINTS_2D): ", end="", flush=True)
     output_file = input().strip() or "KPOINTS_2D"
-    modifier.write_kpoints_file(new_kpoints, output_file, R, selected_label)
+    modifier.write_kpoints_file(new_kpoints, output_file, R_for_kpts)
 
     basename = os.path.splitext(os.path.basename(struct_file))[0] if struct_file else "POSCAR"
     _plot_2d_figures(

@@ -97,6 +97,10 @@ HULL_EXCLUDED_POINTS = {
     "cF2": {"W_2"},
     "hP1": {"H_2"},
     "hP2": {"H_2"},
+    # The HPKOT rhombohedral tables include symmetry-equivalent special points
+    # across the full BZ.  Exclude only copies outside the selected IBZ wedge.
+    "hR1": {"L_4", "F_2", "S_4", "S_6", "H_4", "H_6", "M_8", "M_6"},
+    "hR2": {"M", "M_2"},
 }
 
 
@@ -118,6 +122,17 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
     ("tP1", range(75, 89)): {
         "X_A": ("1/2", "0", "0"),
         "R_A": ("1/2", "0", "1/2"),
+    },
+    ("tI1", range(75, 89)): {
+        "M_A": ("1/2", "-1/2", "1/2"),
+        "N_A": ("1/2", "0", "0"),
+        "Z_0A": ("1-H", "-H", "H"),
+    },
+    ("tI2", range(75, 89)): {
+        "N_A": ("1/2", "0", "0"),
+        "S_0A": ("H", "-H", "H"),
+        "S_A": ("1-H", "H", "-H"),
+        "R_A": ("Z", "-Z", "1/2"),
     },
 
     # Trigonal 3 and -3 point groups on a primitive hexagonal lattice:
@@ -166,6 +181,18 @@ PROJECT_HULL_PATH_BY_SG = {
         ("\u0393", "Z"),
         ("Z", "R"), ("R", "A"), ("A", "R_A"), ("R_A", "Z"),
         ("X", "R"), ("M", "A"), ("X_A", "R_A"),
+    ],
+    ("tI1", range(75, 89)): [
+        ("\u0393", "X"), ("X", "M"), ("M", "\u0393"), ("\u0393", "Z"),
+        ("Z", "P"), ("P", "N"), ("N", "Z_0"), ("Z_0", "M"), ("X", "P"),
+        ("M_A", "\u0393"), ("P", "N_A"), ("N_A", "Z_0A"), ("Z_0A", "M_A"),
+    ],
+    ("tI2", range(75, 89)): [
+        ("\u0393", "X"), ("X", "R"), ("R", "S_0"), ("S_0", "\u0393"),
+        ("\u0393", "M"), ("M", "S"), ("S", "N"), ("N", "P"),
+        ("P", "G"), ("G", "M"), ("X", "P"),
+        ("X", "R_A"), ("R_A", "S_0A"), ("S_0A", "\u0393"),
+        ("M", "S_A"), ("S_A", "N_A"), ("N_A", "P"),
     ],
     ("hP1", range(143, 149)): [
         ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "K_A"),

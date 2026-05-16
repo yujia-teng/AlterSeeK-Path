@@ -183,6 +183,26 @@ and writes:
 alterband.png
 ```
 
+If `alterband.toml` is present, the plotter reads settings from it. The main
+`alterseek-path` workflow writes the detected `lattice_type` there when it
+generates KPOINTS, so later band plots can apply the same HPKOT special-segment
+styling. You can also set it manually when plotting directly:
+
+```toml
+emin = -2
+emax = 2
+fig_width = 16
+fig_height = 5
+gap_width_inches = 0.05
+lattice_type = "tI1"
+split_panels = 0
+```
+
+When `lattice_type` is present, special HPKOT path intervals are shaded light
+grey in the band plot. If it is absent, special-segment styling is skipped.
+Use `split_panels = 2` or `split_panels = 3` for long paths that should be
+rendered as stacked panels; missing or `0` keeps a single panel.
+
 Use PNG for quick checks and PowerPoint slides:
 
 ```bash
@@ -205,6 +225,8 @@ Optional arguments:
 ```bash
 alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
+alterseek-path bandplot --lattice-type mC2 --split-panels 2
+alterseek-path bandplot --gap-width-inches 0.05
 ```
 
 The standalone command `alterseek-bandplot` is also installed, but

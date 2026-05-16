@@ -11,7 +11,10 @@ __pycache__/
 .DS_Store
 .claude/
 AGENTS.md
+CLAUDE.md
 CODEX_MEMORY.md
+figure_style_plan_*.md
+alterseek_path_2d_monoclinic.py
 spin_operations.txt
 flip_spin_operations.txt
 preserve_spin_operations.txt
@@ -23,3 +26,5 @@ KPOINTS_modified
 *_spinbz_*.png
 *_spinbz_top_*.png
 _tmp*/
+figure_review_runs/
+tools/

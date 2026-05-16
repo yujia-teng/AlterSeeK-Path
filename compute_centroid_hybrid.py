@@ -87,12 +87,156 @@ import seekpath
 from pymatgen.core import Structure
 import spglib
 
+plt.rcParams["mathtext.fontset"] = "stix"
+
 from lattice_kpoints import (
     LATTICE_DATA, get_kpoints, get_hull_kpoints, get_path_kpoints,
     get_kpath, get_hull_kpath, get_display_labels, get_params,
+    canonical_lattice_type,
 )
 
 NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
+
+GAMMA_LABEL = "\u0393"
+BZ_SPECIAL_COLORS = {
+    "orange": "#e68613",
+    "purple": "#6b5596",
+}
+HIGH_SYM_LABEL_FONT = {
+    "fontsize": 22,
+}
+BZ_PATH_STYLE_OVERRIDES = {
+    # Body-centered tetragonal.
+    "tI1": {
+        (GAMMA_LABEL, "N"): "orange",
+    },
+    "tI2": {
+        (GAMMA_LABEL, "N"): "orange",
+    },
+    # Face-centered orthorhombic.
+    "oF1": {
+        (GAMMA_LABEL, "L"): "orange",
+    },
+    "oF2": {
+        (GAMMA_LABEL, "L"): "orange",
+    },
+    "oF3": {
+        (GAMMA_LABEL, "L"): "orange",
+    },
+    # Body-centered orthorhombic.
+    "oI1": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI2": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI3": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    # Side-centered orthorhombic (HPKOT oA/oC variants).
+    "oA1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oA2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    # Rhombohedral.
+    "hR1": {
+        (GAMMA_LABEL, "L"): "orange",
+        (GAMMA_LABEL, "F"): "orange",
+    },
+    "hR2": {
+        (GAMMA_LABEL, "L"): "orange",
+    },
+    # Primitive monoclinic.
+    "mP1": {
+        (GAMMA_LABEL, "B"): "orange",
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        ("Z", "D"): "purple",
+        ("Z", "E"): "purple",
+        ("Z", "C_2"): "purple",
+    },
+    # Base-centered monoclinic.
+    "mC1": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+    },
+    "mC2": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        ("M", "Y"): "purple",
+    },
+    "mC3": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+    },
+}
+
+
+def _get_bz_path_style(lattice_type, k1, k2):
+    """Return the display style for a recommended HPKOT path segment."""
+    style = {"color": "red", "lw": 4.0, "alpha": 0.9}
+    if not lattice_type:
+        return style
+
+    try:
+        lattice_key = canonical_lattice_type(lattice_type)
+    except Exception:
+        lattice_key = lattice_type
+
+    overrides = BZ_PATH_STYLE_OVERRIDES.get(lattice_key, {})
+    color_key = overrides.get((k1, k2), overrides.get((k2, k1)))
+    if color_key:
+        style["color"] = BZ_SPECIAL_COLORS.get(color_key, color_key)
+        style["alpha"] = 0.95
+    return style
+
+
+def _math_label(label):
+    """Return a paper-like mathtext label for high-symmetry k-points."""
+    prime = label.endswith("'")
+    base = label.rstrip("'")
+    suffix = r"^{\prime}" if prime else ""
+    greek = {
+        "\u0393": r"\mathbf{\Gamma}",
+        "GAMMA": r"\mathbf{\Gamma}",
+        "\u0394": r"\mathbf{\Delta}",
+        "DELTA": r"\mathbf{\Delta}",
+        "\u039b": r"\mathbf{\Lambda}",
+        "LAMBDA": r"\mathbf{\Lambda}",
+        "\u03a3": r"\mathbf{\Sigma}",
+        "SIGMA": r"\mathbf{\Sigma}",
+    }
+    if "_" in base:
+        head, sub = base.split("_", 1)
+        head = greek.get(head, rf"\mathbf{{{head}}}")
+        return rf"${head}_{{{sub}}}{suffix}$"
+    if base in greek:
+        return rf"${greek[base]}{suffix}$"
+    return rf"$\mathbf{{{base}}}{suffix}$"
 
 
 def laue_group_from_point_group(point_group):
@@ -462,7 +606,7 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
 
 
 def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
-             hull_pts=None):
+             hull_pts=None, lattice_type=None):
     points_list = list(kpoints_cart.values())
     # Draw IBZ faces (skip for triclinic where hull is None)
     if hull is not None:
@@ -473,8 +617,10 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
     for k1, k2 in kpath:
         if k1 in kpoints_cart and k2 in kpoints_cart:
             p1, p2 = kpoints_cart[k1], kpoints_cart[k2]
+            style = _get_bz_path_style(lattice_type, k1, k2)
             ax.plot([p1[0],p2[0]], [p1[1],p2[1]], [p1[2],p2[2]],
-                    c='red', ls='-', lw=2.5, alpha=0.9)
+                    c=style["color"], ls='-', lw=style["lw"],
+                    alpha=style["alpha"])
     ibz_center = np.mean(points_list, axis=0)
     ibz_span = np.max(np.ptp(np.array(points_list), axis=0))
     label_offset = ibz_span * 0.1  # scale offset to IBZ size
@@ -487,8 +633,8 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
         norm_dir = np.linalg.norm(direction)
         offset = direction / norm_dir * label_offset if norm_dir > 1e-8 else np.array([0, 0, label_offset])
         ax.text(coords[0]+offset[0], coords[1]+offset[1], coords[2]+offset[2],
-                display_labels.get(label, label),
-                fontsize=20, color='black',
+                _math_label(label),
+                color='black', **HIGH_SYM_LABEL_FONT,
                 zorder=111, ha='center', va='center')
     if hull is not None:
         ax.scatter(*centroid_cart, c='gold', marker='*', s=400,
@@ -518,7 +664,7 @@ def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
 # ============================================================================
 # IBZ frame edge helper
 # ============================================================================
-def _get_ibz_frame_edges(hull_pts, hull_simplices):
+def _get_ibz_frame_edges(hull_pts, hull_simplices, hull_labels=None):
     """Return only the non-coplanar edges of the IBZ hull as (pt1, pt2) pairs.
 
     Filters out internal triangulation diagonals within flat faces by checking
@@ -526,6 +672,21 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices):
     """
     from collections import defaultdict
     hull_pts = np.array(hull_pts)
+    hull_labels = list(hull_labels) if hull_labels is not None else None
+    forbidden_label_edges = {
+        tuple(sorted(edge))
+        for edge in (
+            ("G", "G_6"), ("G_2", "G_4"),
+            ("N", "N_6"), ("N_2", "N_4"),
+        )
+    }
+
+    def _is_forbidden_label_edge(i, j):
+        if hull_labels is None or i >= len(hull_labels) or j >= len(hull_labels):
+            return False
+        edge = tuple(sorted((hull_labels[i], hull_labels[j])))
+        return edge in forbidden_label_edges
+
     edge_faces = defaultdict(list)
     face_normals = []
 
@@ -539,6 +700,8 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices):
 
     edges = []
     for (i, j), faces in edge_faces.items():
+        if _is_forbidden_label_edge(i, j):
+            continue
         if len(faces) < 2:
             edges.append((hull_pts[i], hull_pts[j]))
         else:
@@ -560,7 +723,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                           centroid_frac, R,
                           output_path, elev=25, azim=-55, show_plot=True,
                           block=True, path_sequence=None, R_cart=None,
-                          defer_show=False, unique_ops=None):
+                          defer_show=False, hull_labels=None):
     """
     Generate the spin-flip connection figure (replaces Fig 2 / mapped-BZ figure).
 
@@ -577,6 +740,10 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         Each entry is [kx, ky, kz, label] (fractional coords) or None (segment break).
         When provided, only the generated-path segments are drawn, coloured by spin side.
         When None, falls back to drawing all raw KPOINTS file segments in red.
+
+    Figure 2 must use the exact selected IBZ hull from Figure 1.  The spin-down
+    IBZ is only the spin-flip operation applied to that same hull; do not rebuild
+    this geometry from symmetry/Voronoi spin-BZ cells here.
     """
     b1, b2, b3 = b_matrix[0], b_matrix[1], b_matrix[2]
     b_T = b_matrix.T
@@ -636,72 +803,40 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     # Spin-down IBZ hull vertices (apply same fractional transform to each vertex)
     mapped_hull_pts = None
     if hull_pts is not None:
-        mapped_hull_pts = (R_cart @ np.array(hull_pts).T).T
-
-    spin_up_cell = None
-    spin_down_cell = None
-    if (unique_ops is not None and hull_pts is not None
-            and hull_simplices is not None and len(unique_ops)):
-        unique_ops = [np.array(g, dtype=float) for g in unique_ops]
-        spin_cells = _spin_bz_cells(b_matrix, unique_ops, k_cart)
-        centers = np.array([g @ k_cart for g in unique_ops])
-        if len(centers):
-            up_idx = int(np.argmin(np.linalg.norm(centers - k_cart, axis=1)))
-            down_idx = int(np.argmin(np.linalg.norm(centers - kp_cart, axis=1)))
-            spin_up_cell = spin_cells[up_idx]
-            spin_down_cell = spin_cells[down_idx]
+        hull_pts = np.array(hull_pts, dtype=float)
+        mapped_hull_pts = (R_cart @ hull_pts.T).T
+    if hull_simplices is not None:
+        hull_simplices = np.array(hull_simplices, dtype=int)
+    if hull_labels is None and hull_pts is not None and len(ibz_kpoints_frac) == len(hull_pts):
+        hull_labels = list(ibz_kpoints_frac.keys())
 
     # Filter threshold: skip connections shorter than 5% of BZ radius
     bz_radius = np.max(np.linalg.norm(np.vstack(bz_loops), axis=1))
     threshold = 0.05 * bz_radius
 
-    def _disp(lbl):
-        prime = lbl.endswith("'")
-        base = lbl.rstrip("'")
-        suffix = r"$'$" if prime else ''
-        greek = {
-            'GAMMA': r'\Gamma',
-            'DELTA': r'\Delta',
-            'LAMBDA': r'\Lambda',
-            'SIGMA': r'\Sigma',
-        }
-        if '_' in base:
-            b, s = base.split('_', 1)
-            b = greek.get(b.upper(), b)
-            return rf"${b}_{{{s}}}${suffix}"
-        if base.upper() in greek:
-            return rf"${greek[base.upper()]}${suffix}"
-        return f"${base}${suffix}" if prime else base
-
     def _draw(ax):
         # Spin-up IBZ: salmon shading (no triangulation diagonals)
-        up_pts, up_simplices = (
-            spin_up_cell if spin_up_cell is not None and spin_up_cell[0] is not None
-            else (hull_pts, hull_simplices)
-        )
+        up_pts, up_simplices = hull_pts, hull_simplices
         if up_pts is not None and up_simplices is not None:
             up_pts = np.array(up_pts)
             ax.plot_trisurf(up_pts[:, 0], up_pts[:, 1], up_pts[:, 2],
                             triangles=up_simplices, color='salmon',
                             edgecolor='none', alpha=0.20, shade=False)
-            for p1, p2 in _get_ibz_frame_edges(up_pts, up_simplices):
+            for p1, p2 in _get_ibz_frame_edges(up_pts, up_simplices, hull_labels):
                 ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]],
-                        c='darkred', lw=1.8, alpha=0.85, zorder=10)
+                        c='darkred', lw=1.5, alpha=0.85, zorder=10)
 
         # Spin-down IBZ: blue shading (no triangulation diagonals)
-        down_pts, down_simplices = (
-            spin_down_cell if spin_down_cell is not None and spin_down_cell[0] is not None
-            else (mapped_hull_pts, hull_simplices)
-        )
+        down_pts, down_simplices = mapped_hull_pts, hull_simplices
         if down_pts is not None and down_simplices is not None:
             down_pts = np.array(down_pts)
             ax.plot_trisurf(down_pts[:, 0], down_pts[:, 1],
                             down_pts[:, 2],
                             triangles=down_simplices, color='cornflowerblue',
                             edgecolor='none', alpha=0.20, shade=False)
-            for p1, p2 in _get_ibz_frame_edges(down_pts, down_simplices):
+            for p1, p2 in _get_ibz_frame_edges(down_pts, down_simplices, hull_labels):
                 ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]],
-                        c='navy', lw=1.8, alpha=0.85, zorder=10)
+                        c='navy', lw=1.5, alpha=0.85, zorder=10)
 
         # Generated path segments (red = spin-up side, navy = spin-down side).
         # Use path_sequence for labels/order only. The coordinates are looked up from
@@ -750,19 +885,28 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 ax.plot([p1c[0], p2c[0]], [p1c[1], p2c[1]], [p1c[2], p2c[2]],
                         c='red', lw=2.5, alpha=0.9, zorder=50)
 
-        # Label helpers
+        # Label helpers -- use a shared center/span for original and mapped
+        # points so red/blue label offsets stay visually consistent.
+        _all_label_pts = np.array(list(ibz_orig.values()) + list(ibz_mapped.values()))
+        _label_center = np.mean(_all_label_pts, axis=0) if len(_all_label_pts) else np.zeros(3)
+        _label_span = (
+            max(np.max(np.ptp(_all_label_pts, axis=0)), 1e-8)
+            if len(_all_label_pts) else 1.0
+        )
+        _label_offset = _label_span * 0.10
+
         def _label_pts(pts_dict, color, edgecolor):
-            arr = np.array(list(pts_dict.values()))
-            center = np.mean(arr, axis=0) if len(arr) else np.zeros(3)
-            span = max(np.max(np.ptp(arr, axis=0)), 1e-8) if len(arr) else 1.0
-            off_sc = span * 0.18
             for lbl, hpt in pts_dict.items():
                 ax.scatter(*hpt, c=color, s=60, zorder=110,
                            edgecolors=edgecolor, linewidths=0.5)
-                direction = hpt - center
+                direction = hpt - _label_center
                 nd = np.linalg.norm(direction)
-                off = direction / nd * off_sc if nd > 1e-8 else np.array([0, 0, off_sc])
-                ax.text(*(hpt + off), _disp(lbl), fontsize=20, color=edgecolor,
+                off = (
+                    direction / nd * _label_offset
+                    if nd > 1e-8 else np.array([0, 0, _label_offset])
+                )
+                ax.text(*(hpt + off), _math_label(lbl), color=edgecolor,
+                        **HIGH_SYM_LABEL_FONT,
                         zorder=111, ha='center', va='center')
 
         _label_pts(ibz_orig,   color='salmon',          edgecolor='darkred')
@@ -1313,6 +1457,8 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     sc_type, conv_params = seekpath_to_hpkot_type(sp_result)
     sc_display = sc_type
     centroid_type = sc_type
+    if 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
+        sc_display = f"{sc_type}_2"
 
     # ---- Get curated HPKOT/project k-points ----
     # The table coordinates, labels, and path are all in the same HPKOT kP
@@ -1385,23 +1531,44 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         hull = ConvexHull(points_arr)
         centroid_cart, ibz_vol = calculate_volume_centroid(hull)
         centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        hull_labels_for_output = labels_list
+
+        # The mC2/mC3 HPKOT tables include distinctive boundary labels whose
+        # convex hull is slightly larger than the true C2/m fundamental domain.
+        # For these branches only, keep the labels/path from HPKOT but shade and
+        # use the centroid of the symmetry/Voronoi IBZ cell so four images tile
+        # the BZ without overlap.
+        hull_matches_labels = True
+        if sc_type in {'mC2', 'mC3'}:
+            mono_pts, mono_simplices = build_symmetry_ibz_cell(
+                b_matrix, unique_ops, centroid_cart)
+            if mono_pts is not None and mono_simplices is not None:
+                points_arr = np.array(mono_pts, dtype=float)
+                hull = ConvexHull(points_arr)
+                centroid_cart, ibz_vol = calculate_volume_centroid(hull)
+                centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+                hull_matches_labels = False
+                hull_labels_for_output = None
+                if verbose:
+                    print("[Note] Using symmetry/Voronoi IBZ cell for monoclinic hull.")
 
         # ---- Symbolic Centroid (saved to file, not printed) ----
-        try:
-            sym_centroid, param_syms = compute_symbolic_centroid(
-                kpoints_frac_centroid, hull, labels_list, centroid_type, conv_params)
-            if sym_centroid is not None:
-                sym_lines = "\n".join(
-                    f"  {ax_name} = {sym_centroid[i]}"
-                    for i, ax_name in enumerate(['k1', 'k2', 'k3'])
-                )
-                try:
-                    with open("spin_operations.txt", "a") as f:
-                        f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        if hull_matches_labels:
+            try:
+                sym_centroid, param_syms = compute_symbolic_centroid(
+                    kpoints_frac_centroid, hull, labels_list, centroid_type, conv_params)
+                if sym_centroid is not None:
+                    sym_lines = "\n".join(
+                        f"  {ax_name} = {sym_centroid[i]}"
+                        for i, ax_name in enumerate(['k1', 'k2', 'k3'])
+                    )
+                    try:
+                        with open("spin_operations.txt", "a") as f:
+                            f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     # ---- Plotting ----
     bz_loops = get_bz_loops(b_matrix)
@@ -1409,11 +1576,33 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     bz_center = np.mean(all_bz_pts, axis=0)
     bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
-    # For plotting: use base type k-points, kpath and display labels
-    # (hull was computed from centroid type, so faces must use same point set)
-    # Plot with the same seekpath convention used for the hull.  Add path-only
-    # optional points (e.g. H_2) only when the selected SG path actually uses
-    # them; do not let them affect the hull or centroid.
+    # Selected band path. For doubled-IBZ cases, keep the usual HPKOT path for
+    # the KPOINTS workflow and expose project-only copied hull vertices as
+    # isolated general-point anchors. Figure 1 still draws the project hull path.
+    band_kpath = list(kpath)
+    band_kpoints_frac = dict(path_kpoints_frac)
+    extra_general_vertices = []
+    if sc_type in {'hP1', 'hP2'} and 149 <= sg <= 176:
+        extra_general_vertices = ["M_A", "L_A"]
+        for label in ("L_A", "M_A"):
+            if label in kpoints_frac_centroid:
+                band_kpoints_frac[label] = kpoints_frac_centroid[label]
+    elif 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
+        tetragonal_extra = {
+            'tP1': ["X_A", "R_A"],
+            'tI1': ["M_A", "N_A", "Z_0A"],
+            'tI2': ["R_A", "S_0A", "S_A", "N_A"],
+        }
+        extra_general_vertices = [
+            label for label in tetragonal_extra[sc_type]
+            if label in kpoints_frac_centroid
+        ]
+        for label in extra_general_vertices:
+            band_kpoints_frac[label] = kpoints_frac_centroid[label]
+
+    # For plotting: draw the selected project IBZ hull path. Add path-only
+    # optional points (e.g. H_2) only when the selected path actually uses them;
+    # do not let them affect the hull or centroid.
     kpath_plot = hull_kpath
     display_labels_plot = display_labels
     kpoints_cart_plot = dict(kpoints_cart_centroid)
@@ -1431,14 +1620,15 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                   else f"IBZ + BZ: {basename} ({sc_display})")
 
     display_figures = []
-    fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_type}.png')
+    fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_display}.png')
     if show_plot:
         # Interactive mode: create the figure now. alterseek_path can defer
         # the actual plt.show() call until all prompts and file writes finish.
         fig1, ax1 = setup_3d_ax(fig1_title,
                                 bz_loops, b_matrix, bz_center, bz_span)
         plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr)
+                 hull, centroid_cart, hull_pts=points_arr,
+                 lattice_type=sc_type)
         plt.tight_layout()
         if defer_show:
             def _save_fig1_after_show(fig=fig1, ax=ax1):
@@ -1447,7 +1637,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                                           elev=ax.elev, azim=ax.azim, dashed_back=True)
                 plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
                          display_labels_plot, hull, centroid_cart,
-                         hull_pts=points_arr)
+                         hull_pts=points_arr, lattice_type=sc_type)
                 plt.tight_layout()
                 fig1s.savefig(fig1_path, dpi=300, bbox_inches='tight')
                 plt.close(fig1s)
@@ -1469,7 +1659,8 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                                   bz_loops, b_matrix, bz_center, bz_span,
                                   elev=elev1, azim=azim1, dashed_back=True)
         plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr)
+                 hull, centroid_cart, hull_pts=points_arr,
+                 lattice_type=sc_type)
         plt.tight_layout()
         fig1s.savefig(fig1_path, dpi=300, bbox_inches='tight')
         if verbose:
@@ -1477,7 +1668,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         plt.close(fig1s)
 
     return {
-        'sc_type': sc_type,
+        'sc_type': sc_display,
         'lattice_key': sc_type,
         'seekpath_bravais': sp_result['bravais_lattice_extended'],
         'spacegroup': sg,
@@ -1501,7 +1692,11 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         'ibz_kpoints_frac': kpoints_frac_centroid if sg not in (1, 2) else kpoints_frac,
         'path_kpoints_frac': kpoints_frac_for_output,
         'ibz_kpath': kpath_plot,
+        'band_kpoints_frac': band_kpoints_frac,
+        'band_kpath': band_kpath,
+        'extra_general_vertices': extra_general_vertices,
         'hull_pts': points_arr if sg not in (1, 2) else None,
+        'hull_labels': hull_labels_for_output if sg not in (1, 2) else None,
         'hull_simplices': hull.simplices.tolist() if (sg not in (1, 2) and hull is not None) else None,
         'sym_ops_cart': sym_ops_cart,
         'unique_ops': unique_ops,
