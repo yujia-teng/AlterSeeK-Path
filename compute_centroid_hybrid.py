@@ -89,6 +89,8 @@ import seekpath
 from pymatgen.core import Structure
 import spglib
 
+plt.rcParams["mathtext.fontset"] = "stix"
+
 
 class _Arrow3D(FancyArrowPatch):
     """FancyArrowPatch projected into 3D — paper-quality arrow from any view angle."""
@@ -315,12 +317,33 @@ def _seekpath_label_to_internal(label):
 
 
 def _display_label_from_internal(label):
-    if label == '\u0393':
-        return r'$\Gamma$'
-    if '_' in label:
-        base, sub = label.split('_', 1)
-        return rf'${base}_{{{sub}}}$'
-    return label
+    return _math_label(label)
+
+
+def _math_label(label):
+    """Return a bold mathtext label for high-symmetry point names."""
+    label = str(label)
+    prime = label.endswith("'")
+    base = label.rstrip("'")
+    if base == '\u0393' or base.upper() == "GAMMA":
+        symbol = r"\Gamma"
+    elif '_' in base:
+        head, sub = base.split('_', 1)
+        greek = {
+            "DELTA": r"\Delta",
+            "LAMBDA": r"\Lambda",
+            "SIGMA": r"\Sigma",
+        }
+        symbol = rf"{greek.get(head.upper(), head)}_{{{sub}}}"
+    else:
+        greek = {
+            "DELTA": r"\Delta",
+            "LAMBDA": r"\Lambda",
+            "SIGMA": r"\Sigma",
+        }
+        symbol = greek.get(base.upper(), base)
+    prime_part = r"^{\prime}" if prime else ""
+    return rf"$\mathbf{{{symbol}}}{prime_part}$"
 
 
 # ============================================================================
@@ -633,8 +656,8 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
         norm_dir = np.linalg.norm(direction)
         offset = direction / norm_dir * label_offset if norm_dir > 1e-8 else np.array([0, 0, label_offset])
         ax.text(coords[0]+offset[0], coords[1]+offset[1], coords[2]+offset[2],
-                display_labels.get(label, label),
-                fontsize=24, color='black',
+                _math_label(label),
+                fontsize=22, color='black',
                 zorder=111, ha='center', va='center')
     if hull is not None:
         ax.scatter(*centroid_cart, c='gold', marker='*', s=400,
@@ -810,24 +833,6 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     bz_radius = np.max(np.linalg.norm(np.vstack(bz_loops), axis=1))
     threshold = 0.05 * bz_radius
 
-    def _disp(lbl):
-        prime = lbl.endswith("'")
-        base = lbl.rstrip("'")
-        suffix = r"$'$" if prime else ''
-        greek = {
-            'GAMMA': r'\Gamma',
-            'DELTA': r'\Delta',
-            'LAMBDA': r'\Lambda',
-            'SIGMA': r'\Sigma',
-        }
-        if '_' in base:
-            b, s = base.split('_', 1)
-            b = greek.get(b.upper(), b)
-            return rf"${b}_{{{s}}}${suffix}"
-        if base.upper() in greek:
-            return rf"${greek[base.upper()]}${suffix}"
-        return f"${base}${suffix}" if prime else base
-
     def _draw(ax):
         # Spin-up IBZ: use the same curated HPKOT/project hull as Figure 1.
         up_pts, up_simplices = hull_pts, hull_simplices
@@ -920,7 +925,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 direction = hpt - _lbl_center
                 nd = np.linalg.norm(direction)
                 off = direction / nd * _off_sc if nd > 1e-8 else np.array([0, 0, _off_sc])
-                ax.text(*(hpt + off), _disp(lbl), fontsize=24, color=edgecolor,
+                ax.text(*(hpt + off), _math_label(lbl), fontsize=22, color=edgecolor,
                         zorder=111, ha='center', va='center')
 
         _label_pts(ibz_orig,   color='salmon',          edgecolor='darkred')
