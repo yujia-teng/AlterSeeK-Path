@@ -215,6 +215,35 @@ def _get_bz_path_style(lattice_type, k1, k2):
     return style
 
 
+def _figure_output_paths(output_path):
+    """Return the requested figure output paths, preserving PNG as the default."""
+    root, ext = os.path.splitext(output_path)
+    default_fmt = ext[1:] if ext else 'png'
+    raw_formats = os.environ.get('ALTERSEEK_BZ_FORMATS', default_fmt)
+    formats = []
+    for item in raw_formats.replace(';', ',').split(','):
+        fmt = item.strip().lower().lstrip('.')
+        if fmt and fmt not in formats:
+            formats.append(fmt)
+    if not formats:
+        formats = [default_fmt]
+    return [f"{root}.{fmt}" for fmt in formats]
+
+
+def _save_figure(fig, output_path, **kwargs):
+    saved_paths = _figure_output_paths(output_path)
+    for path in saved_paths:
+        fig.savefig(path, **kwargs)
+    return saved_paths
+
+
+def _print_saved_paths(saved_paths, verbose=True):
+    if not verbose:
+        return
+    for path in saved_paths:
+        print(f"Saved: {path}")
+
+
 def _math_label(label):
     """Return a paper-like mathtext label for high-symmetry k-points."""
     prime = label.endswith("'")
@@ -986,7 +1015,8 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                         R, output_path,
                         flip_ops_frac=None,
                         elev=25, azim=-55, show_plot=True,
-                        defer_show=False):
+                        defer_show=False, z0=0.0,
+                        show_helper_plane=True):
     """
     Show the full BZ colored by spin channel (replaces old rainbow Fig 2).
 
@@ -1055,6 +1085,9 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                     break
 
     def _draw(ax):
+        if show_helper_plane:
+            draw_kz0_helper_plane(ax, bz_loops, z0=z0)
+
         for i, g in enumerate(unique_ops):
             cell_pts, cell_simplices = spin_cells[i] if i < len(spin_cells) else (None, None)
             if cell_pts is None or cell_simplices is None:
@@ -1154,6 +1187,83 @@ def _classify_spin_down_ops(b_matrix, unique_ops, centroid_cart, R, flip_ops_fra
                 spin_down_mask = mask_try
                 break
     return spin_down_mask
+
+
+def draw_kz0_helper_plane(ax, bz_loops, z0=0.0, pad=0.08):
+    """Draw the kz=0 BZ-section outline without changing any BZ geometry."""
+    outline = _bz_kz_plane_outline(bz_loops, z0=z0)
+    if outline is not None:
+        outline3d = np.column_stack([
+            outline[:, 0],
+            outline[:, 1],
+            np.full(len(outline), z0),
+        ])
+        closed_outline = np.vstack([outline3d, outline3d[0]])
+        ax.plot(closed_outline[:, 0], closed_outline[:, 1], closed_outline[:, 2],
+                color='#3f5268', lw=3.0, ls='--', alpha=0.95, zorder=90)
+
+
+def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0):
+    """Project b1, b2, b3 onto kz=0 and draw the projected in-plane arrows."""
+    all_pts = np.vstack([np.array(loop, dtype=float) for loop in bz_loops])
+    span_xy = np.ptp(all_pts[:, :2], axis=0)
+    span = max(float(np.max(span_xy)), 1e-8)
+    target = 0.60 * span
+    origin = np.array([0.0, 0.0])
+    colors = ['#202020', '#202020', '#202020']
+    labels = [r'$\mathbf{b}_1$', r'$\mathbf{b}_2$', r'$\mathbf{b}_3$']
+    outline = _bz_kz_plane_outline(bz_loops, z0=z0)
+
+    def _ray_outline_exit(unit_vec):
+        if outline is None or len(outline) < 3:
+            return None
+        t_hits = []
+        closed = np.vstack([outline, outline[0]])
+        for p1, p2 in zip(closed[:-1], closed[1:]):
+            edge = p2 - p1
+            mat = np.column_stack([unit_vec, -edge])
+            det = np.linalg.det(mat)
+            if abs(det) < 1e-12:
+                continue
+            t, u = np.linalg.solve(mat, p1 - origin)
+            if t > 1e-10 and -1e-10 <= u <= 1.0 + 1e-10:
+                t_hits.append(float(t))
+        return min(t_hits) if t_hits else None
+
+    for vec, label, color in zip(np.array(b_matrix, dtype=float), labels, colors):
+        projected = np.array([vec[0], vec[1]], dtype=float)
+        length = float(np.linalg.norm(projected))
+        if length < 1e-10:
+            ax.scatter(origin[0], origin[1], s=36, c=color, zorder=220)
+            ax.text(origin[0] + 0.025 * span, origin[1] + 0.025 * span,
+                    label, fontsize=24, fontweight='bold',
+                    ha='left', va='bottom', color=color, zorder=221,
+                    clip_on=False)
+            continue
+
+        unit = projected / length
+        exit_t = _ray_outline_exit(unit)
+        exit_len = exit_t if exit_t is not None else target * 0.65
+        exit_pt = origin + unit * min(exit_len, target * 0.86)
+        end = origin + unit * max(target, exit_len * 1.16)
+        ax.plot([origin[0], exit_pt[0]], [origin[1], exit_pt[1]],
+                color=color, ls=':', lw=1.5, alpha=0.6, zorder=219,
+                clip_on=False)
+        ann = ax.annotate(
+            '',
+            xy=end, xytext=exit_pt,
+            arrowprops=dict(arrowstyle='->', color=color, lw=2.2,
+                            mutation_scale=28, shrinkA=0, shrinkB=0),
+            zorder=220,
+            annotation_clip=False,
+        )
+        ann.set_clip_on(False)
+        if ann.arrow_patch is not None:
+            ann.arrow_patch.set_clip_on(False)
+        offset = projected / length * (0.04 * span)
+        ax.text(end[0] + offset[0], end[1] + offset[1], label,
+                fontsize=24, fontweight='bold', ha='center', va='center',
+                color=color, zorder=221, clip_on=False)
 
 
 def _bz_halfspaces(b_matrix, grid_radius=2):
@@ -1317,7 +1427,9 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  R, output_path,
                                  flip_ops_frac=None,
                                  show_plot=True, defer_show=False,
-                                 z0=0.0):
+                                 z0=0.0, show_title=False,
+                                 show_projected_axes=True,
+                                 show_legend=False):
     """Draw a darker top-view kz=0 slice of the Figure 3 spin-BZ coloring."""
     if hull_pts is None or hull_simplices is None or not len(unique_ops):
         print("[Note] Skipping spin-BZ top-view figure (no hull or symmetry ops available).")
@@ -1370,27 +1482,32 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         closed = np.vstack([outline, outline[0]])
         ax.plot(closed[:, 0], closed[:, 1], color='black', lw=2.0, label='BZ boundary')
 
+    if show_projected_axes:
+        draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=z0)
+
     ax.set_aspect('equal', adjustable='box')
-    ax.set_title(r'Spin-up / Spin-down BZ top view ($k_z = 0$)', fontsize=14)
+    if show_title:
+        ax.set_title(r'Spin-up / Spin-down BZ top view ($k_z = 0$)', fontsize=14)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_axis_off()
-    ax.legend(loc='upper right', fontsize=10)
+    if show_legend:
+        ax.legend(loc='upper right', fontsize=12)
     fig.tight_layout()
 
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig):
-            fig.savefig(output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
             plt.close(fig)
-            print(f"Saved: {output_path}")
+            _print_saved_paths(saved_paths)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
     if show_plot and not defer_show:
         plt.show()
-    fig.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"Saved: {output_path}")
+    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
+    _print_saved_paths(saved_paths)
     plt.close(fig)
     return display_fig
 # ============================================================================
@@ -1457,8 +1574,6 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     sc_type, conv_params = seekpath_to_hpkot_type(sp_result)
     sc_display = sc_type
     centroid_type = sc_type
-    if 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
-        sc_display = f"{sc_type}_2"
 
     # ---- Get curated HPKOT/project k-points ----
     # The table coordinates, labels, and path are all in the same HPKOT kP
@@ -1582,7 +1697,12 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     band_kpath = list(kpath)
     band_kpoints_frac = dict(path_kpoints_frac)
     extra_general_vertices = []
-    if sc_type in {'hP1', 'hP2'} and 149 <= sg <= 176:
+    if sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163}:
+        extra_general_vertices = ["K_A", "H_A"]
+        for label in extra_general_vertices:
+            if label in kpoints_frac_centroid:
+                band_kpoints_frac[label] = kpoints_frac_centroid[label]
+    elif sc_type == 'hP2' and 149 <= sg <= 176:
         extra_general_vertices = ["M_A", "L_A"]
         for label in ("L_A", "M_A"):
             if label in kpoints_frac_centroid:

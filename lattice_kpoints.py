@@ -101,6 +101,9 @@ HULL_EXCLUDED_POINTS = {
     # across the full BZ.  Exclude only copies outside the selected IBZ wedge.
     "hR1": {"L_4", "F_2", "S_4", "S_6", "H_4", "H_6", "M_8", "M_6"},
     "hR2": {"M", "M_2"},
+    # oC2: HPKOT includes _2 mirror copies at kz < 0 (bottom half of BZ).
+    # These are outside the IBZ wedge and must not contribute to the hull.
+    "oC2": {"B_2", "G_2", "R_2", "T_2", "Z_2"},
 }
 
 
@@ -145,10 +148,17 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "M_B": ("-1/2", "1/2", "0"),
         "L_B": ("-1/2", "1/2", "1/2"),
     },
+    # Trigonal hP1 long-path groups in -3m: same bulk-g wave type as hP2,
+    # but the same-spin copied sector is rotated to the K_A/H_A side in the
+    # HPKOT hP1 setting. H_2 remains path-only and is excluded from the hull.
+    ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): {
+        "K_A": ("2/3", "-1/3", "0"),
+        "H_A": ("2/3", "-1/3", "1/2"),
+    },
 
     # Trigonal 32, 3m, -3m and hexagonal 6, -6, 6/m point groups:
     # doubled 60-degree project IBZ relative to the highest-symmetry hP wedge.
-    ("hP1", range(149, 164)): {
+    ("hP2", range(149, 168)): {
         "M_A": ("0", "1/2", "0"),
         "L_A": ("0", "1/2", "1/2"),
     },
@@ -203,7 +213,13 @@ PROJECT_HULL_PATH_BY_SG = {
         ("L", "M"), ("H", "K"), ("L_A", "M_A"), ("H_A", "K_A"),
         ("L_B", "M_B"),
     ],
-    ("hP1", range(149, 164)): [
+    ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): [
+        ("\u0393", "M"), ("M", "K"), ("K", "K_A"), ("K_A", "\u0393"),
+        ("\u0393", "A"),
+        ("A", "L"), ("L", "H"), ("H", "H_A"), ("H_A", "A"),
+        ("L", "M"), ("H", "K"), ("H_A", "K_A"),
+    ],
+    ("hP2", range(149, 168)): [
         ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "\u0393"),
         ("\u0393", "A"),
         ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "A"),
