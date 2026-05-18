@@ -248,7 +248,7 @@ def _math_label(label):
     """Return a paper-like mathtext label for high-symmetry k-points."""
     prime = label.endswith("'")
     base = label.rstrip("'")
-    suffix = r"^{\prime}" if prime else ""
+    suffix = "\u2032" if prime else ""
     greek = {
         "\u0393": r"\mathbf{\Gamma}",
         "GAMMA": r"\mathbf{\Gamma}",
@@ -262,10 +262,10 @@ def _math_label(label):
     if "_" in base:
         head, sub = base.split("_", 1)
         head = greek.get(head, rf"\mathbf{{{head}}}")
-        return rf"${head}_{{{sub}}}{suffix}$"
+        return rf"${head}_{{{sub}}}$" + suffix
     if base in greek:
-        return rf"${greek[base]}{suffix}$"
-    return rf"$\mathbf{{{base}}}{suffix}$"
+        return rf"${greek[base]}$" + suffix
+    return rf"$\mathbf{{{base}}}$" + suffix
 
 
 def laue_group_from_point_group(point_group):
