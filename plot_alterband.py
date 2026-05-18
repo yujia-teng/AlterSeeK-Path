@@ -192,9 +192,7 @@ def _special_segment_pairs(lattice_type: str | None) -> set[frozenset[str]]:
 
 
 def _is_valid_split_label(label: str) -> bool:
-    if label in HELPER_LABELS:
-        return False
-    return "k" not in label.lower()
+    return label not in HELPER_LABELS
 
 
 def _split_indices(labels: list[str], split_panels: int) -> list[int]:
@@ -265,7 +263,7 @@ def _draw_panel(
         )
         if special_pairs and pair_is_special:
             color = SPECIAL_GREY_COLOR
-        elif "k" not in labels[i].lower() and "k" not in labels[i + 1].lower():
+        elif labels[i] not in HELPER_LABELS and labels[i + 1] not in HELPER_LABELS:
             color = GREY_COLOR
         else:
             continue
