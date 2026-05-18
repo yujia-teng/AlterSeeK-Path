@@ -340,8 +340,8 @@ def _math_label(label):
             "SIGMA": r"\Sigma",
         }
         symbol = greek.get(base.upper(), base)
-    prime_part = r"^{\prime}" if prime else ""
-    return rf"$\mathbf{{{symbol}}}{prime_part}$"
+    prime_part = "\u2032" if prime else ""
+    return rf"$\mathbf{{{symbol}}}$" + prime_part
 
 
 # ============================================================================
