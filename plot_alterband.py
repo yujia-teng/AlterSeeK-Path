@@ -37,8 +37,8 @@ SPECIAL_GREY_COLOR = "0.8"
 BAND_LW = 0.7
 BAND_UP_COLOR = "black"
 BAND_DOWN_COLOR = "red"
-VLINE_COLOR = "0.5"
-VLINE_LW = 0.5
+VLINE_COLOR = "black"
+VLINE_LW = 0.8
 FERMI_LW = 0.5
 FERMI_COLOR = "0.5"
 FONT_SIZE = 14
@@ -249,7 +249,7 @@ def _draw_panel(
     rotate_xtick_labels: bool,
     xtick_rotation: float,
 ) -> None:
-    non_gap_pos = [p for label, p in zip(labels, positions) if label not in GAP_LABELS]
+    boundary_pos = [p for label, p in zip(labels, positions) if label not in HELPER_LABELS]
     gap_pos = [p for label, p in zip(labels, positions) if label in GAP_LABELS]
 
     for i in range(len(positions) - 1):
@@ -277,9 +277,9 @@ def _draw_panel(
     for pos in gap_pos:
         ax.axvspan(pos - gap_half, pos + gap_half, color="white", zorder=4, lw=0)
 
-    for pos in non_gap_pos:
+    for pos in boundary_pos:
         if xlim[0] <= pos <= xlim[1]:
-            ax.axvline(x=pos, color=VLINE_COLOR, lw=VLINE_LW, zorder=1)
+            ax.axvline(x=pos, color=VLINE_COLOR, lw=VLINE_LW, zorder=5)
 
     for pos in gap_pos:
         if xlim[0] <= pos <= xlim[1]:
