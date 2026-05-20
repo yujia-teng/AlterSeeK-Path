@@ -77,6 +77,29 @@ def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
     return labels, positions
 
 
+VASPKIT_TRUNCATED_LABEL_FIXES = {
+    # VASPKIT can drop the trailing zero in combined labels such as
+    # LAMBDA_0'|G_.  Repair only the affected HPKOT oI labels.
+    "oI2": {"G_": "G_2"},
+    "oI3": {"G_": "G_0"},
+}
+
+
+def _fix_vaspkit_truncated_label(label: str, lattice_type: str | None) -> str:
+    if lattice_type is None:
+        return label
+    fixes = VASPKIT_TRUNCATED_LABEL_FIXES.get(_canonical_lattice_type(lattice_type), {})
+    if not fixes:
+        return label
+
+    fixed_parts = []
+    for part in str(label).split("|"):
+        prime_count = len(part) - len(part.rstrip("'"))
+        base = part[:-prime_count] if prime_count else part
+        fixed_parts.append(fixes.get(base, base) + "'" * prime_count)
+    return "|".join(fixed_parts)
+
+
 def _parse_simple_toml_value(value: str) -> Any:
     value = value.strip()
     if value.lower() in {"true", "false"}:
@@ -327,6 +350,7 @@ def plot_alterband(
     output_path = Path(output)
 
     labels, positions = _read_klabels(klabels_path)
+    labels = [_fix_vaspkit_truncated_label(label, lattice_type) for label in labels]
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KLABELS positions must increase from first to last entry")
