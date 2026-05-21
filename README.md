@@ -1,6 +1,6 @@
 # AlterSeeK-Path
 
-AlterSeeK-Path generates altermagnetic k-point paths for band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
+AlterSeeK-Path generates k-point paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
 
 ![AlterSeeK-Path example](./example/HEX.png)
 
@@ -9,6 +9,8 @@ AlterSeeK-Path generates altermagnetic k-point paths for band-structure calculat
 ---
 
 ## Installation
+
+Requires Python >= 3.9.
 
 ```bash
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git
@@ -25,17 +27,6 @@ pip install -e .
 alterseek-path
 ```
 
-The script guides you through five interactive steps:
-
-| Step | What it does | Input needed |
-|------|--------------|--------------|
-| **0** | Finds spin-flip symmetry operations and prints a compact symmetry summary | Structure file; magnetic moments for non-mcif inputs |
-| **1** | Builds or reads the high-symmetry IBZ path | Press Enter for auto path, or enter a KPOINTS-style file |
-| **2** | Chooses the general k point | Automatic IBZ centroid by default |
-| **3** | Selects the spin-flip operation | Press Enter for default, enter a number, type `list`, or type `manual` |
-| **4** | Builds the altermagnetic path | Automatic |
-| **5** | Saves the output | Output filename |
-
 The default output file is:
 
 ```text
@@ -51,8 +42,8 @@ KPOINTS_modified
 - `POSCAR` / `.vasp`/  `.cif`: magnetic moments are entered manually.
 - `.mcif`: magnetic moments are read from the file when available.
 
-Type moments in atom order. Untyped atoms default to `0`, so `1 -1` is enough
-when the two magnetic atoms appear first.
+Type moments in atom order using VASP `MAGMOM` format. Syntax such
+as `5*0 2*1.0` is supported. Untyped atoms default to `0`.
 
 ### K-path source
 
@@ -61,27 +52,18 @@ when the two magnetic atoms appear first.
 
 ---
 
-## Example 
+## Example Run
 
-```
-$ alterseek-path
+```text
 === Altermagnetic K-Path Generator ===
 
 >>> Step 0: Spin symmetry
-Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif):
+Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): GdAuGe.vasp
 Magnetic moments (atom order, trailing atoms auto-fill to 0): 1 -1
 
-Structure: POSCAR, atoms: 6
-Space Group: P6_3mc (186)
-Point Group: 6mm
-Laue Group: 6/mmm
-Magnetic SG: BNS 186.205, OG 186.3.1436 (UNI 1435, Litvin 1436, parent SG 186, type 3)
-Spin group: COLLINEAR(axis=[0. 0. 1.])
-Space-group operations: 12 total
-Point operations: 12 unique
-Actual point operations: 6 spin-flip, 6 spin-preserving
-Inversion-extended k operations: 12 spin-flip, 12 spin-preserving (12 + 12 with translations)
-Saved: spin_operations.txt, spin_flip_operations.txt, spin_preserve_operations.txt
+Structure: GdAuGe.vasp, atoms: 6
+SG P6_3mc (186), PG 6mm, Laue 6/mmm
+Spin operations: 6 flip, 6 preserve
 
 >>> Step 1: High-symmetry k-path
 IBZ type: hP2
@@ -109,43 +91,26 @@ Generated path: GAMMA-M-k | k'-M'-K'-k' | k-K-GAMMA-k | ... | k-H-A | L-M | H-K
 Full path: 9 original segments -> 21 generated segments, 36 k-points
 
 >>> Step 5: Save
+Enter output filename (default: KPOINTS_modified):
+Modified KPOINTS file written to: KPOINTS_modified
+Band plot config updated: alterband.toml (lattice_type = "hP2")
+
+Done.
 Displaying generated figures...
-Saved: .\POSCAR_ibz_hP2.png
-Saved: POSCAR_spinflip_hP2.png
-Saved: POSCAR_spinbz_hP2.png
-Saved: POSCAR_spinbz_top_hP2.png
+Saved: .\GdAuGe_ibz_hP2.png
+Saved: GdAuGe_spinflip_hP2.png
+Saved: GdAuGe_spinbz_hP2.png
+Saved: GdAuGe_spinbz_top_hP2.png
 ```
-
----
-
-## Output Files
-
-| File | Description |
-|------|-------------|
-| `KPOINTS_modified` | Altermagnetic k-path for VASP line-mode band calculations |
-| `spin_operations.txt` | Full spin-symmetry operation log |
-| `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
-| `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion/diagnostics |
-| `*_ibz_*.png` | IBZ/BZ figure with the selected general k point |
-| `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
-| `*_spinbz_*.png` | Spin-colored BZ figure |
-| `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
-
-BZ figures are PNG by default. To also save PDF copies from `alterseek-path`,
-set:
-
-```powershell
-$env:ALTERSEEK_BZ_FORMATS = "png,pdf"
-alterseek-path
-```
-
-For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. The code prints a note and writes the ordinary IBZ path.
 
 ---
 
 ## Band Plotting
 
-After VASP and VASPKIT generate the spin-resolved band files, run:
+After the VASP band calculation:
+
+1. Run VASPKIT task `303`.
+2. Run:
 
 ```bash
 alterseek-path bandplot
@@ -167,21 +132,22 @@ alterband.png
 
 ### Plot settings with `alterband.toml`
 
-If a file named `alterband.toml` exists in the same directory, the band plotter
-uses it automatically. A typical file is:
+The main workflow writes `alterband.toml` after KPOINTS generation. The generated
+file records the detected lattice type, for example:
+
+```toml
+lattice_type = "hP2"
+```
+
+If other settings are omitted, the band plotter uses these defaults:
 
 ```toml
 emin = -2
 emax = 2
-fig_width = 16
+fig_width = 12
 fig_height = 5
 gap_width_inches = 0.05
-# Legacy fallback: half-width as a fraction of the full k-path.
-# gap_frac = 0.004
-lattice_type = "tI1"
 split_panels = 0
-rotate_xtick_labels = false
-xtick_rotation = 45
 output = "alterband.png"
 ```
 
@@ -193,41 +159,22 @@ alterseek-path bandplot
 
 For PDF from the TOML file, set `output = "alterband.pdf"`.
 
-Command-line options override the TOML file:
+Command-line options override the TOML file. For example:
 
 ```bash
 alterseek-path bandplot -o alterband.pdf
 ```
 
 When `lattice_type` is present, special HPKOT path intervals are shaded light
-grey in the band plot. The main `alterseek-path` workflow writes this value to
-`alterband.toml` after KPOINTS generation; for direct plotting you can set it
-manually, for example `lattice_type = "oF3"`.
+grey in the band plot. For direct plotting, you can set it manually, for
+example `lattice_type = "oF3"`.
 
 Use `split_panels = 2` or `split_panels = 3` for long paths that should be
 rendered as stacked panels. Missing or `0` keeps a single panel.
 
-### PNG and PDF outputs
-
-```bash
-alterseek-path bandplot -o alterband.png
-alterseek-path bandplot -o alterband.pdf
-```
-
-Optional arguments:
-
-```bash
-alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
-alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
-alterseek-path bandplot --gap-width-inches 0.04
-alterseek-path bandplot --lattice-type mC2 --split-panels 2
-```
-
-`gap_width_inches` sets the full visual width of every `k|k'` gap, which keeps
-the printed separator size consistent across figures with different path
-lengths.
-
-`alterseek-bandplot` is an optional shortcut for the same band plotter.
+Useful options include `--emin`, `--emax`, `--klabels`, `--up`, `--down`,
+`--gap-width-inches`, `--lattice-type`, `--split-panels`, and `-o`.
+`alterseek-bandplot` is an optional shortcut for the same command.
 
 ---
 
@@ -243,17 +190,6 @@ IBZ centroid and BZ visualization for one structure:
 
 ```bash
 python compute_centroid_hybrid.py POSCAR
-```
-
----
-
-## Requirements
-
-- Python >= 3.9
-- See `requirements.txt`
-
-```bash
-pip install -r requirements.txt
 ```
 
 ---
