@@ -117,6 +117,8 @@ BZ_SPECIAL_COLORS = {
     "purple": "#6b5596",
 }
 BZ_PATH_STYLE_OVERRIDES = {
+    "cP1": {("M", "X_1"): {"color": "red", "ls": "--"}},
+    "cF1": {("X", "W_2"): {"color": "red", "ls": "--"}},
     "tI1": {(GAMMA_LABEL, "N"): "orange"},
     "tI2": {(GAMMA_LABEL, "N"): "orange"},
     "oF1": {(GAMMA_LABEL, "L"): "orange"},
@@ -190,7 +192,7 @@ BZ_PATH_STYLE_OVERRIDES = {
 
 def _get_bz_path_style(lattice_type, k1, k2):
     """Return the display style for a recommended HPKOT path segment."""
-    style = {"color": "red", "lw": 4.0, "alpha": 0.9}
+    style = {"color": "red", "ls": "-", "lw": 4.0, "alpha": 0.9}
     if not lattice_type:
         return style
 
@@ -199,10 +201,19 @@ def _get_bz_path_style(lattice_type, k1, k2):
     except Exception:
         lattice_key = lattice_type
 
+    if lattice_key in {"aP2", "aP3"}:
+        style["color"] = BZ_SPECIAL_COLORS["orange"]
+        style["alpha"] = 0.95
+        return style
+
     overrides = BZ_PATH_STYLE_OVERRIDES.get(lattice_key, {})
-    color_key = overrides.get((k1, k2), overrides.get((k2, k1)))
-    if color_key:
-        style["color"] = BZ_SPECIAL_COLORS.get(color_key, color_key)
+    override = overrides.get((k1, k2), overrides.get((k2, k1)))
+    if override:
+        if isinstance(override, dict):
+            style.update(override)
+            style["color"] = BZ_SPECIAL_COLORS.get(style["color"], style["color"])
+        else:
+            style["color"] = BZ_SPECIAL_COLORS.get(override, override)
         style["alpha"] = 0.95
     return style
 
@@ -586,7 +597,7 @@ def draw_bz_edges(ax, bz_loops, dashed_back=False):
 
 
 def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
-                elev=25, azim=-55, dashed_back=False):
+                elev=14, azim=20, dashed_back=False):
     b1, b2, b3 = b_matrix[0], b_matrix[1], b_matrix[2]
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
@@ -641,7 +652,7 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
             p1, p2 = kpoints_cart[k1], kpoints_cart[k2]
             style = _get_bz_path_style(lattice_type, k1, k2)
             ax.plot([p1[0],p2[0]], [p1[1],p2[1]], [p1[2],p2[2]],
-                    c=style["color"], ls='-', lw=style["lw"], alpha=style["alpha"])
+                    c=style["color"], ls=style["ls"], lw=style["lw"], alpha=style["alpha"])
     ibz_center = np.mean(points_list, axis=0)
     ibz_span = np.max(np.ptp(np.array(points_list), axis=0))
     label_offset = ibz_span * 0.1  # scale offset to IBZ size
@@ -742,7 +753,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                           kpoints_data, ibz_kpoints_frac,
                           hull_pts, hull_simplices,
                           centroid_frac, R,
-                          output_path, elev=25, azim=-55, show_plot=True,
+                          output_path, elev=14, azim=20, show_plot=True,
                           block=True, path_sequence=None, R_cart=None,
                           defer_show=False, unique_ops=None):
     """
@@ -1002,7 +1013,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                         hull_pts, hull_simplices,
                         R, output_path,
                         flip_ops_frac=None,
-                        elev=25, azim=-55, show_plot=True,
+                        elev=14, azim=20, show_plot=True,
                         defer_show=False, z0=0.0,
                         show_helper_plane=True):
     """
@@ -1731,9 +1742,11 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         plt.tight_layout()
         if defer_show:
             def _save_fig1_after_show(fig=fig1, ax=ax1):
+                print(f"[View] elev={ax.elev:.2f}, azim={ax.azim:.2f}")
                 fig1s, ax1s = setup_3d_ax(fig1_title,
                                           bz_loops, b_matrix, bz_center, bz_span,
-                                          elev=ax.elev, azim=ax.azim, dashed_back=True)
+                                          elev=ax.elev, azim=ax.azim,
+                                          dashed_back=True)
                 plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
                          display_labels_plot, hull, centroid_cart,
                          hull_pts=points_arr, lattice_type=sc_type)
@@ -1744,13 +1757,13 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
                 _print_saved_paths(saved_paths)
             fig1._alterseek_save_after_show = _save_fig1_after_show
             display_figures.append(fig1)
-            elev1, azim1 = 25, -55
+            elev1, azim1 = 14, 20
         else:
             plt.show()
             elev1, azim1 = ax1.elev, ax1.azim
     else:
         # Automated mode (called from alterseek_path): use default angles, no window
-        elev1, azim1 = 25, -55
+        elev1, azim1 = 14, 20
 
     # Render with dashed back-edges and save unless deferred post-show saving is active
     if not (show_plot and defer_show):

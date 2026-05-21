@@ -33,6 +33,9 @@ except ImportError:
     plt = None
 
 
+STEP0_VERBOSE_SUMMARY = False
+
+
 def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
     """Record the detected lattice type for later band plotting."""
     if not lattice_type:
@@ -531,6 +534,8 @@ class KPointsModifier:
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
         _flip_file = 'spin_flip_operations.txt'
+        standard_path_reason = None
+        standard_path_reason_reported = False
 
         if not os.path.exists(struct_file):
             print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing spin_flip_operations.txt")
@@ -555,27 +560,50 @@ class KPointsModifier:
             )
             if isinstance(sf_result, dict):
                 _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
+                laue_no_altermag = None
+                if no_altermagnetism_reason is not None:
+                    laue_no_altermag = no_altermagnetism_reason(
+                        sf_result.get('point_group'),
+                    )
+                elif sf_result.get('laue_group') in {'-1', '-3', 'm-3'}:
+                    laue_no_altermag = {
+                        'laue_group': sf_result.get('laue_group'),
+                        'reason': 'No altermagnetism',
+                    }
+                spin_split_diagnostic = sf_result.get('spin_split_diagnostic', '')
+
                 print(f"\nStructure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
-                print(f"Space Group: {sf_result['space_group']}")
-                print(f"Point Group: {sf_result['point_group']}")
-                print(f"Laue Group: {sf_result['laue_group']}")
-                print(f"Magnetic SG: {sf_result['magnetic_space_group']}")
-                print(f"Spin group: {sf_result['spin_group']}")
-                unique_ops = sf_result.get('unique_point_operations',
-                                           sf_result['total_operations'])
-                print(f"Space-group operations: {sf_result['total_operations']} total")
-                print(f"Point operations: {unique_ops} unique")
-                print("Actual point operations: "
-                      f"{sf_result['actual_spin_flip_point_operations']} spin-flip, "
-                      f"{sf_result['actual_spin_preserve_point_operations']} spin-preserving")
-                print("Inversion-extended k operations: "
-                      f"{sf_result['extended_spin_flip_point_operations']} spin-flip, "
-                      f"{sf_result['extended_spin_preserve_point_operations']} spin-preserving "
-                      f"({sf_result['extended_spin_flip_operations']} + "
-                      f"{sf_result['extended_spin_preserve_operations']} with translations)")
-                if sf_result['spin_split_diagnostic']:
-                    print(f"{BOLD}Warning! {sf_result['spin_split_diagnostic']}{RESET}")
-                print(f"Saved: {', '.join(sf_result['saved_files'])}")
+                print(f"SG {sf_result['space_group']}, "
+                      f"PG {sf_result['point_group']}, "
+                      f"Laue {sf_result['laue_group']}")
+
+                if laue_no_altermag:
+                    laue = laue_no_altermag.get('laue_group', sf_result.get('laue_group'))
+                    standard_path_reason = f"Laue group {laue}: no altermagnetism."
+                    print(f"{BOLD}[Note] {standard_path_reason}{RESET} Default path will be written.")
+                    standard_path_reason_reported = True
+                else:
+                    print("Spin operations: "
+                          f"{sf_result['actual_spin_flip_point_operations']} flip, "
+                          f"{sf_result['actual_spin_preserve_point_operations']} preserve")
+                    if spin_split_diagnostic:
+                        standard_path_reason = spin_split_diagnostic
+                        print(f"{BOLD}[Note] {standard_path_reason}{RESET} Default path will be written.")
+                        standard_path_reason_reported = True
+
+                if STEP0_VERBOSE_SUMMARY:
+                    print(f"Magnetic SG: {sf_result['magnetic_space_group']}")
+                    print(f"Spin group: {sf_result['spin_group']}")
+                    unique_ops = sf_result.get('unique_point_operations',
+                                               sf_result['total_operations'])
+                    print(f"Space-group operations: {sf_result['total_operations']} total")
+                    print(f"Point operations: {unique_ops} unique")
+                    print("Inversion-extended k operations: "
+                          f"{sf_result['extended_spin_flip_point_operations']} spin-flip, "
+                          f"{sf_result['extended_spin_preserve_point_operations']} spin-preserving "
+                          f"({sf_result['extended_spin_flip_operations']} + "
+                          f"{sf_result['extended_spin_preserve_operations']} with translations)")
+                    print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
         # Step 1: High-symmetry k-path (auto from seekpath or user file)
         print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
@@ -684,10 +712,14 @@ class KPointsModifier:
                     centroid_result.get('point_group'),
                     centroid_result.get('spacegroup'),
                 )
-        if no_altermag:
+        if standard_path_reason is None and no_altermag:
             laue = no_altermag.get('laue_group', 'unknown')
-            print(f"\n[Note] Laue group {laue}: no altermagnetism.")
-            print("Writing standard IBZ k-path.")
+            standard_path_reason = f"Laue group {laue}: no altermagnetism."
+
+        if standard_path_reason:
+            if not standard_path_reason_reported:
+                print(f"\n{BOLD}[Note] {standard_path_reason}{RESET}")
+            print("Writing default k-path.")
             print(f"\n{BOLD}>>> Step 5: Save{RESET}")
             print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
             output_file = input().strip()
@@ -907,8 +939,8 @@ class KPointsModifier:
                             R=R_for_kpts,
                             output_path=fig_path,
                             R_cart=R_cart_for_plot,
-                            elev=centroid_result.get('elev', 25),
-                            azim=centroid_result.get('azim', -55),
+                            elev=centroid_result.get('elev', 14),
+                            azim=centroid_result.get('azim', 20),
                             show_plot=True,
                             block=False,
                             path_sequence=new_kpoints,
@@ -937,8 +969,8 @@ class KPointsModifier:
                             R=R_for_kpts,
                             output_path=bz_fig_path,
                             flip_ops_frac=flip_ops_for_plot if flip_ops_for_plot else None,
-                            elev=centroid_result.get('elev', 25),
-                            azim=centroid_result.get('azim', -55),
+                            elev=centroid_result.get('elev', 14),
+                            azim=centroid_result.get('azim', 20),
                             show_plot=True,
                             defer_show=True,
                         )
