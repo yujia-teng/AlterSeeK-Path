@@ -78,7 +78,3 @@ alterseek-path bandplot --emin -3 --emax 3
 ```
 
 For detailed plotting settings, see [Plotting](plotting.md).
-
----
-
-[Back to user guide](index.md)

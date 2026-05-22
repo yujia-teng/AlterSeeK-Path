@@ -122,7 +122,3 @@ The workflow prints a note and writes the ordinary default path.
 
 After running the VASP band calculation, see [Plotting](plotting.md) for
 spin-resolved band-plot generation.
-
----
-
-[Back to user guide](index.md)

@@ -60,7 +60,3 @@ file such as:
 
 For `POSCAR`, `.vasp`, and `.cif` inputs, magnetic moments are entered manually.
 For `.mcif` inputs, magnetic moments are read from the file when available.
-
----
-
-[Back to user guide](index.md)

@@ -145,7 +145,3 @@ path lengths.
 ```bash
 alterseek-path bandplot --gap-width-inches 0.04
 ```
-
----
-
-[Back to user guide](index.md)

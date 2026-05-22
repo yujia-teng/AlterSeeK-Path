@@ -8,13 +8,6 @@ segments.
 
 This guide expands the quick-start information in the repository README.
 
-## Contents
-
-- [Installation](installation.md)
-- [Workflow](workflow.md)
-- [Plotting](plotting.md)
-- [Examples](examples.md)
-
 ## Main Commands
 
 Run the interactive k-path workflow:
