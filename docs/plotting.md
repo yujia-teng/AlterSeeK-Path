@@ -46,15 +46,13 @@ KPOINTS generation and records the detected lattice type when available.
 A typical configuration is:
 
 ```toml
+lattice_type = "hP2"
 emin = -2
 emax = 2
-fig_width = 16
+fig_width = 12
 fig_height = 5
 gap_width_inches = 0.05
-lattice_type = "tI1"
 split_panels = 0
-rotate_xtick_labels = false
-xtick_rotation = 45
 output = "alterband.png"
 ```
 
