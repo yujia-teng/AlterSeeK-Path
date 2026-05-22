@@ -72,7 +72,7 @@ Spin operations: 6 flip, 6 preserve
 IBZ type: hP2
 Path: GAMMA-M-K-GAMMA-A-L-H-A | L-M | H-K
 Press [Enter] to use this path, or type a filename to load your own:
-Using HPKOT hP2 path (9 segments, 18 k-points)
+Using SeeK-path hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
 IBZ centroid: [0.277778, 0.111111, 0.250000]
@@ -112,7 +112,7 @@ Saved: GdAuGe_spinbz_top_hP2.png
 
 After the VASP band calculation:
 
-1. Run VASPKIT task `303`.
+1. Run VASPKIT task `211`.
 2. Run:
 
 ```bash
@@ -168,7 +168,7 @@ Command-line options override the TOML file. For example:
 alterseek-path bandplot -o alterband.pdf
 ```
 
-When `lattice_type` is present, special HPKOT path intervals are shaded light
+When `lattice_type` is present, special path intervals are shaded light
 grey in the band plot. For direct plotting, you can set it manually, for
 example `lattice_type = "oF3"`.
 

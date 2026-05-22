@@ -2,8 +2,12 @@
 
 AlterSeeK-Path includes a band plotter for spin-resolved VASP band structures.
 
-After the VASP band calculation, run VASPKIT task `303` to generate the
-reformatted band files, then run:
+## Basic Workflow
+
+1. Generate `KPOINTS_modified` with `alterseek-path`.
+2. Run the VASP band calculation.
+3. Run VASPKIT task `211` to generate the reformatted band files.
+4. Run:
 
 ```bash
 alterseek-path bandplot
@@ -15,17 +19,18 @@ The optional shortcut command is equivalent:
 alterseek-bandplot
 ```
 
-## Default Inputs And Output
+## Required Files
 
-By default, the plotter reads:
+By default, the plotter reads the standard VASPKIT output filenames:
 
-```text
-KLABELS
-REFORMATTED_BAND_UP.dat
-REFORMATTED_BAND_DW.dat
-```
+| File | Source | Purpose |
+|------|--------|---------|
+| `KLABELS` | VASPKIT task `211` | k-point tick labels |
+| `REFORMATTED_BAND_UP.dat` | VASPKIT task `211` | spin-up band data |
+| `REFORMATTED_BAND_DW.dat` | VASPKIT task `211` | spin-down band data |
+| `alterband.toml` | `alterseek-path` | optional plotting settings |
 
-and writes:
+The default output is:
 
 ```text
 alterband.png
@@ -37,7 +42,7 @@ To write PDF output:
 alterseek-path bandplot -o alterband.pdf
 ```
 
-## Plot Settings With `alterband.toml`
+## Plot Settings
 
 If a file named `alterband.toml` exists in the same directory, the band plotter
 uses it automatically. The main `alterseek-path` workflow writes this file after
@@ -55,6 +60,15 @@ gap_width_inches = 0.05
 split_panels = 0
 output = "alterband.png"
 ```
+
+| Setting | Meaning |
+|---------|---------|
+| `lattice_type` | SeeK-path lattice key used for special interval shading |
+| `emin`, `emax` | energy window in eV |
+| `fig_width`, `fig_height` | figure size in inches |
+| `gap_width_inches` | visual width of each `k|k'` separator gap |
+| `split_panels` | `0` for one panel, `2` or `3` for stacked panels |
+| `output` | output image filename, usually `.png` or `.pdf` |
 
 Then run:
 
@@ -82,11 +96,11 @@ Use explicit input filenames if your VASPKIT outputs have different names:
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
 ```
 
-## Special HPKOT Shading
+## Special Interval Shading
 
-When `lattice_type` is present, special HPKOT path intervals are shaded light
-grey in the band plot. The main workflow writes this value automatically after
-KPOINTS generation. For direct plotting, set it manually, for example:
+When `lattice_type` is present, special path intervals are shaded light grey in
+the band plot. The main workflow writes this value automatically after KPOINTS
+generation. For direct plotting, set it manually, for example:
 
 ```toml
 lattice_type = "oF3"
@@ -112,8 +126,9 @@ or:
 split_panels = 3
 ```
 
-Missing or `0` keeps a single panel. The split affects only rendering; it does
-not change KPOINTS or band data.
+Use `split_panels = 0` for one panel, `2` for two stacked panels, or `3` for
+three stacked panels. The split affects only rendering; it does not change
+KPOINTS or band data.
 
 The same option can be passed from the command line:
 

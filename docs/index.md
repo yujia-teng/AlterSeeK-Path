@@ -1,7 +1,7 @@
 # AlterSeeK-Path User Guide
 
 AlterSeeK-Path generates k-point paths for altermagnetic band-structure
-calculations. It starts from a standard SeeK-path/HPKOT high-symmetry path,
+calculations. It starts from a standard SeeK-path high-symmetry path,
 inserts a general k point, maps it through a spin-flip operation to k', and
 writes a VASP `KPOINTS` file for sampling spin splitting along paired path
 segments.
@@ -44,6 +44,6 @@ python compute_centroid_hybrid.py POSCAR
 AlterSeeK-Path currently focuses on VASP workflows. Quantum ESPRESSO support is
 partial.
 
-The internal path conventions follow SeeK-path/HPKOT labels and reciprocal
+The internal path conventions follow SeeK-path labels and reciprocal
 bases. When writing VASP `KPOINTS`, the final numerical coordinates are
 converted into the reciprocal basis of the actual input structure used by VASP.

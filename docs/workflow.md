@@ -48,13 +48,13 @@ Untyped atoms default to zero moment.
 
 ## Step 1: High-Symmetry K-Path
 
-Press Enter to use the automatically detected SeeK-path/HPKOT path.
+Press Enter to use the automatically detected SeeK-path.
 
 Alternatively, provide a line-mode `KPATH.in` or KPOINTS-style file if you want
 to start from a custom path.
 
-The detected lattice type is reported using HPKOT-style keys such as `hP2`,
-`oI3`, or `mC2`.
+The detected lattice type is reported using SeeK-path lattice keys such as
+`hP2`, `oI3`, or `mC2`.
 
 ## Step 2: General K Point
 
@@ -77,8 +77,8 @@ operation, or enter a manual transformation.
 The selected operation maps k to k'. AlterSeeK-Path then inserts k and k' into
 the path so paired spin-splitting segments are sampled systematically.
 
-Internally, the path construction uses the standardized SeeK-path/HPKOT
-primitive reciprocal basis. At output time, the written `KPOINTS` coordinates
+Internally, the path construction uses the standardized SeeK-path primitive
+reciprocal basis. At output time, the written `KPOINTS` coordinates
 are converted into the reciprocal basis of the input structure used by VASP.
 
 ## Step 5: Save Outputs

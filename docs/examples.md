@@ -15,7 +15,7 @@ Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): GdAuGe.vasp
 Magnetic moments (atom order, trailing atoms auto-fill to 0): 1 -1
 ```
 
-Press Enter in Step 1 to use the automatically detected SeeK-path/HPKOT path.
+Press Enter in Step 1 to use the automatically detected SeeK-path.
 
 Press Enter in Step 2 to use the IBZ centroid as the general k point.
 
@@ -58,7 +58,7 @@ automatically generated default path.
 
 ## Band Plot Example
 
-After VASP finishes and VASPKIT task `303` has generated the reformatted band
+After VASP finishes and VASPKIT task `211` has generated the reformatted band
 files, run:
 
 ```bash
