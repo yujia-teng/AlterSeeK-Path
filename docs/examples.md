@@ -77,17 +77,7 @@ To adjust the energy window:
 alterseek-path bandplot --emin -3 --emax 3
 ```
 
-For long paths, set `split_panels` in `alterband.toml`:
-
-```toml
-split_panels = 2
-```
-
-or:
-
-```toml
-split_panels = 3
-```
+For detailed plotting settings, see [Plotting](plotting.md).
 
 ---
 

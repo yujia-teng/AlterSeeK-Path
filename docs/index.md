@@ -12,8 +12,8 @@ This guide expands the quick-start information in the repository README.
 
 - [Installation](installation.md)
 - [Workflow](workflow.md)
+- [Plotting](plotting.md)
 - [Examples](examples.md)
-- [Troubleshooting](troubleshooting.md)
 
 ## Main Commands
 
@@ -28,6 +28,9 @@ Plot a generated spin-resolved band structure:
 ```bash
 alterseek-path bandplot
 ```
+
+See [Plotting](plotting.md) for band-plot inputs, configuration, and output
+options.
 
 Standalone utilities are also available:
 

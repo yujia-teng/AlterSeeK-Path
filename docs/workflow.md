@@ -10,6 +10,15 @@ It proceeds through structure reading, spin-symmetry analysis, path selection,
 general k-point selection, spin-flip operation selection, and final `KPOINTS`
 writing.
 
+| Step | What it does | Input needed |
+|------|--------------|--------------|
+| **0** | Finds spin-flip symmetry operations and prints a compact symmetry summary | Structure file; magnetic moments for non-mcif inputs |
+| **1** | Builds or reads the high-symmetry IBZ path | Press Enter for auto path, or enter a KPOINTS-style file |
+| **2** | Chooses the general k point | Automatic IBZ centroid by default |
+| **3** | Selects the spin-flip operation | Press Enter for default, enter a number, type `list`, or type `manual` |
+| **4** | Builds the altermagnetic path | Automatic |
+| **5** | Saves the output | Output filename |
+
 ## Step 0: Spin Symmetry
 
 AlterSeeK-Path reads the structure and magnetic moments, then calls `spinspg`
@@ -92,33 +101,27 @@ available.
 Depending on the plotting settings, the workflow may also save Brillouin-zone
 and spin-BZ figures.
 
-## Band Plotting
+## Output Files
 
-After the VASP band calculation, run VASPKIT task `303`, then plot with:
+| File | Description |
+|------|-------------|
+| `KPOINTS_modified` | Altermagnetic k-path for VASP line-mode band calculations |
+| `alterband.toml` | Band-plot configuration written by the main workflow |
+| `spin_operations.txt` | Full spin-symmetry operation log |
+| `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
+| `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
+| `*_ibz_*.png` | IBZ/BZ figure with the selected general k point |
+| `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
+| `*_spinbz_*.png` | Spin-colored BZ figure |
+| `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
 
-```bash
-alterseek-path bandplot
-```
+For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
+The workflow prints a note and writes the ordinary default path.
 
-By default, the plotter reads:
+## Next Step
 
-```text
-KLABELS
-REFORMATTED_BAND_UP.dat
-REFORMATTED_BAND_DW.dat
-```
-
-and writes:
-
-```text
-alterband.png
-```
-
-Command-line options can override the TOML settings:
-
-```bash
-alterseek-path bandplot -o alterband.pdf --emin -2 --emax 2
-```
+After running the VASP band calculation, see [Plotting](plotting.md) for
+spin-resolved band-plot generation.
 
 ---
 
