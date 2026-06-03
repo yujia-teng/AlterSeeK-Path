@@ -29,3 +29,6 @@ _tmp*/
 CLAUDE.md
 figure_review_runs/
 tools/
+data/
+tmp_cluster_band_check_*/
+tmp_diagnostics/
