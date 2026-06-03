@@ -87,9 +87,74 @@ from matplotlib.patches import FancyArrowPatch
 import sympy as sp
 import seekpath
 from pymatgen.core import Structure
+from pymatgen.core.periodic_table import Element
 import spglib
 
 plt.rcParams["mathtext.fontset"] = "stix"
+
+
+def _write_seekpath_standard_poscar(lattice, positions, types, output_path, source_name):
+    """Write the standardized input-cell setting used by SeeK-path."""
+    lattice = np.array(lattice, dtype=float)
+    positions = np.array(positions, dtype=float)
+    types = list(types)
+
+    species_order = []
+    grouped = {}
+    for pos, atomic_number in zip(positions, types):
+        symbol = Element.from_Z(int(atomic_number)).symbol
+        if symbol not in grouped:
+            species_order.append(symbol)
+            grouped[symbol] = []
+        grouped[symbol].append(pos)
+
+    lines = [
+        f"SeeK-path standardized cell from {source_name}",
+        "1.0",
+    ]
+    for row in lattice:
+        lines.append("   " + " ".join(f"{x:22.16f}" for x in row))
+    lines.append(" ".join(species_order))
+    lines.append(" ".join(str(len(grouped[symbol])) for symbol in species_order))
+    lines.append("Direct")
+    for symbol in species_order:
+        for pos in grouped[symbol]:
+            frac = np.mod(pos, 1.0)
+            lines.append("   " + " ".join(f"{x:22.16f}" for x in frac) + f" {symbol}")
+
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matrix, output_path):
+    """Record the input-cell to SeeK-path-standard axis mapping for users."""
+    def _fmt_matrix(mat):
+        return "\n".join(
+            "  " + " ".join(f"{float(x): .10f}" for x in row)
+            for row in np.array(mat, dtype=float)
+        )
+
+    input_lattice = np.array(input_lattice, dtype=float)
+    standard_lattice = np.array(standard_lattice, dtype=float)
+    rotation_matrix = np.array(rotation_matrix, dtype=float)
+    lines = [
+        "# SeeK-path standardization mapping",
+        "# input_lattice is the lattice from the submitted structure file.",
+        "# seekpath_standard_lattice is the standardized cell written to *_seekpath_standard.vasp.",
+        "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
+        "",
+        "input_lattice:",
+        _fmt_matrix(input_lattice),
+        "",
+        "seekpath_standard_lattice:",
+        _fmt_matrix(standard_lattice),
+        "",
+        "seekpath_rotation_matrix:",
+        _fmt_matrix(rotation_matrix),
+        "",
+    ]
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
 
 
 class _Arrow3D(FancyArrowPatch):
@@ -1013,17 +1078,16 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                         hull_pts, hull_simplices,
                         R, output_path,
                         flip_ops_frac=None,
+                        preserve_ops_frac=None,
                         elev=14, azim=20, show_plot=True,
                         defer_show=False, z0=0.0,
                         show_helper_plane=True):
     """
-    Show the full BZ colored by spin channel (replaces old rainbow Fig 2).
+    Show Figure 1's IBZ hull mapped by spin-preserving/spin-flipping operations.
 
-    Each orbit of the IBZ is colored by proximity: an op g is "spin-down" if
-    g @ centroid_cart lands closer to the spin-down centroid (R^{-T} @ centroid)
-    than to the spin-up centroid. This works correctly for all lattice types,
-    including high-symmetry groups (e.g. Oh) where many ops rotate the spin
-    axis to a third direction rather than cleanly flipping it.
+    The outer BZ remains the structural BZ. Each colored copy is exactly the
+    Figure 1 hull; reduced spin symmetry can therefore leave part of the
+    structural BZ uncolored.
       - RED   (salmon)         : spin-up  regions
       - BLUE  (cornflowerblue) : spin-down regions
     """
@@ -1031,65 +1095,41 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
         print("[Note] Skipping spin-BZ figure (no hull or symmetry ops available).")
         return
 
-    b_T = b_matrix.T
-    b_T_inv = np.linalg.inv(b_T)
-
     hull_pts = np.array(hull_pts)
     centroid_cart = np.array(centroid_cart)
     hull_simplices_arr = np.array(hull_simplices)
 
-    # Classify spin channel for each op in unique_ops.
-    #
-    # Primary method (when flip_ops_frac is available):
-    #   Convert each g_cart --g_frac (primitive) and check if it matches any
-    #   entry in flip_ops_frac.  This is exact and R-independent: the coloring
-    #   is the same regardless of which spin-flip R the user picked.
-    #
-    # Fallback (proximity, R-dependent --kept only as safety net):
-    #   An op is "spin-down" if g @ centroid is closer to kp = R^{-T}@centroid
-    #   than to centroid.  This can give different results for different R choices
-    #   because kp depends on R.
-    if flip_ops_frac is not None and len(flip_ops_frac):
-        flip_set = [np.array(f, dtype=float) for f in flip_ops_frac]
-        spin_down_mask = np.zeros(len(unique_ops), dtype=bool)
-        for i, g_cart in enumerate(unique_ops):
-            # g_cart = b_T @ inv(g_frac).T @ b_T_inv  -- g_frac = inv((b_T_inv@g_cart@b_T).T)
-            M = b_T_inv @ g_cart @ b_T          # = inv(g_frac).T
-            g_frac = np.linalg.inv(M.T)
-            spin_down_mask[i] = any(np.allclose(g_frac, f, atol=1e-6) for f in flip_set)
+    mapped_spin_hulls = None
+    if (
+        preserve_ops_frac is not None and len(preserve_ops_frac)
+        and flip_ops_frac is not None and len(flip_ops_frac)
+    ):
+        mapped_spin_hulls = _mapped_spin_hulls(
+            b_matrix, hull_pts, hull_simplices_arr,
+            preserve_ops_frac, flip_ops_frac
+        )
+        if mapped_spin_hulls is None:
+            print("[Warning] Skipping spin-BZ figure: inconsistent spin-operation classes.")
+            return
     else:
-        # Fallback: proximity against a single kp reference (R-dependent)
-        R_inv_T = np.linalg.inv(np.array(R)).T
-        R_cart  = b_T @ R_inv_T @ b_T_inv
-        kp_cart = R_cart @ centroid_cart
-
-        def _proximity_mask(c_pt, kp_pt):
-            return np.array([
-                np.linalg.norm(g @ c_pt - kp_pt) < np.linalg.norm(g @ c_pt - c_pt)
-                for g in unique_ops
-            ])
-
-        spin_down_mask = _proximity_mask(centroid_cart, kp_cart)
-        n_expected = len(unique_ops) // 2
-        if spin_down_mask.sum() != n_expected:
-            eps_scale = np.linalg.norm(centroid_cart) * 3e-4
-            for trial in range(30):
-                rng = np.random.default_rng(trial)
-                c_pert  = centroid_cart + rng.standard_normal(3) * eps_scale
-                kp_pert = R_cart @ c_pert
-                mask_try = _proximity_mask(c_pert, kp_pert)
-                if mask_try.sum() == n_expected:
-                    spin_down_mask = mask_try
-                    break
+        # Compatibility fallback for workflows that supply no preserve file.
+        spin_down_mask = _classify_spin_down_ops(
+            b_matrix, unique_ops, centroid_cart, R, flip_ops_frac
+        )
 
     def _draw(ax):
         if show_helper_plane:
             draw_kz0_helper_plane(ax, bz_loops, z0=z0)
 
-        for i, g in enumerate(unique_ops):
-            cell_pts = (g @ hull_pts.T).T
-            cell_simplices = hull_simplices_arr
-            if spin_down_mask[i]:
+        if mapped_spin_hulls is not None:
+            cells_to_draw = mapped_spin_hulls
+        else:
+            cells_to_draw = [
+                ((g @ hull_pts.T).T, hull_simplices_arr, bool(spin_down_mask[i]))
+                for i, g in enumerate(unique_ops)
+            ]
+        for cell_pts, cell_simplices, is_down in cells_to_draw:
+            if is_down:
                 color, alpha = 'cornflowerblue', 0.2
             else:
                 color, alpha = 'salmon', 0.2
@@ -1333,6 +1373,36 @@ def _spin_bz_cells(b_matrix, unique_ops, centroid_cart):
     return cells
 
 
+def _fractional_real_op_to_cart_k(b_matrix, operation):
+    """Convert a real-space fractional operation to its Cartesian k action."""
+    b_t = np.array(b_matrix, dtype=float).T
+    operation = np.array(operation, dtype=float)
+    return b_t @ np.linalg.inv(operation).T @ np.linalg.inv(b_t)
+
+
+def _mapped_spin_hulls(b_matrix, hull_pts, hull_simplices, preserve_ops_frac, flip_ops_frac):
+    """Map the exact Figure 1 hull by labeled FindSpinGroup operations."""
+    labeled_ops = []
+    for ops, is_down in ((preserve_ops_frac, False), (flip_ops_frac, True)):
+        for operation in ops:
+            cart_op = _fractional_real_op_to_cart_k(b_matrix, operation)
+            matching = [
+                old_down for old_op, old_down in labeled_ops
+                if np.allclose(cart_op, old_op, atol=1e-7)
+            ]
+            if matching:
+                if matching[0] != is_down:
+                    print("[Warning] A k-space operation is both spin-preserving and spin-flipping.")
+                    return None
+                continue
+            labeled_ops.append((cart_op, is_down))
+
+    return [
+        ((operation @ np.asarray(hull_pts, dtype=float).T).T, hull_simplices, is_down)
+        for operation, is_down in labeled_ops
+    ]
+
+
 def build_symmetry_ibz_cell(b_matrix, unique_ops, seed_cart):
     """Build the fundamental BZ cell selected by a generic seed k-point."""
     seed_cart = np.array(seed_cart, dtype=float)
@@ -1421,6 +1491,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  hull_pts, hull_simplices,
                                  R, output_path,
                                  flip_ops_frac=None,
+                                 preserve_ops_frac=None,
                                  show_plot=True, defer_show=False,
                                  z0=0.0, show_title=False,
                                  show_projected_axes=True,
@@ -1433,8 +1504,21 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     hull_pts = np.array(hull_pts, dtype=float)
     hull_simplices_arr = np.array(hull_simplices, dtype=int)
     centroid_cart = np.array(centroid_cart, dtype=float)
-    spin_down_mask = _classify_spin_down_ops(
-        b_matrix, unique_ops, centroid_cart, R, flip_ops_frac)
+    mapped_spin_hulls = None
+    if (
+        preserve_ops_frac is not None and len(preserve_ops_frac)
+        and flip_ops_frac is not None and len(flip_ops_frac)
+    ):
+        mapped_spin_hulls = _mapped_spin_hulls(
+            b_matrix, hull_pts, hull_simplices_arr,
+            preserve_ops_frac, flip_ops_frac
+        )
+        if mapped_spin_hulls is None:
+            print("[Warning] Skipping spin-BZ top-view figure: inconsistent spin-operation classes.")
+            return
+    else:
+        spin_down_mask = _classify_spin_down_ops(
+            b_matrix, unique_ops, centroid_cart, R, flip_ops_frac)
 
     z_span = np.ptp(np.vstack(bz_loops)[:, 2])
     z_eps = max(float(z_span) * 1e-6, 1e-8)
@@ -1447,14 +1531,18 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     up_labeled = False
     down_labeled = False
 
-    for i, g in enumerate(unique_ops):
-        cell_pts = (g @ hull_pts.T).T
-        cell_simplices = hull_simplices_arr
+    if mapped_spin_hulls is not None:
+        cells_to_draw = mapped_spin_hulls
+    else:
+        cells_to_draw = [
+            ((g @ hull_pts.T).T, hull_simplices_arr, bool(spin_down_mask[i]))
+            for i, g in enumerate(unique_ops)
+        ]
+    for cell_pts, cell_simplices, is_down in cells_to_draw:
         poly = _points_on_kz_plane(cell_pts, cell_simplices, z0=section_z)
         if poly is None:
             continue
 
-        is_down = spin_down_mask[i]
         if is_down:
             color = '#1f4e9e'
             label = 'spin-down' if not down_labeled else None
@@ -1533,6 +1621,33 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         )
         sp_result = seekpath.get_path((cell, positions, numbers), with_time_reversal=True)
 
+    input_dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
+    os.makedirs(output_dir, exist_ok=True)
+    standardized_structure_path = os.path.join(output_dir, f"{basename}_seekpath_standard.vasp")
+    standard_mapping_path = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
+    try:
+        _write_seekpath_standard_poscar(
+            np.array(input_dataset.std_lattice),
+            np.array(input_dataset.std_positions),
+            list(input_dataset.std_types),
+            standardized_structure_path,
+            os.path.basename(filename),
+        )
+        _write_seekpath_basis_mapping(
+            a_matrix,
+            np.array(input_dataset.std_lattice),
+            np.array(sp_result["rotation_matrix"]),
+            standard_mapping_path,
+        )
+        if verbose:
+            print(f"Saved standardized structure: {standardized_structure_path}")
+            print(f"Saved SeeK-path basis mapping: {standard_mapping_path}")
+    except Exception as exc:
+        standardized_structure_path = None
+        standard_mapping_path = None
+        if verbose:
+            print(f"[Warning] Could not write SeeK-path standardization files: {exc}")
+
     spg_cell = (
         np.array(sp_result['primitive_lattice']),
         np.array(sp_result['primitive_positions']),
@@ -1540,13 +1655,13 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     )
     dataset = spglib.get_symmetry_dataset(spg_cell)
     b_matrix = np.array(sp_result['reciprocal_primitive_lattice'])
-    # Reciprocal lattice of the user-provided input cell. spinspg rotations
+    # Reciprocal lattice of the user-provided input cell. Step 0 rotations
     # are written in this basis by find_sf_operations.py.
     b_matrix_input = 2 * np.pi * np.linalg.inv(np.array(a_matrix)).T
 
     # Conventional-cell reciprocal lattice (no 2闁?needed --cancels in formula).
     # Used to correctly convert seed flip ops that were written using the
-    # conventional cell (ASE-read POSCAR --spinspg --flip_spin_operations.txt).
+    # conventional cell (input-cell POSCAR and spin_flip_operations.txt).
     _conv_lat = np.array(sp_result.get('conv_lattice', sp_result['primitive_lattice']))
     b_matrix_conv = np.linalg.inv(_conv_lat).T
     b1, b2, b3 = b_matrix
@@ -1811,6 +1926,9 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         'unique_ops': unique_ops,
         'b_matrix_conv': b_matrix_conv,
         'b_matrix_input': b_matrix_input,
+        'seekpath_rotation_matrix': np.array(sp_result['rotation_matrix']),
+        'standardized_structure_path': standardized_structure_path,
+        'standard_mapping_path': standard_mapping_path,
         'display_figures': display_figures,
     }
 

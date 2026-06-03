@@ -12,7 +12,7 @@ writing.
 
 | Step | What it does | Input needed |
 |------|--------------|--------------|
-| **0** | Finds spin-flip symmetry operations and prints a compact symmetry summary | Structure file; magnetic moments for non-mcif inputs |
+| **0** | Finds spin-flip symmetry operations and prints a compact symmetry summary | Structure file; Cartesian spin axis and magnetic moments for non-mcif inputs |
 | **1** | Builds or reads the high-symmetry IBZ path | Press Enter for auto path, or enter a KPOINTS-style file |
 | **2** | Chooses the general k point | Automatic IBZ centroid by default |
 | **3** | Selects the spin-flip operation | Press Enter for default, enter a number, type `list`, or type `manual` |
@@ -21,8 +21,10 @@ writing.
 
 ## Step 0: Spin Symmetry
 
-AlterSeeK-Path reads the structure and magnetic moments, then calls `spinspg`
-to identify spin-flip and spin-preserving operations.
+AlterSeeK-Path reads the structure and magnetic moments, then calls
+`findspingroup` to identify the altermagnetic phase, report the oriented spin
+space group index and Chen-Liu symbol, and extract spin-flip and
+spin-preserving operations.
 
 Supported structure inputs:
 
@@ -31,8 +33,9 @@ Supported structure inputs:
 - `.cif`
 - `.mcif`
 
-For non-magnetic structure formats, enter moments in atom order using VASP
-`MAGMOM` syntax. For example:
+For non-magnetic structure formats, enter the collinear spin axis in Cartesian
+coordinates. The default is `0 0 1`, meaning Cartesian z. Then enter scalar
+moments along that axis in atom order using VASP `MAGMOM` syntax. For example:
 
 ```text
 1 -1
@@ -45,6 +48,22 @@ or:
 ```
 
 Untyped atoms default to zero moment.
+
+The entered axis is normalized and multiplied by each scalar moment before it
+is passed to FindSpinGroup. It is a Cartesian spin vector; it is not converted
+to fractional lattice coordinates. For `.mcif` files, moments are read directly
+from the file and this manual-axis prompt is skipped.
+
+For collinear structures, spin-flip operations are identified by the action
+of each spin-space operation on the collinear spin axis. The written spatial
+rotation matrices remain in the input-structure basis for use by subsequent
+path-generation steps.
+
+The structural lattice type determines the Brillouin-zone boundary, the Figure
+1 IBZ hull, and HPKOT path. Figures 3 and 4 map that exact Figure 1 hull using
+FindSpinGroup spin-preserving and spin-flipping operations. If a magnetic state
+has lower spin symmetry than its structural lattice, these mapped hulls need
+not fill the whole structural BZ.
 
 ## Step 1: High-Symmetry K-Path
 

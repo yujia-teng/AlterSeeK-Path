@@ -1,6 +1,6 @@
 # Installation
 
-AlterSeeK-Path requires Python 3.9 or newer.
+AlterSeeK-Path requires Python 3.11 or newer.
 
 ## Install From Source
 
@@ -40,7 +40,7 @@ The current dependency list is:
 - `scipy`
 - `sympy`
 - `spglib`
-- `spinspg`
+- `findspingroup`
 - `ase`
 - `seekpath`
 - `pymatgen`

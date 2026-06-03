@@ -13,7 +13,7 @@ For a longer user guide, see
 
 ## Installation
 
-Requires Python >= 3.9.
+Requires Python >= 3.11.
 
 ```bash
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git
@@ -45,8 +45,21 @@ KPOINTS_modified
 - `POSCAR` / `.vasp`/  `.cif`: magnetic moments are entered manually.
 - `.mcif`: magnetic moments are read from the file when available.
 
-Type moments in atom order using VASP `MAGMOM` format. Syntax such
-as `5*0 2*1.0` is supported. Untyped atoms default to `0`.
+For `POSCAR`, `.vasp`, and `.cif` input, enter a Cartesian spin axis first.
+The default is `0 0 1`. Then type scalar moments along that axis in atom order
+using VASP `MAGMOM` format. Syntax such as `5*0 2*1.0` is supported. Untyped
+atoms default to `0`.
+
+Step 0 uses FindSpinGroup to identify the magnetic phase, oriented spin-space
+group, and spin-flip/spin-preserving operations. The input cell setting is kept
+for Step 0, while figures, labels, centroid, and KPOINTS use the standardized
+SeeK-path/HPKOT setting. Each run writes the standardized cell and basis mapping
+for inspection:
+
+```text
+POSCAR_seekpath_standard.vasp
+POSCAR_seekpath_basis_mapping.txt
+```
 
 ### K-path source
 
@@ -62,17 +75,21 @@ as `5*0 2*1.0` is supported. Untyped atoms default to `0`.
 
 >>> Step 0: Spin symmetry
 Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): GdAuGe.vasp
-Magnetic moments (atom order, trailing atoms auto-fill to 0): 1 -1
+Spin axis in Cartesian coordinates (default: 0 0 1):
+Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 1 -1
 
+Lattice type: hP2
 Structure: GdAuGe.vasp, atoms: 6
 SG P6_3mc (186), PG 6mm, Laue 6/mmm
+Phase: AFM(Altermagnet)
+Oriented SSG: 186.156.1.1.L
+SSG Symbol (Chen-Liu): P -1|6_3 1|m -1|c infinity_{001}m|1
 Spin operations: 6 flip, 6 preserve
 
 >>> Step 1: High-symmetry k-path
-IBZ type: hP2
 Path: GAMMA-M-K-GAMMA-A-L-H-A | L-M | H-K
 Press [Enter] to use this path, or type a filename to load your own:
-Using SeeK-path hP2 path (9 segments, 18 k-points)
+Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
 IBZ centroid: [0.277778, 0.111111, 0.250000]
@@ -85,6 +102,7 @@ Selected: Option 1
 
 >>> Step 4: Build altermagnetic path
 [Basis] Converted R from input-cell basis to primitive basis.
+[Basis] Annotated spin operation files with standardized-basis matrices.
 Primitive-basis R used for KPOINTS:
     [  1.00 -1.00   0 ]
     [  1.00  0.00   0 ]

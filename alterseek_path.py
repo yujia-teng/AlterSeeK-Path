@@ -77,6 +77,7 @@ class KPointsModifier:
         self.extra_general_points = []
         self.kpoints_basis_matrix = None
         self.output_basis_matrix = None
+        self.kpoints_basis_rotation = None
 
     @staticmethod
     def _display_label(label: str) -> str:
@@ -142,6 +143,7 @@ class KPointsModifier:
             self.kpoints_data = []
             self.kpoints_basis_matrix = None
             self.output_basis_matrix = None
+            self.kpoints_basis_rotation = None
             for line in lines[4:]:
                 line = line.strip()
                 if line:  # Skip empty lines
@@ -169,6 +171,8 @@ class KPointsModifier:
         try:
             k_frac = np.array(point[:3], dtype=float)
             b_kpoints = np.array(self.kpoints_basis_matrix, dtype=float)
+            if self.kpoints_basis_rotation is not None:
+                b_kpoints = b_kpoints @ np.array(self.kpoints_basis_rotation, dtype=float)
             b_output = np.array(self.output_basis_matrix, dtype=float)
             k_out = k_frac @ b_kpoints @ np.linalg.inv(b_output)
             return [k_out[0], k_out[1], k_out[2], point[3]]
@@ -197,6 +201,8 @@ class KPointsModifier:
                 line = line.strip()
                 if not line or line.startswith("#") or line.startswith("Operation"):
                     continue
+                if "|" in line:
+                    line = line.split("|", 1)[0].strip()
                 
                 parts = line.split()
                 if len(parts) == 3:
@@ -536,6 +542,10 @@ class KPointsModifier:
         _flip_file = 'spin_flip_operations.txt'
         standard_path_reason = None
         standard_path_reason_reported = False
+        centroid_result = None
+        centroid_error = None
+        display_figures = []
+        self.extra_general_points = []
 
         if not os.path.exists(struct_file):
             print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing spin_flip_operations.txt")
@@ -545,20 +555,37 @@ class KPointsModifier:
             struct_file = None
         else:
             is_mcif = struct_file.lower().endswith('.mcif')
+            spin_axis_cart = None
             if is_mcif:
                 print("Detected .mcif file --magnetic moments will be read from file.")
                 moments_str = ""
             else:
-                print("Magnetic moments (atom order, trailing atoms auto-fill to 0): ", end='', flush=True)
+                print("Spin axis in Cartesian coordinates (default: 0 0 1): ", end='', flush=True)
+                spin_axis_cart = input().strip()
+                print("Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): ", end='', flush=True)
                 moments_str = input().strip()
             # Record mtime before so we know if find_sf_run wrote a fresh file
             _mtime_before = os.path.getmtime(_flip_file) if os.path.exists(_flip_file) else None
-            sf_result = find_sf_run(struct_file, moments_str, verbose=False)
+            sf_result = find_sf_run(
+                struct_file,
+                moments_str,
+                verbose=False,
+                spin_axis_cart=spin_axis_cart,
+            )
             _mtime_after = os.path.getmtime(_flip_file) if os.path.exists(_flip_file) else None
             _step0_wrote_flip_file = (
                 _mtime_after is not None and _mtime_after != _mtime_before
             )
             if isinstance(sf_result, dict):
+                if CENTROID_AVAILABLE:
+                    try:
+                        centroid_result = compute_centroid(
+                            struct_file, output_dir='.', show_plot=True,
+                            defer_show=True, verbose=False
+                        )
+                        display_figures.extend(centroid_result.get('display_figures', []))
+                    except Exception as e:
+                        centroid_error = e
                 _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
                 laue_no_altermag = None
                 if no_altermagnetism_reason is not None:
@@ -572,10 +599,18 @@ class KPointsModifier:
                     }
                 spin_split_diagnostic = sf_result.get('spin_split_diagnostic', '')
 
-                print(f"\nStructure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
+                if centroid_result is not None:
+                    print(
+                        "\nLattice type: "
+                        f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
+                    )
+                print(f"Structure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
                 print(f"SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
                       f"Laue {sf_result['laue_group']}")
+                print(f"Phase: {sf_result['magnetic_phase']}")
+                print(f"Oriented SSG: {sf_result['ssg_index']}")
+                print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
 
                 if laue_no_altermag:
                     laue = laue_no_altermag.get('laue_group', sf_result.get('laue_group'))
@@ -593,7 +628,12 @@ class KPointsModifier:
 
                 if STEP0_VERBOSE_SUMMARY:
                     print(f"Magnetic SG: {sf_result['magnetic_space_group']}")
-                    print(f"Spin group: {sf_result['spin_group']}")
+                    print(f"G0: {sf_result['g0_symbol']} ({sf_result['g0_number']}), "
+                          f"L0: {sf_result['l0_symbol']} ({sf_result['l0_number']}), "
+                          f"EMPG: {sf_result['empg']}")
+                    if sf_result.get('findspingroup_warning'):
+                        print(f"FindSpinGroup warning: {sf_result['findspingroup_warning']}")
+                    print(f"Spin axis: {sf_result['spin_group']}")
                     unique_ops = sf_result.get('unique_point_operations',
                                                sf_result['total_operations'])
                     print(f"Space-group operations: {sf_result['total_operations']} total")
@@ -605,24 +645,27 @@ class KPointsModifier:
                           f"{sf_result['extended_spin_preserve_operations']} with translations)")
                     print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
-        # Step 1: High-symmetry k-path (auto from seekpath or user file)
-        print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-        centroid_result = None
-        display_figures = []
-        self.extra_general_points = []
-
         if struct_file and CENTROID_AVAILABLE:
             try:
-                centroid_result = compute_centroid(struct_file, output_dir='.', show_plot=True,
-                                                   defer_show=True, verbose=False)
-                display_figures.extend(centroid_result.get('display_figures', []))
+                if centroid_result is None:
+                    if centroid_error is not None:
+                        raise centroid_error
+                    centroid_result = compute_centroid(
+                        struct_file, output_dir='.', show_plot=True,
+                        defer_show=True, verbose=False
+                    )
+                    display_figures.extend(centroid_result.get('display_figures', []))
+                    print(
+                        "Lattice type: "
+                        f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
+                    )
+                print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
                 sp_path   = centroid_result['sp_path']
                 sp_coords = centroid_result['sp_point_coords']
                 displayed_path = centroid_result.get(
                     'band_kpath',
                     centroid_result.get('ibz_kpath', sp_path)
                 )
-                print(f"IBZ type: {centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}")
                 print(f"Path: {self._format_path(displayed_path)}")
                 print("Press [Enter] to use this path, or type a filename to load your own: ", end='', flush=True)
                 path_choice = input().strip()
@@ -642,6 +685,10 @@ class KPointsModifier:
                         self.header_lines = [f'K-Path generated by AlterSeeK-Path (HPKOT {sc_type_auto})',
                                              '20', 'Line-Mode', 'Reciprocal']
                         self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
+                        self.kpoints_basis_rotation = np.array(
+                            centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                            dtype=float,
+                        )
                         self.output_basis_matrix = np.array(
                             centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
                             dtype=float,
@@ -677,6 +724,10 @@ class KPointsModifier:
                     else:
                         self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
                         self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
+                        self.kpoints_basis_rotation = np.array(
+                            centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                            dtype=float,
+                        )
                         self.output_basis_matrix = np.array(
                             centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
                             dtype=float,
@@ -689,6 +740,7 @@ class KPointsModifier:
                 else:
                     if not self.read_kpoints_file(path_choice): return
             except Exception as e:
+                print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
                 print(f"[Warning] Auto path generation failed: {e}")
                 print("Falling back to manual file input.")
                 print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
@@ -696,6 +748,7 @@ class KPointsModifier:
                 if not filename: filename = "KPATH.in"
                 if not self.read_kpoints_file(filename): return
         else:
+            print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
             print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
             filename = input().strip()
             if not filename: filename = "KPATH.in"
@@ -794,37 +847,22 @@ class KPointsModifier:
             flip_ops = []
         else:
             flip_ops = self.load_flip_operations()
+        preserve_ops = self.load_preserve_operations()
 
         # Always include inversion-extended spatial partners. The spin-flip
         # classification comes from the spin rotation in find_sf_operations.py;
         # multiplying the spatial operation by inversion does not change that
         # spin-flip status. Deduplicate after extension.
-        if flip_ops:
-            expanded = list(flip_ops)
-            for op in flip_ops:
+        def _inversion_extended(ops):
+            expanded = list(ops)
+            for op in ops:
                 neg_op = -np.array(op, dtype=float)
                 if not any(np.allclose(neg_op, ex, atol=1e-8) for ex in expanded):
                     expanded.append(neg_op)
-            flip_ops = expanded
+            return expanded
 
-        expected_flip_ops = None
-        if centroid_result is not None and centroid_result.get('unique_ops') is not None:
-            expected_flip_ops = max(1, len(centroid_result['unique_ops']) // 2)
-        if flip_ops and expected_flip_ops is not None and len(flip_ops) < expected_flip_ops:
-            preserve_ops = self.load_preserve_operations()
-            supplemented = list(flip_ops)
-            for op in preserve_ops:
-                for cand in (np.array(op, dtype=float), -np.array(op, dtype=float)):
-                    if not any(np.allclose(cand, ex, atol=1e-8) for ex in supplemented):
-                        supplemented.append(cand)
-                    if len(supplemented) >= expected_flip_ops:
-                        break
-                if len(supplemented) >= expected_flip_ops:
-                    break
-            if len(supplemented) > len(flip_ops):
-                print(f"[Note] Added {len(supplemented) - len(flip_ops)} inversion-extended "
-                      f"spin-preserve k-space partners to complete the spin-flip set.")
-                flip_ops = supplemented
+        flip_ops = _inversion_extended(flip_ops)
+        preserve_ops = _inversion_extended(preserve_ops)
 
         R = None
         selected_transformation_label = None
@@ -878,7 +916,7 @@ class KPointsModifier:
         # Step 4: Process k-points
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
-        # find_sf_operations.py writes spinspg rotations in the input file's
+        # find_sf_operations.py writes FindSpinGroup rotations in the input file's
         # fractional basis.  KPOINTS/IBZ coordinates are in the seekpath primitive
         # reciprocal basis, which can differ for centered lattices (e.g. BCT, RHL).
         # Convert through Cartesian k-space so k', Figure 2, and the path all use
@@ -887,22 +925,66 @@ class KPointsModifier:
         #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
         R_cart_for_plot = None
         flip_ops_for_plot = flip_ops
+        preserve_ops_for_plot = preserve_ops
         if centroid_result is not None and 'b_matrix' in centroid_result:
             _b_input = np.array(centroid_result.get('b_matrix_input',
                                                     centroid_result['b_matrix_conv']), dtype=float)
-            _b_prim = np.array(centroid_result['b_matrix'], dtype=float)
+            _b_prim = np.array(centroid_result['b_matrix'], dtype=float) @ np.array(
+                centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                dtype=float,
+            )
             def _convert_input_frac_R_to_prim(_R):
                 _R_arr = np.array(_R, dtype=float)
                 _R_cart = _b_input.T @ np.linalg.inv(_R_arr).T @ np.linalg.inv(_b_input.T)
                 _R_prim_inv_T = np.linalg.inv(_b_prim.T) @ _R_cart @ _b_prim.T
                 return np.linalg.inv(_R_prim_inv_T.T), _R_cart
 
-            R_for_kpts, R_cart_for_plot = _convert_input_frac_R_to_prim(R)
+            R_for_kpts, _ = _convert_input_frac_R_to_prim(R)
+            # Figure 2 draws the HPKOT hull in seekpath's standardized
+            # Cartesian frame.  Let it reconstruct R_cart from R_for_kpts in
+            # that same frame; the Cartesian matrix above remains in the
+            # orientation of the input structure (notably different for MCIF).
+            R_cart_for_plot = None
             if flip_ops:
                 flip_ops_for_plot = [
                     _convert_input_frac_R_to_prim(op)[0] for op in flip_ops
                 ]
+            if preserve_ops:
+                preserve_ops_for_plot = [
+                    _convert_input_frac_R_to_prim(op)[0] for op in preserve_ops
+                ]
+            def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
+                try:
+                    with open(filename, "w") as f:
+                        f.write(f"# Found {len(input_ops)} inversion-extended {label} point operations\n")
+                        f.write("# Left matrix: input POSCAR fractional basis.\n")
+                        f.write("# Right matrix: standardized SeeK-path/HPKOT primitive basis used by Figures 1-4 and KPOINTS.\n")
+                        for i, (input_op, std_op) in enumerate(zip(input_ops, standardized_ops), 1):
+                            f.write(f"Operation_{i}\n")
+                            input_int = np.rint(np.array(input_op, dtype=float)).astype(int)
+                            std_int = np.rint(np.array(std_op, dtype=float)).astype(int)
+                            for input_row, std_row in zip(input_int, std_int):
+                                left = " ".join(str(int(x)) for x in input_row)
+                                right = " ".join(str(int(x)) for x in std_row)
+                                f.write(f"{left}    |    {right}\n")
+                            f.write("\n")
+                except Exception as exc:
+                    print(f"[Warning] Could not write {filename}: {exc}")
+
+            _annotate_ops_with_standardized_basis(
+                "spin_flip_operations.txt",
+                flip_ops,
+                flip_ops_for_plot,
+                "spin-flipping",
+            )
+            _annotate_ops_with_standardized_basis(
+                "spin_preserve_operations.txt",
+                preserve_ops,
+                preserve_ops_for_plot,
+                "spin-preserving",
+            )
             print("[Basis] Converted R from input-cell basis to primitive basis.")
+            print("[Basis] Annotated spin operation files with standardized-basis matrices.")
             print("Primitive-basis R used for KPOINTS:")
             print(self._format_matrix(R_for_kpts))
         else:
@@ -969,6 +1051,7 @@ class KPointsModifier:
                             R=R_for_kpts,
                             output_path=bz_fig_path,
                             flip_ops_frac=flip_ops_for_plot if flip_ops_for_plot else None,
+                            preserve_ops_frac=preserve_ops_for_plot if preserve_ops_for_plot else None,
                             elev=centroid_result.get('elev', 14),
                             azim=centroid_result.get('azim', 20),
                             show_plot=True,
@@ -994,6 +1077,7 @@ class KPointsModifier:
                             R=R_for_kpts,
                             output_path=top_fig_path,
                             flip_ops_frac=flip_ops_for_plot if flip_ops_for_plot else None,
+                            preserve_ops_frac=preserve_ops_for_plot if preserve_ops_for_plot else None,
                             show_plot=True,
                             defer_show=True,
                             z0=0.0,
