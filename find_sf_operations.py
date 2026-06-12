@@ -45,7 +45,7 @@ def write_operations_to_file(filename, rotations, translations, spin_rotations, 
     """Writes all spin symmetry operations to a text file."""
     with open(filename, 'w') as f:
         f.write("="*40 + "\n")
-        f.write(f"SPIN SYMMETRY LOG\n")
+        f.write("SPIN SYMMETRY LOG\n")
         f.write("="*40 + "\n\n")
         f.write(f"{label_info}\n\n")
         f.write(f"Full space-group operations: {len(rotations)}\n")

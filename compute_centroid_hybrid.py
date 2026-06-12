@@ -912,7 +912,6 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     k_frac = np.array(centroid_frac[:3])
     k_cart = k_frac[0] * b1 + k_frac[1] * b2 + k_frac[2] * b3
     kp_cart = R_cart @ k_cart
-    kp_frac = b_T_inv @ kp_cart
 
     # Original IBZ high-sym points (from lattice_kpoints, not KPOINTS file)
     ibz_orig = {}
@@ -1190,10 +1189,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                 for i, g in enumerate(unique_ops)
             ]
         for cell_pts, cell_simplices, is_down in cells_to_draw:
-            if is_down:
-                color, alpha = 'cornflowerblue', 0.2
-            else:
-                color, alpha = 'salmon', 0.2
+            alpha = 0.2
             main_key = "down_main" if is_down else "up_main"
             extra_key = "down_extra" if is_down else "up_extra"
             _draw_ibz_faces_by_sector(
@@ -1817,7 +1813,6 @@ def run(
     if params and verbose:
         print(f"Parameters: {', '.join(f'{k}={v:.6f}' for k, v in params.items())}")
 
-    kpoints_cart = {k: v[0]*b1 + v[1]*b2 + v[2]*b3 for k, v in kpoints_frac.items()}
     path_kpoints_cart = {
         k: v[0]*b1 + v[1]*b2 + v[2]*b3
         for k, v in path_kpoints_frac.items()

@@ -22,9 +22,6 @@ the selected irreducible domain.
 from __future__ import annotations
 
 import math
-from copy import deepcopy
-
-import numpy as np
 
 from seekpath.hpkot.tools import (
     eval_expr,
