@@ -33,7 +33,6 @@ DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_FIG_SIZE = (12.0, 5.0)
 DEFAULT_PANEL_GAP = 0.08
 GREY_COLOR = "0.65"
-SPECIAL_GREY_COLOR = "0.8"
 BAND_LW = 0.7
 BAND_UP_COLOR = "black"
 BAND_DOWN_COLOR = "red"
@@ -197,23 +196,6 @@ def _canonical_lattice_type(lattice_type: str) -> str:
         return lattice_type
 
 
-def _special_segment_pairs(lattice_type: str | None) -> set[frozenset[str]]:
-    if not lattice_type:
-        return set()
-
-    try:
-        from compute_centroid_hybrid import BZ_PATH_STYLE_OVERRIDES
-
-        lattice_key = _canonical_lattice_type(lattice_type)
-        pairs = {
-            frozenset((_label_key(a), _label_key(b)))
-            for a, b in BZ_PATH_STYLE_OVERRIDES.get(lattice_key, {})
-        }
-        return pairs
-    except Exception:
-        return set()
-
-
 def _is_valid_split_label(label: str) -> bool:
     return label not in HELPER_LABELS
 
@@ -267,7 +249,6 @@ def _draw_panel(
     elim: tuple[float, float],
     xlim: tuple[float, float],
     gap_half: float,
-    special_pairs: set[frozenset[str]],
     font_size: int,
     rotate_xtick_labels: bool,
     xtick_rotation: float,
@@ -279,18 +260,9 @@ def _draw_panel(
         left, right = positions[i], positions[i + 1]
         if right < xlim[0] or left > xlim[1]:
             continue
-        pair_is_special = any(
-            frozenset((left, right)) in special_pairs
-            for left in _label_keys(labels[i])
-            for right in _label_keys(labels[i + 1])
-        )
-        if special_pairs and pair_is_special:
-            color = SPECIAL_GREY_COLOR
-        elif labels[i] not in HELPER_LABELS and labels[i + 1] not in HELPER_LABELS:
-            color = GREY_COLOR
-        else:
+        if labels[i] in HELPER_LABELS or labels[i + 1] in HELPER_LABELS:
             continue
-        ax.axvspan(left, right, color=color, lw=0, zorder=0)
+        ax.axvspan(left, right, color=GREY_COLOR, lw=0, zorder=0)
 
     for ib in range(bands_dw.shape[1]):
         ax.plot(kpath, bands_dw[:, ib], color=BAND_DOWN_COLOR, lw=BAND_LW, zorder=2)
@@ -360,7 +332,6 @@ def plot_alterband(
         raise ValueError("gap_width_inches must be non-negative")
 
     tick_labels = [_format_tick_label(label) for label in labels]
-    special_pairs = _special_segment_pairs(lattice_type)
 
     up = np.loadtxt(band_up_path, skiprows=1)
     dw = np.loadtxt(band_down_path, skiprows=1)
@@ -415,7 +386,6 @@ def plot_alterband(
             elim=elim,
             xlim=xlim,
             gap_half=gap_half,
-            special_pairs=special_pairs,
             font_size=font_size,
             rotate_xtick_labels=rotate_xtick_labels,
             xtick_rotation=xtick_rotation,

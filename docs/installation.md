@@ -40,7 +40,7 @@ The current dependency list is:
 - `scipy`
 - `sympy`
 - `spglib`
-- `findspingroup`
+- `findspingroup >= 0.15.6`
 - `ase`
 - `seekpath`
 - `pymatgen`

@@ -9,6 +9,7 @@ from findspingroup.find_spin_group import (
     Tolerances,
     _find_spin_group_input_ssg_from_parsed,
 )
+from findspingroup.data.MSGMPG_DB import MSG_INT_TO_BNS
 from ase.io import read
 import sys
 import os
@@ -335,6 +336,67 @@ def _deduplicate_collinear_operations(rotations, translations, spin_rotations, s
         np.asarray([item[2] for item in compact]),
     )
 
+
+def _magnetic_type_label(msg_type):
+    labels = {
+        1: "I",
+        2: "II",
+        3: "III",
+        4: "IV",
+    }
+    return labels.get(msg_type, str(msg_type))
+
+
+def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis):
+    """
+    Compute the FindMagSym-style MSG without SOC from spin-space operations.
+
+    Only the original FindSpinGroup operations are used here. The
+    inversion-extended point operations written for k mapping are intentionally
+    excluded because they are not physical space-group operations.
+    """
+    msg_rotations = []
+    msg_translations = []
+    msg_time_reversals = []
+
+    for rot, trans, spin_rot in zip(rotations, translations, spin_rotations):
+        mapped_axis = np.asarray(spin_rot, dtype=float) @ spin_axis
+        if np.allclose(mapped_axis, spin_axis, atol=1e-7):
+            time_reversal = False
+        elif np.allclose(mapped_axis, -spin_axis, atol=1e-7):
+            time_reversal = True
+        else:
+            continue
+        rot_arr = np.asarray(rot, dtype=float)
+        rounded_rot = np.rint(rot_arr)
+        if not np.allclose(rot_arr, rounded_rot, atol=1e-7):
+            raise ValueError("non-integer spatial rotation found in MSG without SOC operations")
+        msg_rotations.append(rounded_rot.astype(int))
+        msg_translations.append(np.asarray(trans, dtype=float))
+        msg_time_reversals.append(time_reversal)
+
+    if not msg_rotations:
+        return None, 0, 0
+
+    msg_type = spglib.get_magnetic_spacegroup_type_from_symmetry(
+        np.asarray(msg_rotations, dtype=int),
+        np.asarray(msg_translations, dtype=float),
+        np.asarray(msg_time_reversals, dtype=bool),
+    )
+    return msg_type, len(msg_rotations), sum(bool(value) for value in msg_time_reversals)
+
+
+def format_msg_without_soc(msg_type):
+    if msg_type is None:
+        return "Unknown"
+    bns_number, bns_symbol = MSG_INT_TO_BNS.get(
+        msg_type.uni_number,
+        (msg_type.bns_number, None),
+    )
+    if bns_symbol:
+        return f"{bns_symbol} (BNS {bns_number}), Type {_magnetic_type_label(msg_type.type)}"
+    return f"BNS {bns_number}, Type {_magnetic_type_label(msg_type.type)}"
+
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
@@ -513,6 +575,10 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
         f"(BNS {fsg_basic.get('msg_bns_number', 'Unknown')}, "
         f"OG {fsg_basic.get('msg_og_number', 'Unknown')})"
     )
+    msg_without_soc, msg_without_soc_ops, msg_without_soc_tr_ops = compute_msg_without_soc(
+        rotations, translations, spin_rotations, spin_axis
+    )
+    msg_without_soc_label = format_msg_without_soc(msg_without_soc)
     ssg_label = fsg_basic.get("index", "Unknown")
     ssg_symbol = _display_ssg_symbol(
         fsg_input["summary"].get("input_ssg_database_symbol")
@@ -533,7 +599,8 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
         print(f"Oriented SSG: {ssg_label}")
         print(f"SSG Symbol (Chen-Liu): {ssg_symbol}")
         print(f"G0: {g0_label}; L0: {l0_label}; EMPG: {empg}")
-        print(f"Magnetic Space Group: {msg_label}")
+        print(f"MSG with SOC: {msg_label}")
+        print(f"MSG without SOC: {msg_without_soc_label}")
         print(f"Spin-Only Group Type: {sog}")
         print(f"Full space-group operations: {counts['full_space_group_operations']}")
         print(f"Unique point operations: {unique_point_operations}")
@@ -565,7 +632,8 @@ G0: {g0_label}
 L0: {l0_label}
 Effective MPG: {empg}
 Spin-Only Group Type: {sog}
-Magnetic Space Group Label: {msg_label}"""
+MSG with SOC: {msg_label}
+MSG without SOC: {msg_without_soc_label}"""
 
     # 1. Write the full readable log with LABELS
     write_operations_to_file("spin_operations.txt", rotations, translations, spin_rotations, label_info_str, verbose=verbose)
@@ -583,6 +651,11 @@ Magnetic Space Group Label: {msg_label}"""
         'point_group': point_group,
         'laue_group': laue_group,
         'magnetic_space_group': msg_label,
+        'magnetic_space_group_without_soc': msg_without_soc_label,
+        'msg_without_soc_bns_number': getattr(msg_without_soc, 'bns_number', None),
+        'msg_without_soc_type': getattr(msg_without_soc, 'type', None),
+        'msg_without_soc_operation_count': msg_without_soc_ops,
+        'msg_without_soc_time_reversal_count': msg_without_soc_tr_ops,
         'spin_group': str(sog),
         'magnetic_phase': magnetic_phase,
         'ssg_index': ssg_label,

@@ -11,6 +11,7 @@ site/
 # OS
 .DS_Store
 .claude/
+.codex_preview/
 AGENTS.md
 CODEX_MEMORY.md
 figure_style_plan_*.md

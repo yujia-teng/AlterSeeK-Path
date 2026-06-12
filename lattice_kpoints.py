@@ -149,19 +149,22 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
     #     "M_B": ("-1/2", "1/2", "0"),
     #     "L_B": ("-1/2", "1/2", "1/2"),
     # },
-    # Trigonal hP1 long-path groups in -3m: same bulk-g wave type as hP2,
-    # but the same-spin copied sector is rotated to the K_A/H_A side in the
-    # HPKOT hP1 setting. H_2 remains path-only and is excluded from the hull.
+    # Trigonal hP1/hP2 middle-row project IBZ: keep the ordinary SeeK-path
+    # high-symmetry path, and use the lower/middle-row vertices as copied-sector
+    # general anchors. H_2 is already a SeeK-path path label for hP1 where
+    # K-H_2 is required by the k-vector table.
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): {
-        "K_A": ("2/3", "-1/3", "0"),
-        "H_A": ("2/3", "-1/3", "1/2"),
+        "A_2": ("0", "0", "-1/2"),
+        "L_A": ("1/2", "0", "-1/2"),
+        "H_2": ("1/3", "1/3", "-1/2"),
     },
 
-    # Trigonal 32, 3m, -3m and hexagonal 6, -6, 6/m point groups:
-    # doubled 60-degree project IBZ relative to the highest-symmetry hP wedge.
+    # Trigonal 32, 3m, -3m middle-row project IBZ. Hexagonal 6, -6, and 6/m
+    # keep the side copied-sector convention below.
     ("hP2", range(149, 168)): {
-        "M_A": ("0", "1/2", "0"),
-        "L_A": ("0", "1/2", "1/2"),
+        "A_2": ("0", "0", "-1/2"),
+        "L_A": ("1/2", "0", "-1/2"),
+        "H_2": ("1/3", "1/3", "-1/2"),
     },
     ("hP2", range(168, 177)): {
         "M_A": ("0", "1/2", "0"),
@@ -188,22 +191,22 @@ PROJECT_HULL_PATH_BY_SG = {
     #     ("\u0393", "H_A"), ("H_A", "N"), ("P", "H_A"),
     # ],
     ("tP1", range(75, 89)): [
-        ("\u0393", "X"), ("X", "M"), ("M", "X_A"), ("X_A", "\u0393"),
+        ("\u0393", "X"), ("X", "M"),
         ("\u0393", "Z"),
-        ("Z", "R"), ("R", "A"), ("A", "R_A"), ("R_A", "Z"),
-        ("X", "R"), ("M", "A"), ("X_A", "R_A"),
+        ("Z", "R"), ("R", "A"),
+        ("X", "R"), ("M", "A"),
+        ("A", "R_A"), ("R_A", "X_A"), ("X_A", "M"),
     ],
     ("tI1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"), ("M", "\u0393"), ("\u0393", "Z"),
-        ("Z", "P"), ("P", "N"), ("N", "Z_0"), ("Z_0", "M"), ("X", "P"),
-        ("M_A", "\u0393"), ("P", "N_A"), ("N_A", "Z_0A"), ("Z_0A", "M_A"),
+        ("Z_0", "M"), ("X", "P"), ("P", "N"), ("N", "\u0393"),
+        ("P", "N_A"), ("X", "M_A"),
     ],
     ("tI2", range(75, 89)): [
-        ("\u0393", "X"), ("X", "R"), ("R", "S_0"), ("S_0", "\u0393"),
-        ("\u0393", "M"), ("M", "S"), ("S", "N"), ("N", "P"),
-        ("P", "G"), ("G", "M"), ("X", "P"),
-        ("X", "R_A"), ("R_A", "S_0A"), ("S_0A", "\u0393"),
-        ("M", "S_A"), ("S_A", "N_A"), ("N_A", "P"),
+        ("\u0393", "X"), ("X", "P"), ("P", "N"), ("N", "\u0393"),
+        ("\u0393", "M"), ("M", "S"),
+        ("S_0", "\u0393"), ("X", "R"), ("G", "M"),
+        ("X", "R_A"), ("P", "N_A"),
     ],
     # ("hP1", range(143, 149)): [
     #     ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "K_A"),
@@ -215,22 +218,22 @@ PROJECT_HULL_PATH_BY_SG = {
     #     ("L_B", "M_B"),
     # ],
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): [
-        ("\u0393", "M"), ("M", "K"), ("K", "K_A"), ("K_A", "\u0393"),
+        ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
-        ("A", "L"), ("L", "H"), ("H", "H_A"), ("H_A", "A"),
-        ("L", "M"), ("H", "K"), ("H_A", "K_A"),
+        ("A", "L"), ("L", "H"), ("H", "A"),
+        ("L", "M"), ("H", "K"), ("K", "H_2"),
     ],
     ("hP2", range(149, 168)): [
-        ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "\u0393"),
+        ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
-        ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "A"),
-        ("L", "M"), ("H", "K"), ("M_A", "L_A"),
+        ("A", "L"), ("L", "H"), ("H", "A"),
+        ("L", "M"), ("H", "K"),
     ],
     ("hP2", range(168, 177)): [
-        ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "\u0393"),
+        ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
-        ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "A"),
-        ("L", "M"), ("H", "K"), ("M_A", "L_A"),
+        ("A", "L"), ("L", "H"), ("H", "A"),
+        ("H", "L_A"), ("L_A", "M_A"), ("M_A", "K"),
     ],
 }
 
