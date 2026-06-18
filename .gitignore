@@ -34,3 +34,4 @@ data/
 tmp_cluster_band_check_*/
 tmp_diagnostics/
 symbolic_centroids.md
+tests/QE bandplot/

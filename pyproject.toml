@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 alterseek-path = "alterseek_path:main"
 alterseek-bandplot = "plot_alterband:main"
+alterseek-bandplot-qe = "plot_alterband_qe:main"
 
 [tool.setuptools]
 py-modules = [
@@ -31,4 +32,5 @@ py-modules = [
     "find_sf_operations",
     "lattice_kpoints",
     "plot_alterband",
+    "plot_alterband_qe",
 ]

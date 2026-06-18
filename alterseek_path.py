@@ -1100,6 +1100,59 @@ class KPointsModifier:
             print(f"Error writing file: {e}")
             return False
 
+    def write_kpoints_file_qe(self, new_kpoints: List[List],
+                              output_file: str = "KPOINTS_modified_qe",
+                              transformation_matrix: Optional[np.ndarray] = None,
+                              transformation_label: Optional[str] = None,
+                              ninterp: int = 30):
+        """Write KPOINTS in QE K_POINTS crystal_b format."""
+        # Collect valid segment pairs using the same filtering as write_kpoints_file.
+        valid_pairs = []  # (start_out, end_out, is_disco)
+        i = 0
+        while i < len(new_kpoints) - 1:
+            sp = new_kpoints[i]
+            ep = new_kpoints[i + 1]
+            if sp is None or ep is None:
+                i += 1; continue
+            if (sp[3] == "k" and ep[3] == "k'") or (sp[3] == "k'" and ep[3] == "k"):
+                i += 1; continue
+            if sp[3] == ep[3]:
+                i += 1; continue
+            sp_out = self._kpoint_for_output_basis(sp)
+            ep_out = self._kpoint_for_output_basis(ep)
+            valid_pairs.append((sp_out, ep_out, ep[3] == "k"))
+            i += 1
+
+        if not valid_pairs:
+            return False
+
+        # Build sequential waypoint list, deduplicating shared endpoints.
+        # ninterp rule: dead-end k or last waypoint → 1; everything else → ninterp.
+        waypoints = []
+        for idx, (sp_out, ep_out, is_disco) in enumerate(valid_pairs):
+            if idx == 0 or valid_pairs[idx - 1][2]:
+                waypoints.append((sp_out, ninterp))
+            is_last = (idx == len(valid_pairs) - 1)
+            waypoints.append((ep_out, 1 if (is_disco or is_last) else ninterp))
+
+        try:
+            with open(output_file, 'w') as f:
+                f.write("K_POINTS crystal_b\n")
+                f.write(f"  {len(waypoints)}\n")
+                for pt_out, ni in waypoints:
+                    lbl = self._kpoints_label(pt_out[3])
+                    f.write(f"  {pt_out[0]:.10f}  {pt_out[1]:.10f}  {pt_out[2]:.10f}  {ni:3d}  ! {lbl}\n")
+                if transformation_matrix is not None:
+                    flat = np.array(transformation_matrix).flatten()
+                    mat_str = " ".join(f"{x:.8f}" for x in flat)
+                    lbl = f" ({transformation_label})" if transformation_label else ""
+                    f.write(f"! Spin-flip operation{lbl} in input-cell fractional basis: {mat_str}\n")
+            print(f"QE KPOINTS written to: {output_file}")
+            return True
+        except Exception as e:
+            print(f"Error writing QE KPOINTS: {e}")
+            return False
+
     def interactive_modify(self):
         """Interactive modification of KPOINTS file"""
         BOLD  = "\033[1m"
@@ -1454,19 +1507,28 @@ class KPointsModifier:
                 print(f"\n{BOLD}[Note] {standard_path_reason}{RESET}")
             print("Writing ordinary k-path with non-spin-flip general-k anchors.")
             print(f"\n{BOLD}>>> Step 5: Save{RESET}")
-            print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
-            output_file = input().strip()
-            if not output_file:
-                output_file = "KPOINTS_modified"
+            print("Output code ([vasp]/qe): ", end='', flush=True)
+            code_choice = input().strip().lower()
             standard_general_path = self.insert_general_kpoint_anchors(
                 general_kpoint,
                 self.extra_general_points,
             )
-            if self.write_kpoints_file(standard_general_path, output_file, None):
-                if centroid_result is not None:
-                    write_bandplot_lattice_config(
-                        centroid_result.get('lattice_key', centroid_result.get('sc_type'))
-                    )
+            if code_choice == "qe":
+                if self.write_kpoints_file_qe(standard_general_path, "KPOINTS_modified_qe", None):
+                    if centroid_result is not None:
+                        write_bandplot_lattice_config(
+                            centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                        )
+            else:
+                print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
+                output_file = input().strip()
+                if not output_file:
+                    output_file = "KPOINTS_modified"
+                if self.write_kpoints_file(standard_general_path, output_file, None):
+                    if centroid_result is not None:
+                        write_bandplot_lattice_config(
+                            centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                        )
             print("\nDone.")
             if display_figures and plt is not None:
                 print('Displaying generated figure(s)...')
@@ -1710,18 +1772,28 @@ class KPointsModifier:
                             print(f"[Warning] Could not generate {fig_name} figure: {_e}")
                 # Step 5: Save modified file
                 print(f"\n{BOLD}>>> Step 5: Save{RESET}")
-                print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
-                output_file = input().strip()
-                if not output_file:
-                    output_file = "KPOINTS_modified"
-                
-                if self.write_kpoints_file(
-                    new_kpoints, output_file, R, selected_transformation_label
-                ):
-                    if centroid_result is not None:
-                        write_bandplot_lattice_config(
-                            centroid_result.get('lattice_key', centroid_result.get('sc_type'))
-                        )
+                print("Output code ([vasp]/qe): ", end='', flush=True)
+                code_choice = input().strip().lower()
+                if code_choice == "qe":
+                    if self.write_kpoints_file_qe(
+                        new_kpoints, "KPOINTS_modified_qe", R, selected_transformation_label
+                    ):
+                        if centroid_result is not None:
+                            write_bandplot_lattice_config(
+                                centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                            )
+                else:
+                    print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
+                    output_file = input().strip()
+                    if not output_file:
+                        output_file = "KPOINTS_modified"
+                    if self.write_kpoints_file(
+                        new_kpoints, output_file, R, selected_transformation_label
+                    ):
+                        if centroid_result is not None:
+                            write_bandplot_lattice_config(
+                                centroid_result.get('lattice_key', centroid_result.get('sc_type'))
+                            )
                 print("\nDone.")
                 if display_figures and plt is not None:
                     print('Displaying generated figures...')

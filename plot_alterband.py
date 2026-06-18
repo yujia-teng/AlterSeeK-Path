@@ -392,7 +392,7 @@ def plot_alterband(
         )
 
     fig.supylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=font_size + 1)
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=800, bbox_inches="tight")
     plt.close(fig)
     return output_path
 
