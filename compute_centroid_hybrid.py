@@ -291,7 +291,20 @@ def _get_bz_path_style(lattice_type, k1, k2):
 
 def _is_doubled_ibz_extra_label(label):
     label = str(label)
-    return label.endswith("_A") or label.endswith("_2")
+    suffix = label.rsplit("_", 1)[-1] if "_" in label else ""
+    return suffix.endswith("A") or label.endswith("_2")
+
+
+def _doubled_ibz_extra_flags(hull_labels):
+    labels = [str(label) for label in hull_labels]
+    # Project doubled sectors always include at least one copied _A label.
+    # Ordinary HPKOT labels ending in _2 must not trigger sector coloring.
+    if not any(
+        "_" in label and label.rsplit("_", 1)[-1].endswith("A")
+        for label in labels
+    ):
+        return [False] * len(labels)
+    return [_is_doubled_ibz_extra_label(label) for label in labels]
 
 
 def _split_hull_faces_by_extra_labels(hull_pts, hull_simplices, hull_labels=None):
@@ -316,7 +329,11 @@ def _draw_ibz_faces_by_sector(ax, hull_pts, hull_simplices, hull_labels,
                               main_alpha=0.20, extra_alpha=0.14):
     points = np.array(hull_pts)
     labels = list(hull_labels) if hull_labels is not None else None
-    if labels is None or not any(_is_doubled_ibz_extra_label(lbl) for lbl in labels):
+    extra_flags = (
+        _doubled_ibz_extra_flags(labels) if labels is not None
+        else [False] * len(points)
+    )
+    if len(extra_flags) != len(points) or not any(extra_flags):
         faces = [[points[s] for s in simplex] for simplex in hull_simplices]
         ax.add_collection3d(Poly3DCollection(
             faces, facecolor=main_color, alpha=main_alpha, edgecolor='none'))
@@ -327,8 +344,8 @@ def _draw_ibz_faces_by_sector(ax, hull_pts, hull_simplices, hull_labels,
         full_faces, facecolor=extra_color, alpha=extra_alpha, edgecolor='none'))
 
     original_points = np.array([
-        point for point, label in zip(points, labels)
-        if not _is_doubled_ibz_extra_label(label)
+        point for point, is_extra in zip(points, extra_flags)
+        if not is_extra
     ])
     if len(original_points) < 4:
         return
@@ -336,12 +353,14 @@ def _draw_ibz_faces_by_sector(ax, hull_pts, hull_simplices, hull_labels,
         original_hull = ConvexHull(original_points)
     except Exception:
         return
+
     original_faces = [
         [original_points[s] for s in simplex]
         for simplex in original_hull.simplices
     ]
     ax.add_collection3d(Poly3DCollection(
-        original_faces, facecolor=main_color, alpha=main_alpha, edgecolor='none'))
+        original_faces, facecolor=main_color,
+        alpha=main_alpha, edgecolor='none'))
 
 
 def _figure_output_paths(output_path):
@@ -773,12 +792,16 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
         _draw_ibz_faces_by_sector(
             ax, face_points, hull.simplices, hull_labels,
             IBZ_FACE_COLORS["up_main"], IBZ_FACE_COLORS["up_extra"])
+        for p1, p2 in _get_ibz_frame_edges(face_points, hull.simplices, hull_labels):
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]],
+                    c='darkred', lw=1.8, alpha=0.85, zorder=10)
     for k1, k2 in kpath:
         if k1 in kpoints_cart and k2 in kpoints_cart:
             p1, p2 = kpoints_cart[k1], kpoints_cart[k2]
             style = _get_bz_path_style(lattice_type, k1, k2)
             ax.plot([p1[0],p2[0]], [p1[1],p2[1]], [p1[2],p2[2]],
-                    c=style["color"], ls=style["ls"], lw=style["lw"], alpha=style["alpha"])
+                    c=style["color"], ls=style["ls"], lw=style["lw"],
+                    alpha=style["alpha"], zorder=50)
     ibz_center = np.mean(points_list, axis=0)
     ibz_span = np.max(np.ptp(np.array(points_list), axis=0))
     label_offset = ibz_span * 0.1  # scale offset to IBZ size
