@@ -1060,19 +1060,18 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
             color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
         )
 
-        # Curved arc arrow: placed at 80% of BZ-exit height (near the top face)
+        # Curved arc arrow: fixed size at the tip of the axis (schematic, not data)
         order = op['order'] or 2
         prefix = 'C' if op_type == 'rotation' else 'S'
         order_str = f"{prefix}{order}"
         u = _perp_unit(axis)
         v = np.cross(axis, u)
         v = v / np.linalg.norm(v)
-        r_arc = bz_exit * 0.30
-        h_arc = bz_exit * 0.80          # 80% of BZ exit → near the top face
-        span  = 2 * np.pi / order * 0.72
+        r_arc = bz_radius * 0.12        # fixed fraction of BZ size, not axis-direction dependent
+        span  = np.pi * 0.55            # fixed ~100°, purely schematic
         theta = np.linspace(0, span, 60)
         arc_pts = (
-            h_arc * axis[None, :]
+            tip[None, :]
             + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v)
         )
         ax.plot(arc_pts[:, 0], arc_pts[:, 1], arc_pts[:, 2],
