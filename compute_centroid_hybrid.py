@@ -1016,7 +1016,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
                 zorder=5,
             ))
 
-    elif op_type == 'rotation' and op['axis'] is not None:
+    elif op_type in ('rotation', 'rotoreflection') and op['axis'] is not None:
         axis = np.array(op['axis'], dtype=float)
         # Orient tip toward upper hemisphere for consistent appearance
         if axis[2] < -1e-6 or (abs(axis[2]) < 1e-6 and axis[1] < -1e-6):
@@ -1024,11 +1024,44 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         half = bz_radius * 1.08
         tip  = axis * half
         base = -axis * half
+
+        # Dashed axis line through BZ
         ax.plot(
             [base[0], tip[0]], [base[1], tip[1]], [base[2], tip[2]],
             color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
         )
-        order_str = f"C{op['order']}" if op['order'] else "Cn"
+
+        # Curved arc arrow around the axis (drawn near the tip)
+        order = op['order'] or 2
+        prefix = 'C' if op_type == 'rotation' else 'S'
+        order_str = f"{prefix}{order}"
+        u = _perp_unit(axis)
+        v = np.cross(axis, u)
+        v = v / np.linalg.norm(v)
+        r_arc  = bz_radius * 0.20
+        h_arc  = half * 0.52            # height along axis where arc sits
+        span   = 2 * np.pi / order * 0.72   # 72% of one rotation step
+        theta  = np.linspace(0, span, 60)
+        arc_pts = (
+            h_arc * axis[None, :]
+            + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v)
+        )
+        ax.plot(arc_pts[:, 0], arc_pts[:, 1], arc_pts[:, 2],
+                color='#b07800', lw=2.5, alpha=0.88, zorder=7)
+
+        # Arrowhead at arc end using _Arrow3D (tangent direction)
+        tangent = -np.sin(span) * u + np.cos(span) * v
+        dt = r_arc * 0.30
+        arr = _Arrow3D(
+            [arc_pts[-2, 0], arc_pts[-1, 0] + tangent[0] * dt],
+            [arc_pts[-2, 1], arc_pts[-1, 1] + tangent[1] * dt],
+            [arc_pts[-2, 2], arc_pts[-1, 2] + tangent[2] * dt],
+            arrowstyle='->', mutation_scale=22,
+            color='#b07800', lw=2.0, shrinkA=0, shrinkB=0, zorder=7,
+        )
+        ax.add_artist(arr)
+
+        # Label above the arc
         label_pt = tip + axis * bz_radius * 0.14
         ax.text(
             *label_pt, order_str,
