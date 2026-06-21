@@ -896,6 +896,148 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices, hull_labels=None):
 
 
 # ============================================================================
+# Spin-flip operation classification and Figure 2 geometric visuals
+# ============================================================================
+
+def _perp_unit(v):
+    """Return a unit vector perpendicular to v (for any nonzero v)."""
+    v = np.asarray(v, dtype=float)
+    idx = int(np.argmin(np.abs(v)))
+    w = np.zeros(3)
+    w[idx] = 1.0
+    w = w - (w @ v) * v
+    return w / np.linalg.norm(w)
+
+
+def _classify_spinflip_op(R_cart):
+    """
+    Classify a Cartesian orthogonal matrix as a crystallographic point-group
+    operation using det and trace.
+
+    Returns a dict:
+      'type'  : 'identity' | 'rotation' | 'mirror' | 'inversion' | 'rotoreflection'
+      'axis'  : unit 3-vector or None
+                  rotation -> rotation axis (real eigenvec with eigenvalue +1)
+                  mirror   -> plane normal  (real eigenvec with eigenvalue -1)
+                  Sn       -> rotation axis (real eigenvec with eigenvalue -1)
+      'order' : int n for Cn/Sn, or None
+    """
+    det = int(np.round(np.linalg.det(R_cart)))
+    tr  = int(np.round(np.trace(R_cart)))
+    eigvals, eigvecs = np.linalg.eig(R_cart)
+
+    def _real_eigvec(target):
+        dists = np.where(
+            np.abs(eigvals.imag) < 1e-5,
+            np.abs(eigvals.real - target),
+            np.inf,
+        )
+        idx = int(np.argmin(dists))
+        if dists[idx] > 0.15:
+            return None
+        vec = eigvecs[:, idx].real
+        norm = np.linalg.norm(vec)
+        return vec / norm if norm > 1e-10 else None
+
+    if det == 1:
+        if tr == 3:
+            return {'type': 'identity', 'axis': None, 'order': 1}
+        order = {-1: 2, 0: 3, 1: 4, 2: 6}.get(tr)
+        return {'type': 'rotation', 'axis': _real_eigvec(+1.0), 'order': order}
+
+    # det == -1 (improper)
+    if tr == -3:
+        return {'type': 'inversion', 'axis': None, 'order': None}
+    if tr == 1:
+        return {'type': 'mirror', 'axis': _real_eigvec(-1.0), 'order': None}
+    # Rotoreflections Sn: S3 tr=-2, S4 tr=-1, S6 tr=0
+    order = {-2: 3, -1: 4, 0: 6}.get(tr)
+    return {'type': 'rotoreflection', 'axis': _real_eigvec(-1.0), 'order': order}
+
+
+def _mirror_plane_bz_polygon(normal, bz_loops):
+    """
+    Return the polygon (N,3) where the mirror plane n·k=0 cuts the BZ edges,
+    sorted angularly around the centroid.  Returns None if fewer than 3 pts.
+    """
+    n = np.asarray(normal, dtype=float)
+    n = n / np.linalg.norm(n)
+    pts = []
+    for loop in bz_loops:
+        loop_pts = np.asarray(loop, dtype=float)
+        for a, b in zip(loop_pts[:-1], loop_pts[1:]):
+            da = float(n @ a)
+            db = float(n @ b)
+            if abs(da) < 1e-8:
+                pts.append(a.copy())
+            if abs(db) < 1e-8:
+                pts.append(b.copy())
+            if da * db < -1e-14:
+                t = da / (da - db)
+                pts.append(a + t * (b - a))
+
+    if len(pts) < 3:
+        return None
+    pts = np.unique(np.round(np.array(pts, dtype=float), 10), axis=0)
+    if len(pts) < 3:
+        return None
+
+    centroid = pts.mean(axis=0)
+    u = _perp_unit(n)
+    v = np.cross(n, u)
+    v = v / np.linalg.norm(v)
+    uv = np.column_stack([u, v])
+    coords_2d = pts @ uv
+    c2d = centroid @ uv
+    angles = np.arctan2(coords_2d[:, 1] - c2d[1], coords_2d[:, 0] - c2d[0])
+    return pts[np.argsort(angles)]
+
+
+def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
+    """
+    Draw the geometric visual for the chosen spin-flip operation on ax.
+
+      Mirror  (det=-1, tr=1)  : pink shaded plane through Γ, clipped to BZ
+      Cn rotation (det=+1)    : dashed gold line + label along the rotation axis
+      Inversion / Sn / identity : nothing drawn
+    """
+    op = _classify_spinflip_op(R_cart)
+    op_type = op['type']
+
+    if op_type == 'mirror' and op['axis'] is not None:
+        poly = _mirror_plane_bz_polygon(op['axis'], bz_loops)
+        if poly is not None and len(poly) >= 3:
+            ax.add_collection3d(Poly3DCollection(
+                [poly],
+                alpha=0.22,
+                facecolor='#e07878',
+                edgecolor='#b05050',
+                linewidth=0.7,
+                zorder=5,
+            ))
+
+    elif op_type == 'rotation' and op['axis'] is not None:
+        axis = np.array(op['axis'], dtype=float)
+        # Orient tip toward upper hemisphere for consistent appearance
+        if axis[2] < -1e-6 or (abs(axis[2]) < 1e-6 and axis[1] < -1e-6):
+            axis = -axis
+        half = bz_radius * 1.08
+        tip  = axis * half
+        base = -axis * half
+        ax.plot(
+            [base[0], tip[0]], [base[1], tip[1]], [base[2], tip[2]],
+            color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
+        )
+        order_str = f"C{op['order']}" if op['order'] else "Cn"
+        label_pt = tip + axis * bz_radius * 0.14
+        ax.text(
+            *label_pt, order_str,
+            fontsize=15, color='#b07800', zorder=120,
+            ha='center', va='center',
+        )
+
+
+# ============================================================================
 # Spin-flip Connection Figure  (replaces the old "mapped BZ" Fig 2)
 # ============================================================================
 def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
@@ -991,6 +1133,9 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     threshold = 0.05 * bz_radius
 
     def _draw(ax):
+        # Mirror plane or rotation axis visual (drawn first so IBZ sits on top)
+        _draw_op_visual(ax, R_cart, bz_loops, bz_radius)
+
         # Spin-up IBZ: use the same curated HPKOT/project hull as Figure 1.
         up_pts, up_simplices = hull_pts, hull_simplices
         if up_pts is not None and up_simplices is not None:
