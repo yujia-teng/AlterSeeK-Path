@@ -909,6 +909,29 @@ def _perp_unit(v):
     return w / np.linalg.norm(w)
 
 
+def _axis_bz_exit(axis, bz_loops):
+    """
+    Return the parameter t where the ray origin + t*axis first exits the BZ.
+    Uses the convex-hull half-space equations of the BZ vertices.
+    Falls back to bz_radius if the hull cannot be computed.
+    """
+    all_pts = np.vstack([np.asarray(loop, dtype=float) for loop in bz_loops])
+    fallback = float(np.max(np.linalg.norm(all_pts, axis=1)))
+    try:
+        hull = ConvexHull(all_pts)
+        t_vals = []
+        for eq in hull.equations:
+            n, d = eq[:3], eq[3]
+            denom = float(n @ axis)
+            if denom > 1e-10:
+                t = float(-d / denom)
+                if t > 0:
+                    t_vals.append(t)
+        return min(t_vals) if t_vals else fallback
+    except Exception:
+        return fallback
+
+
 def _classify_spinflip_op(R_cart):
     """
     Classify a Cartesian orthogonal matrix as a crystallographic point-group
@@ -1021,27 +1044,30 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         # Orient tip toward upper hemisphere for consistent appearance
         if axis[2] < -1e-6 or (abs(axis[2]) < 1e-6 and axis[1] < -1e-6):
             axis = -axis
-        half = bz_radius * 1.08
+
+        # Clip axis line to actual BZ exit (not bz_radius which can be much larger)
+        bz_exit = _axis_bz_exit(axis, bz_loops)
+        half = bz_exit * 1.06        # 6% outside BZ face
         tip  = axis * half
         base = -axis * half
 
-        # Dashed axis line through BZ
+        # Dashed axis line — clipped to BZ extent, not bz_radius
         ax.plot(
             [base[0], tip[0]], [base[1], tip[1]], [base[2], tip[2]],
             color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
         )
 
-        # Curved arc arrow around the axis (drawn near the tip)
+        # Curved arc arrow: placed at 80% of BZ-exit height (near the top face)
         order = op['order'] or 2
         prefix = 'C' if op_type == 'rotation' else 'S'
         order_str = f"{prefix}{order}"
         u = _perp_unit(axis)
         v = np.cross(axis, u)
         v = v / np.linalg.norm(v)
-        r_arc  = bz_radius * 0.20
-        h_arc  = half * 0.52            # height along axis where arc sits
-        span   = 2 * np.pi / order * 0.72   # 72% of one rotation step
-        theta  = np.linspace(0, span, 60)
+        r_arc = bz_exit * 0.30          # radius of arc relative to BZ height
+        h_arc = bz_exit * 0.80          # 80% of BZ exit → near the top face
+        span  = 2 * np.pi / order * 0.72
+        theta = np.linspace(0, span, 60)
         arc_pts = (
             h_arc * axis[None, :]
             + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v)
@@ -1061,8 +1087,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         )
         ax.add_artist(arr)
 
-        # Label above the arc
-        label_pt = tip + axis * bz_radius * 0.14
+        # Label just above tip
+        label_pt = tip + axis * bz_exit * 0.18
         ax.text(
             *label_pt, order_str,
             fontsize=15, color='#b07800', zorder=120,
@@ -1249,8 +1275,12 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         # Label helpers — use combined span/center so offset scale matches Fig 1
         _all_pts = np.array(list(ibz_orig.values()) + list(ibz_mapped.values()))
         _lbl_center = np.mean(_all_pts, axis=0) if len(_all_pts) else np.zeros(3)
-        _lbl_span = max(np.max(np.ptp(_all_pts, axis=0)), 1e-8) if len(_all_pts) else 1.0
-        _off_sc = _lbl_span * 0.1
+        # Base offset scale on original IBZ only — mapped sector can be far away
+        # (e.g. C2 flips IBZ to opposite side), which would bloat _lbl_span and
+        # push all labels far from their points.
+        _orig_pts = np.array(list(ibz_orig.values())) if ibz_orig else _all_pts
+        _lbl_span = max(np.max(np.ptp(_orig_pts, axis=0)), 1e-8) if len(_orig_pts) else 1.0
+        _off_sc = _lbl_span * 0.10
 
         def _label_pts(pts_dict, color, edgecolor):
             for lbl, hpt in pts_dict.items():
