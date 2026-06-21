@@ -1032,10 +1032,10 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         if poly is not None and len(poly) >= 3:
             ax.add_collection3d(Poly3DCollection(
                 [poly],
-                alpha=0.22,
-                facecolor='#e07878',
-                edgecolor='#b05050',
-                linewidth=0.7,
+                alpha=0.28,
+                facecolor='#c4a8e8',   # light lavender, distinct from IBZ salmon/blue
+                edgecolor='#8058b8',
+                linewidth=0.8,
                 zorder=5,
             ))
 
@@ -1045,13 +1045,16 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         if axis[2] < -1e-6 or (abs(axis[2]) < 1e-6 and axis[1] < -1e-6):
             axis = -axis
 
-        # Clip axis line to actual BZ exit (not bz_radius which can be much larger)
-        bz_exit = _axis_bz_exit(axis, bz_loops)
-        half = bz_exit * 1.06        # 6% outside BZ face
-        tip  = axis * half
-        base = -axis * half
+        # Axis exits BZ at bz_exit along +axis and bz_exit_neg along -axis.
+        # Extend by at least 30% of the full BZ radius so the line is always
+        # visibly longer than the BZ (e.g. for flat hexagonal where c* << a*).
+        bz_exit     = _axis_bz_exit( axis, bz_loops)
+        bz_exit_neg = _axis_bz_exit(-axis, bz_loops)
+        extension   = max(bz_radius * 0.30, bz_exit * 0.15)
+        tip  =  axis * (bz_exit     + extension)
+        base = -axis * (bz_exit_neg + extension)
 
-        # Dashed axis line — clipped to BZ extent, not bz_radius
+        # Dashed axis line
         ax.plot(
             [base[0], tip[0]], [base[1], tip[1]], [base[2], tip[2]],
             color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
@@ -1064,7 +1067,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         u = _perp_unit(axis)
         v = np.cross(axis, u)
         v = v / np.linalg.norm(v)
-        r_arc = bz_exit * 0.30          # radius of arc relative to BZ height
+        r_arc = bz_exit * 0.30
         h_arc = bz_exit * 0.80          # 80% of BZ exit → near the top face
         span  = 2 * np.pi / order * 0.72
         theta = np.linspace(0, span, 60)
@@ -1087,8 +1090,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         )
         ax.add_artist(arr)
 
-        # Label just above tip
-        label_pt = tip + axis * bz_exit * 0.18
+        # Label above tip, offset by 30% of bz_radius so it clears BZ-face labels
+        label_pt = tip + axis * bz_radius * 0.20
         ax.text(
             *label_pt, order_str,
             fontsize=15, color='#b07800', zorder=120,
