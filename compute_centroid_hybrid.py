@@ -1032,9 +1032,9 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
         if poly is not None and len(poly) >= 3:
             ax.add_collection3d(Poly3DCollection(
                 [poly],
-                alpha=0.28,
-                facecolor='#c4a8e8',   # light lavender, distinct from IBZ salmon/blue
-                edgecolor='#8058b8',
+                alpha=0.30,
+                facecolor='#606060',
+                edgecolor='#303030',
                 linewidth=0.8,
                 zorder=5,
             ))
