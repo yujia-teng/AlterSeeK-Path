@@ -114,12 +114,8 @@ def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> 
     for i in range(len(segments) - 1):
         (el, ek), (sl, sk) = segments[i][1], segments[i + 1][0]
         dx, dy, dz = abs(ek[0] - sk[0]), abs(ek[1] - sk[1]), abs(ek[2] - sk[2])
-        if dx < 1e-4 and dz < 1e-4 and dy >= 1e-4:
-            expected.append(f"{el}|{sl}")                     # buggy junction: kx==kx', kz==kz', ky!=ky'
-        elif dx < 1e-4 and dy < 1e-4 and dz < 1e-4:
-            expected.append(el if el == sl else f"{el}|{sl}") # genuine junction
-        else:
-            expected.extend([el, sl])                          # gap (discontinuous path)
+        all_same = dx < 1e-4 and dy < 1e-4 and dz < 1e-4
+        expected.append(el if (all_same and el == sl) else f"{el}|{sl}")
     expected.append(segments[-1][1][0])
     if len(expected) != len(labels):
         return labels  # length mismatch means our parsing diverges; don't corrupt
