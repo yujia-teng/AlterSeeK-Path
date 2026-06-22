@@ -119,6 +119,37 @@ def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> 
     return new_labels
 
 
+def _rewrite_klabels(path: Path, old_labels: list[str], new_labels: list[str]) -> None:
+    """Write corrected labels back to KLABELS file, preserving whitespace and positions."""
+    if old_labels == new_labels:
+        return
+    raw = path.read_text()
+    lines = raw.splitlines(keepends=True)
+    label_idx = 0
+    out_lines: list[str] = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) == 2:
+            try:
+                float(parts[1])
+                if label_idx < len(old_labels):
+                    old, new = old_labels[label_idx], new_labels[label_idx]
+                    label_idx += 1
+                    if old != new:
+                        stripped = line.lstrip()
+                        indent = len(line) - len(stripped)
+                        if stripped.startswith(old) and (
+                            len(stripped) == len(old) or stripped[len(old)].isspace()
+                        ):
+                            line = line[:indent] + new + line[indent + len(old):]
+                out_lines.append(line)
+                continue
+            except ValueError:
+                pass
+        out_lines.append(line)
+    path.write_text("".join(out_lines))
+
+
 def _fix_vaspkit_truncated_label(label: str, lattice_type: str | None) -> str:
     if lattice_type is None:
         return label
@@ -357,7 +388,9 @@ def plot_alterband(
     output_path = Path(output)
 
     labels, positions = _read_klabels(klabels_path)
-    labels = _fix_klabels_missing_merge(labels, klabels_path.parent / "KPOINTS")
+    fixed_labels = _fix_klabels_missing_merge(labels, klabels_path.parent / "KPOINTS")
+    _rewrite_klabels(klabels_path, labels, fixed_labels)
+    labels = fixed_labels
     labels = [_fix_vaspkit_truncated_label(label, lattice_type) for label in labels]
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
