@@ -84,6 +84,41 @@ VASPKIT_TRUNCATED_LABEL_FIXES = {
 }
 
 
+def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> list[str]:
+    """Fix vaspkit 1.5.0 bug: k/k' boundary written as standalone instead of 'k|k''."""
+    if kpoints_path is None or not kpoints_path.exists():
+        return labels
+    helper = {"k", "k'"}
+    if not any(lab in helper for lab in labels):
+        return labels
+    # Build ordered expected merged labels from KPOINTS segment junctions.
+    kpt_labels: list[str] = []
+    with kpoints_path.open() as f:
+        for i, line in enumerate(f):
+            if i < 4:
+                continue
+            parts = line.split()
+            if len(parts) >= 4:
+                kpt_labels.append(parts[3])
+    expected_merges = [
+        f"{kpt_labels[i]}|{kpt_labels[i + 1]}"
+        for i in range(1, len(kpt_labels) - 1, 2)
+        if kpt_labels[i] in helper and kpt_labels[i + 1] in helper and kpt_labels[i] != kpt_labels[i + 1]
+    ]
+    if not expected_merges:
+        return labels
+    merge_iter = iter(expected_merges)
+    current_merge = next(merge_iter, None)
+    new_labels: list[str] = []
+    for label in labels:
+        if label in helper and current_merge is not None:
+            new_labels.append(current_merge)
+            current_merge = next(merge_iter, None)
+        else:
+            new_labels.append(label)
+    return new_labels
+
+
 def _fix_vaspkit_truncated_label(label: str, lattice_type: str | None) -> str:
     if lattice_type is None:
         return label
@@ -322,6 +357,7 @@ def plot_alterband(
     output_path = Path(output)
 
     labels, positions = _read_klabels(klabels_path)
+    labels = _fix_klabels_missing_merge(labels, klabels_path.parent / "KPOINTS")
     labels = [_fix_vaspkit_truncated_label(label, lattice_type) for label in labels]
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
