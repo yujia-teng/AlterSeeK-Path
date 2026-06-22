@@ -85,38 +85,47 @@ VASPKIT_TRUNCATED_LABEL_FIXES = {
 
 
 def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> list[str]:
-    """Fix vaspkit 1.5.0 bug: k/k' boundary written as standalone instead of 'k|k''."""
+    """Fix vaspkit 1.5.0 bug: boundary label written as start-only instead of 'end|start'.
+
+    Triggered when adjacent segment endpoints share kx and kz but differ in ky.
+    Detects the condition from KPOINTS coordinates, so works for any label names.
+    """
     if kpoints_path is None or not kpoints_path.exists():
         return labels
-    helper = {"k", "k'"}
-    if not any(lab in helper for lab in labels):
-        return labels
-    # Build ordered expected merged labels from KPOINTS segment junctions.
-    kpt_labels: list[str] = []
+    segments: list[list] = []
+    buf: list = []
     with kpoints_path.open() as f:
         for i, line in enumerate(f):
             if i < 4:
                 continue
             parts = line.split()
             if len(parts) >= 4:
-                kpt_labels.append(parts[3])
-    expected_merges = [
-        f"{kpt_labels[i]}|{kpt_labels[i + 1]}"
-        for i in range(1, len(kpt_labels) - 1, 2)
-        if kpt_labels[i] in helper and kpt_labels[i + 1] in helper and kpt_labels[i] != kpt_labels[i + 1]
-    ]
-    if not expected_merges:
+                try:
+                    buf.append((parts[3], (float(parts[0]), float(parts[1]), float(parts[2]))))
+                    if len(buf) == 2:
+                        segments.append(buf)
+                        buf = []
+                except ValueError:
+                    pass
+    if not segments:
         return labels
-    merge_iter = iter(expected_merges)
-    current_merge = next(merge_iter, None)
-    new_labels: list[str] = []
-    for label in labels:
-        if label in helper and current_merge is not None:
-            new_labels.append(current_merge)
-            current_merge = next(merge_iter, None)
+    # Build expected KLABELS sequence from segment structure.
+    expected: list[str] = [segments[0][0][0]]
+    for i in range(len(segments) - 1):
+        (el, ek), (sl, sk) = segments[i][1], segments[i + 1][0]
+        dx, dy, dz = abs(ek[0] - sk[0]), abs(ek[1] - sk[1]), abs(ek[2] - sk[2])
+        if dx < 1e-4 and dz < 1e-4 and dy >= 1e-4:
+            expected.append(f"{el}|{sl}")                     # buggy junction: kx==kx', kz==kz', ky!=ky'
+        elif dx < 1e-4 and dy < 1e-4 and dz < 1e-4:
+            expected.append(el if el == sl else f"{el}|{sl}") # genuine junction
         else:
-            new_labels.append(label)
-    return new_labels
+            expected.extend([el, sl])                          # gap (discontinuous path)
+    expected.append(segments[-1][1][0])
+    if len(expected) != len(labels):
+        return labels  # length mismatch means our parsing diverges; don't corrupt
+    # Replace only where actual is the start-label tail of a buggy expected merge.
+    return [exp if (act != exp and exp.endswith(f"|{act}")) else act
+            for act, exp in zip(labels, expected)]
 
 
 def _rewrite_klabels(path: Path, old_labels: list[str], new_labels: list[str]) -> None:
