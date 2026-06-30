@@ -40,7 +40,8 @@ try:
                                          no_altermagnetism_reason,
                                          plot_spin_flip_figure,
                                          plot_spin_bz_figure,
-                                         plot_spin_bz_top_view_figure)
+                                         plot_spin_bz_top_view_figure,
+                                         describe_spinflip_op)
     import matplotlib.pyplot as plt
     CENTROID_AVAILABLE = True
 except ImportError as _exc:
@@ -51,6 +52,7 @@ except ImportError as _exc:
     plot_spin_flip_figure = None
     plot_spin_bz_figure = None
     plot_spin_bz_top_view_figure = None
+    describe_spinflip_op = None
     plt = None
 
 
@@ -1565,10 +1567,45 @@ class KPointsModifier:
         flip_ops = _inversion_extended(flip_ops)
         preserve_ops = _inversion_extended(preserve_ops)
 
+        # Operation naming: the listed matrices are in the INPUT-cell fractional
+        # basis, so the axis cannot be read from the integers directly. Convert
+        # each through Cartesian (same path Figure 2 uses) and classify there, so
+        # the name (Cn / Sn / m_{hkl} / inversion) matches the figure labels.
+        def _op_name(op_input):
+            if describe_spinflip_op is None:
+                return ""
+            try:
+                if centroid_result is not None and 'b_matrix' in centroid_result:
+                    b_mat = np.array(centroid_result['b_matrix'], dtype=float)
+                    b_in = np.array(centroid_result.get(
+                        'b_matrix_input', centroid_result.get('b_matrix_conv', b_mat)),
+                        dtype=float)
+                    b_prim = b_mat @ np.array(
+                        centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                        dtype=float)
+                    R_arr = np.array(op_input, dtype=float)
+                    R_cart_in = b_in.T @ np.linalg.inv(R_arr).T @ np.linalg.inv(b_in.T)
+                    R_prim_inv_T = np.linalg.inv(b_prim.T) @ R_cart_in @ b_prim.T
+                    R_prim = np.linalg.inv(R_prim_inv_T.T)
+                    R_cart = b_mat.T @ np.linalg.inv(R_prim).T @ np.linalg.inv(b_mat.T)
+                    return describe_spinflip_op(R_cart, b_mat)
+                # No standardized basis available: type/order are still correct
+                # from the invariants; omit the (basis-dependent) axis.
+                return describe_spinflip_op(np.array(op_input, dtype=float), None)
+            except Exception:
+                return ""
+
         R = None
         selected_transformation_label = None
         if flip_ops:
             print(f"Found {len(flip_ops)} spin-flip operations.")
+            _names_available = (describe_spinflip_op is not None
+                                and centroid_result is not None
+                                and 'b_matrix' in centroid_result)
+            if _names_available:
+                print("  Note: matrices are in the input-cell fractional basis; "
+                      "the operation name")
+                print("  is in fractional basis.")
             print("Default R: Option 1")
             while R is None:
                 print("Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': ", end='', flush=True)
@@ -1577,10 +1614,12 @@ class KPointsModifier:
                 if not choice:
                     R = flip_ops[0]
                     selected_transformation_label = "Option 1"
-                    print("Selected: Option 1")
+                    _nm = _op_name(flip_ops[0])
+                    print("Selected: Option 1" + (f"  ({_nm})" if _nm else ""))
                 elif choice == 'list':
                     for i, op in enumerate(flip_ops):
-                        print(f"\n  Option {i+1}:")
+                        _nm = _op_name(op)
+                        print(f"\n  Option {i+1}:" + (f"  {_nm}" if _nm else ""))
                         print(self._format_matrix(op))
                     print()
                 elif choice == 'manual':
@@ -1591,7 +1630,9 @@ class KPointsModifier:
                         if 0 <= idx < len(flip_ops):
                             R = flip_ops[idx]
                             selected_transformation_label = f"Option {idx+1}"
-                            print(f"Selected: Option {idx+1}")
+                            _nm = _op_name(flip_ops[idx])
+                            print(f"Selected: Option {idx+1}"
+                                  + (f"  ({_nm})" if _nm else ""))
                         else:
                             print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
                     except ValueError:

@@ -169,6 +169,7 @@ class _Arrow3D(FancyArrowPatch):
         self.set_positions((xs[0], ys[0]), (xs[1], ys[1]))
         return np.min(zs)
 
+
 from lattice_kpoints import (
     LATTICE_DATA, get_kpoints, get_hull_kpoints,
     get_hull_kpath, get_display_labels, get_params,
@@ -1016,13 +1017,159 @@ def _mirror_plane_bz_polygon(normal, bz_loops):
     return pts[np.argsort(angles)]
 
 
-def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
+def _reduce_int_vector(vec):
+    """Reduce a direction to smallest integer indices, with the sign convention
+    that the first non-zero index is positive. Used for both reciprocal (hkl)
+    plane normals and direct [uvw] axes (caller supplies the projected vector)."""
+    v = np.asarray(vec, dtype=float)
+    m = np.max(np.abs(v))
+    if m < 1e-9:
+        return [0, 0, 0]
+    v = v / m
+    ints = None
+    for denom in range(1, 13):
+        scaled = v * denom
+        if np.all(np.abs(scaled - np.round(scaled)) < 1e-3):
+            ints = np.round(scaled).astype(int)
+            break
+    if ints is None:
+        ints = np.round(v * 12).astype(int)
+    g = int(np.gcd.reduce(np.abs(ints)))
+    if g > 0:
+        ints = ints // g
+    for x in ints:
+        if x != 0:
+            if x < 0:
+                ints = -ints
+            break
+    return ints.tolist()
+
+
+def _format_miller(letter, idx):
+    """Bold mathtext label, e.g. 'm' + [1,-1,0] -> $\\mathbf{m_{1\\bar{1}0}}$."""
+    sub = "".join(rf"\bar{{{abs(i)}}}" if i < 0 else f"{i}" for i in idx)
+    return rf"$\mathbf{{{letter}_{{{sub}}}}}$"
+
+
+def _rotation_sense(R_cart, axis):
+    """Sign of the rotation angle about `axis` for a proper or improper rotation:
+    +1 (counter-clockwise about +axis), -1, or 0 when undefined (order 2, where
+    sin(theta)=0 and +/- coincide). Works for Cn and Sn: the antisymmetric part
+    of R equals sin(theta)*axis in both cases (the on-axis +-1 is symmetric)."""
+    R = np.asarray(R_cart, dtype=float)
+    a = np.asarray(axis, dtype=float)
+    a = a / (np.linalg.norm(a) or 1.0)
+    w = 0.5 * np.array([R[2, 1] - R[1, 2],
+                        R[0, 2] - R[2, 0],
+                        R[1, 0] - R[0, 1]])
+    s = float(w @ a)
+    if abs(s) < 1e-6:
+        return 0
+    return 1 if s > 0 else -1
+
+
+def describe_spinflip_op(R_cart, b_matrix=None):
+    """Plain-text crystallographic name for a Cartesian point operation.
+
+    type/order come from det/trace (basis-invariant). The axis/normal is read as
+    the Cartesian eigenvector and expressed as reduced integer components in the
+    reciprocal (b1,b2,b3) frame shown in the figures (vec @ inv(b_matrix)):
+      rotation Cn   -> axis [hkl] (rotation-axis direction in b1,b2,b3)
+      Sn            -> axis [hkl]
+      mirror m      -> plane (hkl) (plane normal in b1,b2,b3)
+      inversion / identity -> no axis
+    Square brackets mark a direction (rotation axis), parentheses a plane
+    (mirror). If b_matrix is None the axis is omitted (type/order still correct).
+    """
+    op = _classify_spinflip_op(np.asarray(R_cart, dtype=float))
+    t, order = op['type'], op['order']
+    if t == 'identity':
+        return 'identity (E)'
+    if t == 'inversion':
+        return 'inversion (i)'
+    if t == 'mirror':
+        if b_matrix is None or op['axis'] is None:
+            return 'mirror m'
+        hkl = _reduce_int_vector(np.asarray(op['axis']) @ np.linalg.inv(b_matrix))
+        return f"mirror m ({' '.join(str(i) for i in hkl)})"
+    if t in ('rotation', 'rotoreflection'):
+        sym = 'C' if t == 'rotation' else 'S'
+        if b_matrix is None or op['axis'] is None:
+            return f"{sym}{order}"
+        axis = np.asarray(op['axis'], dtype=float)
+        # Axis components in the reciprocal (b1,b2,b3) frame, same projection the
+        # mirror normal uses, so both labels read against the drawn axes.
+        hkl_raw = axis @ np.linalg.inv(np.asarray(b_matrix))
+        # Match the first-non-zero-positive convention of the reported indices,
+        # and measure the rotation sense about that same reported axis direction.
+        flip = 1.0
+        for val in hkl_raw:
+            if abs(val) > 1e-9:
+                flip = 1.0 if val > 0 else -1.0
+                break
+        sense = _rotation_sense(R_cart, flip * axis)
+        sgn = '' if (order < 3 or sense == 0) else ('+' if sense > 0 else '-')
+        hkl = _reduce_int_vector(hkl_raw)
+        return f"{sym}{order}{sgn} [{' '.join(str(i) for i in hkl)}]"
+    return t
+
+
+def _screen_xy(ax, pt3):
+    """Project a 3D point to the axes' 2D projected (screen) coordinates."""
+    x, y, _ = proj3d.proj_transform(pt3[0], pt3[1], pt3[2], ax.get_proj())
+    return np.array([x, y])
+
+
+def _best_label_anchor(ax, candidates, avoid_pts):
+    """Pick the candidate 3D anchor whose projected screen position is farthest
+    from every avoid point. Generic placement so a label (e.g. a mirror m_{hkl})
+    clears the drawn high-symmetry points/labels in any case, not one structure.
+    """
+    candidates = np.asarray(candidates, dtype=float)
+    if avoid_pts is None or len(avoid_pts) == 0:
+        return candidates[0]
+    avoid_screen = np.array([_screen_xy(ax, p) for p in avoid_pts])
+    best, best_score = candidates[0], -np.inf
+    for c in candidates:
+        d = float(np.min(np.linalg.norm(avoid_screen - _screen_xy(ax, c), axis=1)))
+        if d > best_score:
+            best_score, best = d, c
+    return best
+
+
+def _mirror_label_candidates(poly, bz_radius):
+    """Anchor candidates around a mirror-plane polygon: each rim vertex and edge
+    midpoint pushed outward (in-plane) and lifted slightly, so the label sits
+    just off the plane rim. The caller screen-tests these to avoid overlaps."""
+    poly = np.asarray(poly, dtype=float)
+    c0 = poly.mean(axis=0)
+    margin = bz_radius * 0.18
+    lift = np.array([0.0, 0.0, 1.0]) * bz_radius * 0.05
+    n = len(poly)
+    cands = []
+    for j in range(n):
+        for p in (poly[j], 0.5 * (poly[j] + poly[(j + 1) % n])):
+            o = p - c0
+            no = np.linalg.norm(o)
+            o = o / no if no > 1e-9 else np.array([0.0, 0.0, 1.0])
+            cands.append(p + o * margin + lift)
+    return np.array(cands)
+
+
+def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
+                    avoid_pts=None, elev=None, azim=None):
     """
     Draw the geometric visual for the chosen spin-flip operation on ax.
 
-      Mirror  (det=-1, tr=1)  : pink shaded plane through Γ, clipped to BZ
-      Cn rotation (det=+1)    : dashed gold line + label along the rotation axis
+      Mirror  (det=-1, tr=1)  : grey shaded plane through Γ + m_{hkl} label
+      Cn rotation (det=+1)    : bold colored axis arrow + curved rotation arrow
       Inversion / Sn / identity : nothing drawn
+
+    The mirror is labelled by its plane normal expressed as reduced integer
+    (hkl) indices in the figure's reciprocal (b1,b2,b3) basis.
+
+    elev/azim are the Matplotlib 3D view angles; they orient the curved
+    rotation arrow so its back gap stays away from the camera.
     """
     op = _classify_spinflip_op(R_cart)
     op_type = op['type']
@@ -1030,6 +1177,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
     if op_type == 'mirror' and op['axis'] is not None:
         poly = _mirror_plane_bz_polygon(op['axis'], bz_loops)
         if poly is not None and len(poly) >= 3:
+            poly = np.asarray(poly, dtype=float)
             ax.add_collection3d(Poly3DCollection(
                 [poly],
                 alpha=0.30,
@@ -1039,63 +1187,198 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius):
                 zorder=5,
             ))
 
+            # m_{hkl} label: mirror-plane normal in the reciprocal (b1,b2,b3)
+            # basis, reduced to integers. Grey to match the plane, bold,
+            # screen-projected so it never stacks/rotates in saved views.
+            MIRROR_COLOR = os.environ.get('ALTERSEEK_OP_MIRROR_COLOR', '#606060')
+            n = np.asarray(op['axis'], dtype=float)
+            idx = _reduce_int_vector(n @ np.linalg.inv(b_matrix))
+            m_label = _format_miller('m', idx)
+            # Place the label at the rim anchor whose screen position is farthest
+            # from the drawn high-symmetry points/labels (avoid_pts), so it never
+            # lands on a BZ-boundary point such as K. General for all cases.
+            candidates = _mirror_label_candidates(poly, bz_radius)
+            label_pt = _best_label_anchor(ax, candidates, avoid_pts)
+            mlx, mly, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
+            m_artist = ax.text2D(
+                mlx, mly, m_label, transform=ax.transData,
+                fontsize=17, fontweight='bold', color=MIRROR_COLOR, zorder=120,
+                ha='center', va='center',
+            )
+
+            def _update_mirror_label():
+                lx, ly, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
+                m_artist.set_position((lx, ly))
+
+            ax._alterseek_arc_updater = _update_mirror_label
+
     elif op_type in ('rotation', 'rotoreflection') and op['axis'] is not None:
         axis = np.array(op['axis'], dtype=float)
         # Orient tip toward upper hemisphere for consistent appearance
         if axis[2] < -1e-6 or (abs(axis[2]) < 1e-6 and axis[1] < -1e-6):
             axis = -axis
 
+        # Stand-out color so the rotation axis is easy to spot against the
+        # red/navy IBZ and black BZ frame. Override with ALTERSEEK_OP_AXIS_COLOR.
+        AXIS_COLOR = os.environ.get('ALTERSEEK_OP_AXIS_COLOR', '#00c853')
+
         # Axis exits BZ at bz_exit along +axis and bz_exit_neg along -axis.
-        # Extend by at least 30% of the full BZ radius so the line is always
-        # visibly longer than the BZ (e.g. for flat hexagonal where c* << a*).
+        # Extend beyond the BZ so the arrow is always visibly longer than the BZ
+        # (e.g. for flat hexagonal where c* << a*).
         bz_exit     = _axis_bz_exit( axis, bz_loops)
         bz_exit_neg = _axis_bz_exit(-axis, bz_loops)
-        extension   = max(bz_radius * 0.30, bz_exit * 0.15)
+        extension   = max(bz_radius * 0.35, bz_exit * 0.18)
         tip  =  axis * (bz_exit     + extension)
         base = -axis * (bz_exit_neg + extension)
 
-        # Dashed axis line
+        # Lower half (through the cell): thin dashed, so the axis is seen to pass
+        # through Γ without overpowering the figure.
         ax.plot(
-            [base[0], tip[0]], [base[1], tip[1]], [base[2], tip[2]],
-            color='#b07800', lw=2.2, ls='--', alpha=0.80, zorder=6,
+            [base[0], 0.0], [base[1], 0.0], [base[2], 0.0],
+            color=AXIS_COLOR, lw=1.6, ls='--', alpha=0.55, zorder=6,
         )
+        # Solid arrowhead at the tip (like the c_n axis arrow in the reference).
+        head_len = bz_radius * 0.18
+        shaft_pt = tip - axis * head_len
+        # Upper shaft stops at the arrow base; the final segment is the arrow.
+        ax.plot(
+            [0.0, shaft_pt[0]], [0.0, shaft_pt[1]], [0.0, shaft_pt[2]],
+            color=AXIS_COLOR, lw=2.8, ls='-', alpha=0.95, zorder=6,
+        )
+        axis_arrow = _Arrow3D(
+            [shaft_pt[0], tip[0]], [shaft_pt[1], tip[1]], [shaft_pt[2], tip[2]],
+            arrowstyle='-|>', mutation_scale=26,
+            color=AXIS_COLOR, lw=2.8, shrinkA=0, shrinkB=0, zorder=8,
+        )
+        ax.add_artist(axis_arrow)
 
-        # Curved arc arrow: fixed size at the tip of the axis (schematic, not data)
+        # Curved rotation arrow: a 3D ring in the plane perpendicular to the axis
+        # (wraps around it). Drawn once as a plain 3D object, so it rotates WITH the
+        # cell. The 60° gap is placed at the BACK (away from the camera for the
+        # starting view) and the arrowhead sits on the FRONT of the ring.
         order = op['order'] or 2
         prefix = 'C' if op_type == 'rotation' else 'S'
-        order_str = f"{prefix}{order}"
+        # Distinguish the rotation sense (C6 vs C6^-1) by a +/- superscript,
+        # measured about the drawn (upper-hemisphere) axis. None for order 2.
+        sense = _rotation_sense(R_cart, axis)
+        sgn = '' if (order < 3 or sense == 0) else ('+' if sense > 0 else '-')
+        order_str = (rf"$\mathbf{{{prefix}_{{{order}}}^{{{sgn}}}}}$" if sgn
+                     else rf"$\mathbf{{{prefix}_{{{order}}}}}$")
         u = _perp_unit(axis)
         v = np.cross(axis, u)
         v = v / np.linalg.norm(v)
-        r_arc = bz_radius * 0.12        # fixed fraction of BZ size, not axis-direction dependent
-        span  = np.pi * 0.55            # fixed ~100°, purely schematic
-        theta = np.linspace(0, span, 60)
-        arc_pts = (
-            tip[None, :]
-            + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v)
-        )
-        ax.plot(arc_pts[:, 0], arc_pts[:, 1], arc_pts[:, 2],
-                color='#b07800', lw=2.5, alpha=0.88, zorder=7)
 
-        # Arrowhead at arc end using _Arrow3D (tangent direction)
-        tangent = -np.sin(span) * u + np.cos(span) * v
-        dt = r_arc * 0.30
-        arr = _Arrow3D(
-            [arc_pts[-2, 0], arc_pts[-1, 0] + tangent[0] * dt],
-            [arc_pts[-2, 1], arc_pts[-1, 1] + tangent[1] * dt],
-            [arc_pts[-2, 2], arc_pts[-1, 2] + tangent[2] * dt],
+        arc_center = tip - axis * (bz_radius * 0.05)
+        r_arc = bz_radius * 0.20
+        span  = np.radians(300.0)
+
+        # Angle of the ring point nearest the camera (the front) for this view.
+        elev = ax.elev if elev is None else elev
+        azim = ax.azim if azim is None else azim
+        el0, az0 = np.radians(elev), np.radians(azim)
+        view0 = np.array([np.cos(el0) * np.cos(az0),
+                          np.cos(el0) * np.sin(az0), np.sin(el0)])
+        cu, cv = float(view0 @ u), float(view0 @ v)
+        phi_front = np.arctan2(cv, cu) if (abs(cu) + abs(cv)) > 1e-9 else 0.0
+
+        # Centre the 300° arc on the front, so the 60° gap lands at the back.
+        theta = np.linspace(phi_front - span / 2, phi_front + span / 2, 121)
+        arc_pts = (arc_center[None, :]
+                   + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v))
+        arc_head_start = -10
+        arc_line = ax.plot(arc_pts[:arc_head_start, 0],
+                           arc_pts[:arc_head_start, 1],
+                           arc_pts[:arc_head_start, 2],
+                           color=AXIS_COLOR, lw=3.0, alpha=0.95, zorder=9)[0]
+
+        # Draw only the final arc segment as an arrow. The plain arc stops at
+        # the arrow base, so the stroke does not run through the arrowhead.
+        arc_arrow = _Arrow3D(
+            [arc_pts[arc_head_start, 0], arc_pts[-1, 0]],
+            [arc_pts[arc_head_start, 1], arc_pts[-1, 1]],
+            [arc_pts[arc_head_start, 2], arc_pts[-1, 2]],
             arrowstyle='->', mutation_scale=22,
-            color='#b07800', lw=2.0, shrinkA=0, shrinkB=0, zorder=7,
+            color=AXIS_COLOR, lw=3.0, shrinkA=0, shrinkB=0, zorder=9,
         )
-        ax.add_artist(arr)
+        ax.add_artist(arc_arrow)
 
-        # Label above tip, offset by 30% of bz_radius so it clears BZ-face labels
-        label_pt = tip + axis * bz_radius * 0.20
-        ax.text(
-            *label_pt, order_str,
-            fontsize=15, color='#b07800', zorder=120,
+        # Bold label, kept general for any axis orientation:
+        #  - vertical axes (C6/S3/C2∥c): push the label straight up past the tip.
+        #  - in-plane / tilted axes: lift modestly in +z so it clears the b1/b2
+        #    labels without floating far above the figure.
+        if abs(axis[2]) > 0.9:
+            # Tie the gap to the axis-direction BZ extent (bz_exit), not the wide
+            # in-plane bz_radius, so on flat cells (hexagonal c* << a*) the label
+            # hugs the arrowhead instead of floating far above. Small bz_radius
+            # floor keeps it clear of the arrowhead when bz_exit is tiny.
+            label_pt = tip + axis * max(bz_exit * 0.30, bz_radius * 0.05)
+        else:
+            label_pt = tip + axis * bz_radius * 0.10 + np.array([0.0, 0.0, 1.0]) * bz_radius * 0.16
+        label_x, label_y, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
+        label_artist = ax.text2D(
+            label_x, label_y, order_str, transform=ax.transData,
+            fontsize=17, fontweight='bold', color=AXIS_COLOR, zorder=120,
             ha='center', va='center',
         )
+
+        def _update_camera_facing_arc():
+            el_now, az_now = np.radians(ax.elev), np.radians(ax.azim)
+            view_now = np.array([
+                np.cos(el_now) * np.cos(az_now),
+                np.cos(el_now) * np.sin(az_now),
+                np.sin(el_now),
+            ])
+            cu_now, cv_now = float(view_now @ u), float(view_now @ v)
+            phi_now = (
+                np.arctan2(cv_now, cu_now)
+                if (abs(cu_now) + abs(cv_now)) > 1e-9 else 0.0
+            )
+            theta_now = np.linspace(phi_now - span / 2, phi_now + span / 2, 121)
+            arc_pts_now = (
+                arc_center[None, :]
+                + r_arc * (
+                    np.cos(theta_now)[:, None] * u
+                    + np.sin(theta_now)[:, None] * v
+                )
+            )
+            arc_line.set_data_3d(
+                arc_pts_now[:arc_head_start, 0],
+                arc_pts_now[:arc_head_start, 1],
+                arc_pts_now[:arc_head_start, 2],
+            )
+            arc_arrow._verts3d = (
+                [arc_pts_now[arc_head_start, 0], arc_pts_now[-1, 0]],
+                [arc_pts_now[arc_head_start, 1], arc_pts_now[-1, 1]],
+                [arc_pts_now[arc_head_start, 2], arc_pts_now[-1, 2]],
+            )
+            label_x_now, label_y_now, _ = proj3d.proj_transform(
+                *label_pt, ax.get_proj()
+            )
+            label_artist.set_position((label_x_now, label_y_now))
+
+        ax._alterseek_arc_updater = _update_camera_facing_arc
+
+
+def _connect_arc_view_follow(fig, ax):
+    """
+    Make the rotation arc follow the camera in an interactive window: whenever
+    the user drags to a new view, re-orient the arc so its arrowhead stays on
+    the near (visible) side instead of swinging behind the BZ. No-op if the axis
+    has no rotation arc (mirror/identity/inversion ops).
+    """
+    updater = getattr(ax, '_alterseek_arc_updater', None)
+    if updater is None:
+        return
+    state = {'view': (ax.elev, ax.azim)}
+
+    def _on_move(event):
+        cur = (ax.elev, ax.azim)
+        if cur != state['view']:
+            state['view'] = cur
+            updater()
+            fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect('motion_notify_event', _on_move)
 
 
 # ============================================================================
@@ -1194,8 +1477,14 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     threshold = 0.05 * bz_radius
 
     def _draw(ax):
-        # Mirror plane or rotation axis visual (drawn first so IBZ sits on top)
-        _draw_op_visual(ax, R_cart, bz_loops, bz_radius)
+        # Mirror plane or rotation axis visual (drawn first so IBZ sits on top).
+        # Pass the labeled high-symmetry points + reciprocal-axis tips so the
+        # mirror m_{hkl} label can be placed clear of them (screen-space).
+        avoid = list(ibz_orig.values()) + list(ibz_mapped.values())
+        avoid += [b1 * 0.5, b2 * 0.5, b3 * 0.5]
+        avoid_pts = np.array(avoid) if avoid else None
+        _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
+                        avoid_pts=avoid_pts, elev=ax.elev, azim=ax.azim)
 
         # Spin-up IBZ: use the same curated HPKOT/project hull as Figure 1.
         up_pts, up_simplices = hull_pts, hull_simplices
@@ -1321,6 +1610,9 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                           bz_loops, b_matrix, bz_center, bz_span,
                           elev=elev, azim=azim, dashed_back=False)
     _draw(ax)
+    # In an interactive window, keep the rotation arc facing the camera on drag.
+    if show_plot:
+        _connect_arc_view_follow(fig, ax)
     plt.tight_layout()
 
     display_fig = fig if show_plot and defer_show else None
