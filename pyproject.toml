@@ -33,4 +33,12 @@ py-modules = [
     "lattice_kpoints",
     "plot_alterband",
     "plot_alterband_qe",
+    "plot_2d_figures",
+    "symmetry",
+    "geometry",
+    "plotting_common",
+    "plotting_3d",
+    "io_vasp",
+    "ssg_setting",
+    "kpoints",
 ]
