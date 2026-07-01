@@ -634,6 +634,266 @@ class KPointsModifier:
             print(f"Error writing QE KPOINTS: {e}")
             return False
 
+    def _generate_spin_figures(self, centroid_result, struct_file, general_kpoint,
+                               R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
+                               preserve_ops_for_plot, new_kpoints, display_figures):
+        """Generate Figures 2-4 (spin-flip / spin-BZ / kz=0 top view) for the
+        selected spin-flip operation; append any created figures to
+        display_figures.  Extracted from interactive_modify (phase 5)."""
+        # Generate Figures 2-4 (spin-flip, spin-BZ, kz=0 top view).
+        # One shared call scaffold; per-figure kwargs hold the
+        # differences between the three plots.
+        if centroid_result is not None and self.mode_2d:
+            # 2D slab mode: render dedicated top-down 2D figures instead
+            # of the tilted 3D BZ plate.
+            basename = (os.path.splitext(os.path.basename(struct_file))[0]
+                        if struct_file else 'output')
+            if plot_2d_figures is not None and 'b_matrix' in centroid_result:
+                try:
+                    plot_2d_figures(
+                        centroid_result, general_kpoint, R_for_kpts,
+                        basename, output_dir='.',
+                        flip_ops_for_plot=(flip_ops_for_plot
+                                           if flip_ops_for_plot else None))
+                except Exception as _e:
+                    print(f"[Warning] Could not generate 2D figures: {_e}")
+        elif centroid_result is not None:
+            basename = (os.path.splitext(os.path.basename(struct_file))[0]
+                        if struct_file else 'output')
+            sc_type = centroid_result.get('sc_type', 'BZ')
+            flip_kwargs = dict(
+                flip_ops_frac=flip_ops_for_plot if flip_ops_for_plot else None,
+                preserve_ops_frac=preserve_ops_for_plot if preserve_ops_for_plot else None,
+            )
+            view_kwargs = dict(
+                bz_center=centroid_result.get('bz_center'),
+                bz_span=centroid_result.get('bz_span'),
+                elev=centroid_result.get('elev', 14),
+                azim=centroid_result.get('azim', 20),
+            )
+            figure_specs = []
+            if plot_spin_flip_figure is not None and 'b_matrix' in centroid_result:
+                figure_specs.append((
+                    plot_spin_flip_figure, 'spin-flip',
+                    f'{basename}_spinflip_{sc_type}.png',
+                    dict(
+                        kpoints_data=self.kpoints_data,
+                        ibz_kpoints_frac=centroid_result.get('ibz_kpoints_frac', {}),
+                        centroid_frac=general_kpoint,
+                        R_cart=R_cart_for_plot,
+                        block=False,
+                        path_sequence=new_kpoints,
+                        unique_ops=centroid_result.get('unique_ops'),
+                        **view_kwargs,
+                    ),
+                ))
+            if 'unique_ops' in centroid_result:
+                spin_bz_kwargs = dict(
+                    unique_ops=centroid_result['unique_ops'],
+                    centroid_cart=centroid_result.get('centroid_cart'),
+                    hull_labels=centroid_result.get('hull_labels'),
+                    **flip_kwargs,
+                )
+                if plot_spin_bz_figure is not None:
+                    figure_specs.append((
+                        plot_spin_bz_figure, 'spin-BZ',
+                        f'{basename}_spinbz_{sc_type}.png',
+                        dict(**spin_bz_kwargs, **view_kwargs),
+                    ))
+                if plot_spin_bz_top_view_figure is not None:
+                    figure_specs.append((
+                        plot_spin_bz_top_view_figure, 'spin-BZ top-view',
+                        f'{basename}_spinbz_top_{sc_type}.png',
+                        dict(z0=0.0, **spin_bz_kwargs),
+                    ))
+            for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
+                try:
+                    fig = plot_fn(
+                        b_matrix=centroid_result['b_matrix'],
+                        bz_loops=centroid_result['bz_loops'],
+                        hull_pts=centroid_result.get('hull_pts'),
+                        hull_simplices=centroid_result.get('hull_simplices'),
+                        R=R_for_kpts,
+                        output_path=fig_path,
+                        show_plot=True,
+                        defer_show=True,
+                        **extra_kwargs,
+                    )
+                    if fig is not None:
+                        display_figures.append(fig)
+                except Exception as _e:
+                    print(f"[Warning] Could not generate {fig_name} figure: {_e}")
+
+    def _select_spin_flip_operation(self, flip_ops, centroid_result):
+        """Step 3: choose the spin-flip operation R (default Option 1 /
+        numbered / 'list' / 'manual').  Returns (R, selected_transformation_label).
+        Extracted from interactive_modify (phase 5)."""
+        def _op_name(op_input):
+            if describe_spinflip_op is None:
+                return ""
+            try:
+                if centroid_result is not None and 'b_matrix' in centroid_result:
+                    b_mat = np.array(centroid_result['b_matrix'], dtype=float)
+                    b_in = np.array(centroid_result.get(
+                        'b_matrix_input', centroid_result.get('b_matrix_conv', b_mat)),
+                        dtype=float)
+                    b_prim = b_mat @ np.array(
+                        centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                        dtype=float)
+                    R_arr = np.array(op_input, dtype=float)
+                    R_cart_in = b_in.T @ np.linalg.inv(R_arr).T @ np.linalg.inv(b_in.T)
+                    R_prim_inv_T = np.linalg.inv(b_prim.T) @ R_cart_in @ b_prim.T
+                    R_prim = np.linalg.inv(R_prim_inv_T.T)
+                    R_cart = b_mat.T @ np.linalg.inv(R_prim).T @ np.linalg.inv(b_mat.T)
+                    return describe_spinflip_op(R_cart, b_mat)
+                # No standardized basis available: type/order are still correct
+                # from the invariants; omit the (basis-dependent) axis.
+                return describe_spinflip_op(np.array(op_input, dtype=float), None)
+            except Exception:
+                return ""
+
+        R = None
+        selected_transformation_label = None
+        if flip_ops:
+            print(f"Found {len(flip_ops)} spin-flip operations.")
+            _names_available = (describe_spinflip_op is not None
+                                and centroid_result is not None
+                                and 'b_matrix' in centroid_result)
+            if _names_available:
+                print("  Note: matrices are in the input-cell fractional basis; "
+                      "the operation name")
+                print("  is in fractional basis.")
+            print("Default R: Option 1")
+            while R is None:
+                print("Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': ", end='', flush=True)
+                choice = input().strip().lower()
+
+                if not choice:
+                    R = flip_ops[0]
+                    selected_transformation_label = "Option 1"
+                    _nm = _op_name(flip_ops[0])
+                    print("Selected: Option 1" + (f"  ({_nm})" if _nm else ""))
+                elif choice == 'list':
+                    for i, op in enumerate(flip_ops):
+                        _nm = _op_name(op)
+                        print(f"\n  Option {i+1}:" + (f"  {_nm}" if _nm else ""))
+                        print(self._format_matrix(op))
+                    print()
+                elif choice == 'manual':
+                    break
+                else:
+                    try:
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(flip_ops):
+                            R = flip_ops[idx]
+                            selected_transformation_label = f"Option {idx+1}"
+                            _nm = _op_name(flip_ops[idx])
+                            print(f"Selected: Option {idx+1}"
+                                  + (f"  ({_nm})" if _nm else ""))
+                        else:
+                            print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
+                    except ValueError:
+                        print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
+
+        if R is None:
+            print("Enter custom transformation matrix R.")
+            print("Enter row by row (3 numbers per row, space-separated):")
+            transformation_matrix = []
+            for i in range(3):
+                while True:
+                    try:
+                        print(f"Row {i+1}: ", end='', flush=True)
+                        row_input = input().strip().split()
+                        if len(row_input) == 3:
+                            transformation_matrix.append([float(x) for x in row_input])
+                            break
+                        print("Please enter exactly 3 numbers.")
+                    except ValueError: pass
+            R = np.array(transformation_matrix)
+            selected_transformation_label = "manual"
+        return R, selected_transformation_label
+
+    def _convert_operation_to_primitive_basis(self, R, flip_ops, preserve_ops,
+                                              centroid_result):
+        """Step 4 (basis): convert R and all flip/preserve ops from the input-cell
+        fractional basis to the seekpath primitive basis, and annotate the operation
+        files with both bases.  Returns (R_for_kpts, R_cart_for_plot,
+        flip_ops_for_plot, preserve_ops_for_plot).  Extracted from interactive_modify."""
+        # find_sf_operations.py writes FindSpinGroup rotations in the input file's
+        # fractional basis.  KPOINTS/IBZ coordinates are in the seekpath primitive
+        # reciprocal basis, which can differ for centered lattices (e.g. BCT, RHL).
+        # Convert through Cartesian k-space so k', Figure 2, and the path all use
+        # the same physical spin-flip operation:
+        #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
+        #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
+        R_cart_for_plot = None
+        flip_ops_for_plot = flip_ops
+        preserve_ops_for_plot = preserve_ops
+        if centroid_result is not None and 'b_matrix' in centroid_result:
+            _b_input = np.array(centroid_result.get('b_matrix_input',
+                                                    centroid_result['b_matrix_conv']), dtype=float)
+            _b_prim = np.array(centroid_result['b_matrix'], dtype=float) @ np.array(
+                centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                dtype=float,
+            )
+            def _convert_input_frac_R_to_prim(_R):
+                _R_arr = np.array(_R, dtype=float)
+                _R_cart = _b_input.T @ np.linalg.inv(_R_arr).T @ np.linalg.inv(_b_input.T)
+                _R_prim_inv_T = np.linalg.inv(_b_prim.T) @ _R_cart @ _b_prim.T
+                return np.linalg.inv(_R_prim_inv_T.T), _R_cart
+
+            R_for_kpts, _ = _convert_input_frac_R_to_prim(R)
+            # Figure 2 draws the HPKOT hull in seekpath's standardized
+            # Cartesian frame.  Let it reconstruct R_cart from R_for_kpts in
+            # that same frame; the Cartesian matrix above remains in the
+            # orientation of the input structure (notably different for MCIF).
+            R_cart_for_plot = None
+            if flip_ops:
+                flip_ops_for_plot = [
+                    _convert_input_frac_R_to_prim(op)[0] for op in flip_ops
+                ]
+            if preserve_ops:
+                preserve_ops_for_plot = [
+                    _convert_input_frac_R_to_prim(op)[0] for op in preserve_ops
+                ]
+            def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
+                try:
+                    with open(filename, "w") as f:
+                        f.write(f"# Found {len(input_ops)} inversion-extended {label} point operations\n")
+                        f.write("# Left matrix: input POSCAR fractional basis.\n")
+                        f.write("# Right matrix: standardized SeeK-path/HPKOT primitive basis used by Figures 1-4 and KPOINTS.\n")
+                        for i, (input_op, std_op) in enumerate(zip(input_ops, standardized_ops), 1):
+                            f.write(f"Operation_{i}\n")
+                            input_int = np.rint(np.array(input_op, dtype=float)).astype(int)
+                            std_int = np.rint(np.array(std_op, dtype=float)).astype(int)
+                            for input_row, std_row in zip(input_int, std_int):
+                                left = " ".join(str(int(x)) for x in input_row)
+                                right = " ".join(str(int(x)) for x in std_row)
+                                f.write(f"{left}    |    {right}\n")
+                            f.write("\n")
+                except Exception as exc:
+                    print(f"[Warning] Could not write {filename}: {exc}")
+
+            _annotate_ops_with_standardized_basis(
+                "spin_flip_operations.txt",
+                flip_ops,
+                flip_ops_for_plot,
+                "spin-flipping",
+            )
+            _annotate_ops_with_standardized_basis(
+                "spin_preserve_operations.txt",
+                preserve_ops,
+                preserve_ops_for_plot,
+                "spin-preserving",
+            )
+            print("[Basis] Converted R from input-cell basis to primitive basis.")
+            print("[Basis] Annotated spin operation files with standardized-basis matrices.")
+            print("Primitive-basis R used for KPOINTS:")
+            print(self._format_matrix(R_for_kpts))
+        else:
+            R_for_kpts = R
+        return R_for_kpts, R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot
+
     def interactive_modify(self):
         """Interactive modification of KPOINTS file"""
         BOLD  = "\033[1m"
@@ -1078,167 +1338,14 @@ class KPointsModifier:
         # basis, so the axis cannot be read from the integers directly. Convert
         # each through Cartesian (same path Figure 2 uses) and classify there, so
         # the name (Cn / Sn / m_{hkl} / inversion) matches the figure labels.
-        def _op_name(op_input):
-            if describe_spinflip_op is None:
-                return ""
-            try:
-                if centroid_result is not None and 'b_matrix' in centroid_result:
-                    b_mat = np.array(centroid_result['b_matrix'], dtype=float)
-                    b_in = np.array(centroid_result.get(
-                        'b_matrix_input', centroid_result.get('b_matrix_conv', b_mat)),
-                        dtype=float)
-                    b_prim = b_mat @ np.array(
-                        centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
-                        dtype=float)
-                    R_arr = np.array(op_input, dtype=float)
-                    R_cart_in = b_in.T @ np.linalg.inv(R_arr).T @ np.linalg.inv(b_in.T)
-                    R_prim_inv_T = np.linalg.inv(b_prim.T) @ R_cart_in @ b_prim.T
-                    R_prim = np.linalg.inv(R_prim_inv_T.T)
-                    R_cart = b_mat.T @ np.linalg.inv(R_prim).T @ np.linalg.inv(b_mat.T)
-                    return describe_spinflip_op(R_cart, b_mat)
-                # No standardized basis available: type/order are still correct
-                # from the invariants; omit the (basis-dependent) axis.
-                return describe_spinflip_op(np.array(op_input, dtype=float), None)
-            except Exception:
-                return ""
-
-        R = None
-        selected_transformation_label = None
-        if flip_ops:
-            print(f"Found {len(flip_ops)} spin-flip operations.")
-            _names_available = (describe_spinflip_op is not None
-                                and centroid_result is not None
-                                and 'b_matrix' in centroid_result)
-            if _names_available:
-                print("  Note: matrices are in the input-cell fractional basis; "
-                      "the operation name")
-                print("  is in fractional basis.")
-            print("Default R: Option 1")
-            while R is None:
-                print("Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': ", end='', flush=True)
-                choice = input().strip().lower()
-
-                if not choice:
-                    R = flip_ops[0]
-                    selected_transformation_label = "Option 1"
-                    _nm = _op_name(flip_ops[0])
-                    print("Selected: Option 1" + (f"  ({_nm})" if _nm else ""))
-                elif choice == 'list':
-                    for i, op in enumerate(flip_ops):
-                        _nm = _op_name(op)
-                        print(f"\n  Option {i+1}:" + (f"  {_nm}" if _nm else ""))
-                        print(self._format_matrix(op))
-                    print()
-                elif choice == 'manual':
-                    break
-                else:
-                    try:
-                        idx = int(choice) - 1
-                        if 0 <= idx < len(flip_ops):
-                            R = flip_ops[idx]
-                            selected_transformation_label = f"Option {idx+1}"
-                            _nm = _op_name(flip_ops[idx])
-                            print(f"Selected: Option {idx+1}"
-                                  + (f"  ({_nm})" if _nm else ""))
-                        else:
-                            print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
-                    except ValueError:
-                        print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
-
-        if R is None:
-            print("Enter custom transformation matrix R.")
-            print("Enter row by row (3 numbers per row, space-separated):")
-            transformation_matrix = []
-            for i in range(3):
-                while True:
-                    try:
-                        print(f"Row {i+1}: ", end='', flush=True)
-                        row_input = input().strip().split()
-                        if len(row_input) == 3:
-                            transformation_matrix.append([float(x) for x in row_input])
-                            break
-                        print("Please enter exactly 3 numbers.")
-                    except ValueError: pass
-            R = np.array(transformation_matrix)
-            selected_transformation_label = "manual"
-        
+        R, selected_transformation_label = self._select_spin_flip_operation(
+            flip_ops, centroid_result)
         # Step 4: Process k-points
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
-        # find_sf_operations.py writes FindSpinGroup rotations in the input file's
-        # fractional basis.  KPOINTS/IBZ coordinates are in the seekpath primitive
-        # reciprocal basis, which can differ for centered lattices (e.g. BCT, RHL).
-        # Convert through Cartesian k-space so k', Figure 2, and the path all use
-        # the same physical spin-flip operation:
-        #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
-        #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
-        R_cart_for_plot = None
-        flip_ops_for_plot = flip_ops
-        preserve_ops_for_plot = preserve_ops
-        if centroid_result is not None and 'b_matrix' in centroid_result:
-            _b_input = np.array(centroid_result.get('b_matrix_input',
-                                                    centroid_result['b_matrix_conv']), dtype=float)
-            _b_prim = np.array(centroid_result['b_matrix'], dtype=float) @ np.array(
-                centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
-                dtype=float,
-            )
-            def _convert_input_frac_R_to_prim(_R):
-                _R_arr = np.array(_R, dtype=float)
-                _R_cart = _b_input.T @ np.linalg.inv(_R_arr).T @ np.linalg.inv(_b_input.T)
-                _R_prim_inv_T = np.linalg.inv(_b_prim.T) @ _R_cart @ _b_prim.T
-                return np.linalg.inv(_R_prim_inv_T.T), _R_cart
-
-            R_for_kpts, _ = _convert_input_frac_R_to_prim(R)
-            # Figure 2 draws the HPKOT hull in seekpath's standardized
-            # Cartesian frame.  Let it reconstruct R_cart from R_for_kpts in
-            # that same frame; the Cartesian matrix above remains in the
-            # orientation of the input structure (notably different for MCIF).
-            R_cart_for_plot = None
-            if flip_ops:
-                flip_ops_for_plot = [
-                    _convert_input_frac_R_to_prim(op)[0] for op in flip_ops
-                ]
-            if preserve_ops:
-                preserve_ops_for_plot = [
-                    _convert_input_frac_R_to_prim(op)[0] for op in preserve_ops
-                ]
-            def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
-                try:
-                    with open(filename, "w") as f:
-                        f.write(f"# Found {len(input_ops)} inversion-extended {label} point operations\n")
-                        f.write("# Left matrix: input POSCAR fractional basis.\n")
-                        f.write("# Right matrix: standardized SeeK-path/HPKOT primitive basis used by Figures 1-4 and KPOINTS.\n")
-                        for i, (input_op, std_op) in enumerate(zip(input_ops, standardized_ops), 1):
-                            f.write(f"Operation_{i}\n")
-                            input_int = np.rint(np.array(input_op, dtype=float)).astype(int)
-                            std_int = np.rint(np.array(std_op, dtype=float)).astype(int)
-                            for input_row, std_row in zip(input_int, std_int):
-                                left = " ".join(str(int(x)) for x in input_row)
-                                right = " ".join(str(int(x)) for x in std_row)
-                                f.write(f"{left}    |    {right}\n")
-                            f.write("\n")
-                except Exception as exc:
-                    print(f"[Warning] Could not write {filename}: {exc}")
-
-            _annotate_ops_with_standardized_basis(
-                "spin_flip_operations.txt",
-                flip_ops,
-                flip_ops_for_plot,
-                "spin-flipping",
-            )
-            _annotate_ops_with_standardized_basis(
-                "spin_preserve_operations.txt",
-                preserve_ops,
-                preserve_ops_for_plot,
-                "spin-preserving",
-            )
-            print("[Basis] Converted R from input-cell basis to primitive basis.")
-            print("[Basis] Annotated spin operation files with standardized-basis matrices.")
-            print("Primitive-basis R used for KPOINTS:")
-            print(self._format_matrix(R_for_kpts))
-        else:
-            R_for_kpts = R
-
+        (R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
+         preserve_ops_for_plot) = self._convert_operation_to_primitive_basis(
+            R, flip_ops, preserve_ops, centroid_result)
         # Calculate and show k'
         k_prime = self.transform_kpoint(general_kpoint, R_for_kpts)
         print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")
@@ -1249,89 +1356,10 @@ class KPointsModifier:
             )
 
             if new_kpoints:
-                # Generate Figures 2-4 (spin-flip, spin-BZ, kz=0 top view).
-                # One shared call scaffold; per-figure kwargs hold the
-                # differences between the three plots.
-                if centroid_result is not None and self.mode_2d:
-                    # 2D slab mode: render dedicated top-down 2D figures instead
-                    # of the tilted 3D BZ plate.
-                    basename = (os.path.splitext(os.path.basename(struct_file))[0]
-                                if struct_file else 'output')
-                    if plot_2d_figures is not None and 'b_matrix' in centroid_result:
-                        try:
-                            plot_2d_figures(
-                                centroid_result, general_kpoint, R_for_kpts,
-                                basename, output_dir='.',
-                                flip_ops_for_plot=(flip_ops_for_plot
-                                                   if flip_ops_for_plot else None))
-                        except Exception as _e:
-                            print(f"[Warning] Could not generate 2D figures: {_e}")
-                elif centroid_result is not None:
-                    basename = (os.path.splitext(os.path.basename(struct_file))[0]
-                                if struct_file else 'output')
-                    sc_type = centroid_result.get('sc_type', 'BZ')
-                    flip_kwargs = dict(
-                        flip_ops_frac=flip_ops_for_plot if flip_ops_for_plot else None,
-                        preserve_ops_frac=preserve_ops_for_plot if preserve_ops_for_plot else None,
-                    )
-                    view_kwargs = dict(
-                        bz_center=centroid_result.get('bz_center'),
-                        bz_span=centroid_result.get('bz_span'),
-                        elev=centroid_result.get('elev', 14),
-                        azim=centroid_result.get('azim', 20),
-                    )
-                    figure_specs = []
-                    if plot_spin_flip_figure is not None and 'b_matrix' in centroid_result:
-                        figure_specs.append((
-                            plot_spin_flip_figure, 'spin-flip',
-                            f'{basename}_spinflip_{sc_type}.png',
-                            dict(
-                                kpoints_data=self.kpoints_data,
-                                ibz_kpoints_frac=centroid_result.get('ibz_kpoints_frac', {}),
-                                centroid_frac=general_kpoint,
-                                R_cart=R_cart_for_plot,
-                                block=False,
-                                path_sequence=new_kpoints,
-                                unique_ops=centroid_result.get('unique_ops'),
-                                **view_kwargs,
-                            ),
-                        ))
-                    if 'unique_ops' in centroid_result:
-                        spin_bz_kwargs = dict(
-                            unique_ops=centroid_result['unique_ops'],
-                            centroid_cart=centroid_result.get('centroid_cart'),
-                            hull_labels=centroid_result.get('hull_labels'),
-                            **flip_kwargs,
-                        )
-                        if plot_spin_bz_figure is not None:
-                            figure_specs.append((
-                                plot_spin_bz_figure, 'spin-BZ',
-                                f'{basename}_spinbz_{sc_type}.png',
-                                dict(**spin_bz_kwargs, **view_kwargs),
-                            ))
-                        if plot_spin_bz_top_view_figure is not None:
-                            figure_specs.append((
-                                plot_spin_bz_top_view_figure, 'spin-BZ top-view',
-                                f'{basename}_spinbz_top_{sc_type}.png',
-                                dict(z0=0.0, **spin_bz_kwargs),
-                            ))
-                    for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
-                        try:
-                            fig = plot_fn(
-                                b_matrix=centroid_result['b_matrix'],
-                                bz_loops=centroid_result['bz_loops'],
-                                hull_pts=centroid_result.get('hull_pts'),
-                                hull_simplices=centroid_result.get('hull_simplices'),
-                                R=R_for_kpts,
-                                output_path=fig_path,
-                                show_plot=True,
-                                defer_show=True,
-                                **extra_kwargs,
-                            )
-                            if fig is not None:
-                                display_figures.append(fig)
-                        except Exception as _e:
-                            print(f"[Warning] Could not generate {fig_name} figure: {_e}")
+                self._generate_spin_figures(
+                    centroid_result, struct_file, general_kpoint, R_for_kpts,
+                    R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot,
+                    new_kpoints, display_figures)
                 # Step 5: Save modified file
                 print(f"\n{BOLD}>>> Step 5: Save{RESET}")
                 print("Output code ([vasp]/qe): ", end='', flush=True)
