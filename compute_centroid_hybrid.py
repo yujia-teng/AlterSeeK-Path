@@ -175,79 +175,12 @@ from geometry import (
 )
 from plotting_common import (
     GAMMA_LABEL,
-    _math_label,
     _save_figure,
     _print_saved_paths,
 )
 from plotting_3d import setup_3d_ax, plot_ibz
 
 
-# ============================================================================
-# SeeK-path/HPKOT extended Bravais key and conventional parameters
-# ============================================================================
-
-
-# Backward-compatible import name.
-
-
-def _display_label_from_internal(label):
-    return _math_label(label)
-
-
-# ============================================================================
-# Symmetry Operations
-# ============================================================================
-
-
-# ============================================================================
-# Centroid Calculation
-# ============================================================================
-
-
-# ---------------------------------------------------------------------------
-# 2D / slab helpers
-#
-# For a 2D material computed as a 3D slab (large vacuum along one axis) the
-# whole symmetry analysis is reused unchanged; only the geometry is restricted
-# to the physical reciprocal plane.  Two facts make this robust:
-#   * The reciprocal vector dual to the real vacuum axis is always along the
-#     layer normal, so the in-plane condition is *fractional* k=0 along that
-#     axis (not Cartesian kz=0).
-#   * seekpath may permute axes when it standardizes (monoclinic -> unique
-#     axis b), so the vacuum axis is detected in the standardized frame rather
-#     than taken from the user's --vacuum-axis flag.
-# ---------------------------------------------------------------------------
-
-
-# ============================================================================
-# ============================================================================
-# BZ Boundary & Plotting
-# ============================================================================
-
-
-# ============================================================================
-# IBZ frame edge helper
-# ============================================================================
-
-
-# ============================================================================
-# Spin-flip operation classification and Figure 2 geometric visuals
-# ============================================================================
-
-
-# ============================================================================
-# Spin-flip Connection Figure  (replaces the old "mapped BZ" Fig 2)
-# ============================================================================
-
-
-# ============================================================================
-# Spin-up / Spin-down Full-BZ Coloring Figure  (replaces old rainbow Fig 2)
-# ============================================================================
-
-
-# ============================================================================
-# Main Pipeline
-# ============================================================================
 def run(
     filename,
     output_dir=None,
