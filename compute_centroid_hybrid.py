@@ -80,11 +80,7 @@ _suppress_stderr_lines(("libpng warning: iCCP: known incorrect sRGB profile",))
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial import Voronoi, ConvexHull, HalfspaceIntersection
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from mpl_toolkits.mplot3d import proj3d
-from matplotlib.patches import FancyArrowPatch
-import sympy as sp
+from scipy.spatial import ConvexHull
 import seekpath
 from pymatgen.core import Structure
 from pymatgen.core.periodic_table import Element
@@ -158,94 +154,32 @@ def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matr
 
 
 from lattice_kpoints import (
-    LATTICE_DATA, get_kpoints, get_hull_kpoints,
-    get_hull_kpath, get_display_labels, get_params,
-    canonical_lattice_type, _normalize_label,
+    get_kpoints, get_hull_kpoints, get_hull_kpath,
+    get_display_labels, get_params, _normalize_label,
 )
-
-GAMMA_LABEL = "\u0393"
-BZ_SPECIAL_COLORS = {
-    "orange": "#e68613",
-    "purple": "#6b5596",
-}
-IBZ_FACE_COLORS = {
-    "up_main": "salmon",
-    "up_extra": "#e98f8f",
-    "down_main": "cornflowerblue",
-    "down_extra": "#91b2e8",
-}
-BZ_PATH_STYLE_OVERRIDES = {
-    "cP1": {("M", "X_1"): {"color": "red", "ls": "--"}},
-    "cF1": {("X", "W_2"): {"color": "red", "ls": "--"}},
-    "tI1": {(GAMMA_LABEL, "N"): "orange"},
-    "tI2": {(GAMMA_LABEL, "N"): "orange"},
-    "oF1": {(GAMMA_LABEL, "L"): "orange"},
-    "oF2": {(GAMMA_LABEL, "L"): "orange"},
-    "oF3": {(GAMMA_LABEL, "L"): "orange"},
-    "oI1": {
-        (GAMMA_LABEL, "T"): "orange",
-        (GAMMA_LABEL, "R"): "orange",
-        (GAMMA_LABEL, "S"): "orange",
-    },
-    "oI2": {
-        (GAMMA_LABEL, "T"): "orange",
-        (GAMMA_LABEL, "R"): "orange",
-        (GAMMA_LABEL, "S"): "orange",
-    },
-    "oI3": {
-        (GAMMA_LABEL, "T"): "orange",
-        (GAMMA_LABEL, "R"): "orange",
-        (GAMMA_LABEL, "S"): "orange",
-    },
-    "oA1": {
-        (GAMMA_LABEL, "S"): "orange",
-        ("Z", "R"): "purple",
-    },
-    "oA2": {
-        (GAMMA_LABEL, "S"): "orange",
-        ("Z", "R"): "purple",
-    },
-    "oC1": {
-        (GAMMA_LABEL, "S"): "orange",
-        ("Z", "R"): "purple",
-    },
-    "oC2": {
-        (GAMMA_LABEL, "S"): "orange",
-        ("Z", "R"): "purple",
-    },
-    "hR1": {
-        (GAMMA_LABEL, "L"): "orange",
-        (GAMMA_LABEL, "F"): "orange",
-    },
-    "hR2": {(GAMMA_LABEL, "L"): "orange"},
-    "mP1": {
-        (GAMMA_LABEL, "B"): "orange",
-        (GAMMA_LABEL, "A"): "orange",
-        (GAMMA_LABEL, "Y_2"): "orange",
-        ("Z", "D"): "purple",
-        ("Z", "E"): "purple",
-        ("Z", "C_2"): "purple",
-    },
-    "mC1": {
-        (GAMMA_LABEL, "A"): "orange",
-        (GAMMA_LABEL, "M_2"): "orange",
-        (GAMMA_LABEL, "Y_2"): "orange",
-        (GAMMA_LABEL, "V_2"): "orange",
-        (GAMMA_LABEL, "L_2"): "orange",
-    },
-    "mC2": {
-        (GAMMA_LABEL, "A"): "orange",
-        (GAMMA_LABEL, "L_2"): "orange",
-        (GAMMA_LABEL, "V_2"): "orange",
-        ("M", "Y"): "purple",
-    },
-    "mC3": {
-        (GAMMA_LABEL, "A"): "orange",
-        (GAMMA_LABEL, "M_2"): "orange",
-        (GAMMA_LABEL, "L_2"): "orange",
-        (GAMMA_LABEL, "V_2"): "orange",
-    },
-}
+from symmetry import (
+    laue_group_from_point_group,
+    no_altermagnetism_reason,
+    seekpath_to_hpkot_type,
+)
+from geometry import (
+    get_symmetry_operations,
+    calculate_volume_centroid,
+    detect_vacuum_axis_2d,
+    area_centroid_2d,
+    ordered_2d_polygon_frac,
+    check_input_slab,
+    compute_symbolic_centroid,
+    get_bz_loops,
+    build_symmetry_ibz_cell,
+)
+from plotting_common import (
+    GAMMA_LABEL,
+    _math_label,
+    _save_figure,
+    _print_saved_paths,
+)
+from plotting_3d import setup_3d_ax, plot_ibz
 
 
 # ============================================================================
@@ -812,99 +746,6 @@ def run(
         'standard_mapping_path': standard_mapping_path,
         'display_figures': display_figures,
     }
-
-
-# ==========================================================================
-# Restructuring phase 2: symmetry / op-classification moved to symmetry.py.
-# Re-exported so existing `from compute_centroid_hybrid import <fn>` keeps working.
-# ==========================================================================
-from symmetry import (
-    NO_ALTERMAGNETISM_LAUE_GROUPS,
-    _is_doubled_ibz_extra_label,
-    _doubled_ibz_extra_flags,
-    laue_group_from_point_group,
-    no_altermagnetism_reason,
-    seekpath_to_hpkot_type,
-    seekpath_to_sc_type,
-    _seekpath_label_to_internal,
-    keeps_2d_plane,
-    is_trivial_2d_spin_flip,
-    is_valid_2d_spin_flip,
-    _perp_unit,
-    _axis_bz_exit,
-    _classify_spinflip_op,
-    _mirror_plane_bz_polygon,
-    _reduce_int_vector,
-    _format_miller,
-    _rotation_sense,
-    describe_spinflip_op,
-    _classify_spin_down_ops,
-)
-
-
-# ==========================================================================
-# Restructuring phase 3: BZ/hull/centroid geometry moved to geometry.py.
-# Re-exported so existing `from compute_centroid_hybrid import <fn>` keeps working.
-# ==========================================================================
-from geometry import (
-    get_symmetry_operations,
-    calculate_volume_centroid,
-    detect_vacuum_axis_2d,
-    area_centroid_2d,
-    ordered_2d_polygon_frac,
-    check_input_slab,
-    compute_symbolic_centroid,
-    _relation_candidates,
-    _expr_complexity,
-    simplify_symbolic_centroid,
-    get_bz_loops,
-    find_bz_exit,
-    _get_ibz_frame_edges,
-    _split_hull_faces_by_extra_labels,
-    _bz_halfspaces,
-    _dedupe_points,
-    _spin_bz_cells,
-    _fractional_real_op_to_cart_k,
-    _mapped_spin_hulls,
-    build_symmetry_ibz_cell,
-    _points_on_kz_plane,
-    _bz_kz_plane_outline,
-)
-
-
-# ==========================================================================
-# Restructuring phase 1: figure code moved to plotting_common / plotting_3d.
-# These re-exports keep `from compute_centroid_hybrid import <fn>` working for
-# existing callers and tests. Placed at end so cc is fully defined first;
-# removed in a later phase once geometry/symmetry are also extracted.
-# ==========================================================================
-from plotting_common import (
-    _get_bz_path_style,
-    _figure_output_paths,
-    _save_figure,
-    _print_saved_paths,
-    _math_label,
-)
-from plotting_3d import (
-    _Arrow3D,
-    _draw_ibz_faces_by_sector,
-    _get_view_direction,
-    _classify_bz_edges,
-    draw_bz_edges,
-    setup_3d_ax,
-    plot_ibz,
-    plot_mapped_bz,
-    _screen_xy,
-    _best_label_anchor,
-    _mirror_label_candidates,
-    _draw_op_visual,
-    _connect_arc_view_follow,
-    plot_spin_flip_figure,
-    plot_spin_bz_figure,
-    draw_kz0_helper_plane,
-    draw_projected_reciprocal_axes,
-    plot_spin_bz_top_view_figure,
-)
 
 
 if __name__ == '__main__':

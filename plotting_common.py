@@ -4,7 +4,84 @@ Extracted from compute_centroid_hybrid.py (restructuring phase 1).
 """
 import os
 from lattice_kpoints import canonical_lattice_type
-from compute_centroid_hybrid import BZ_PATH_STYLE_OVERRIDES, BZ_SPECIAL_COLORS
+
+GAMMA_LABEL = "\u0393"
+BZ_SPECIAL_COLORS = {
+    "orange": "#e68613",
+    "purple": "#6b5596",
+}
+BZ_PATH_STYLE_OVERRIDES = {
+    "cP1": {("M", "X_1"): {"color": "red", "ls": "--"}},
+    "cF1": {("X", "W_2"): {"color": "red", "ls": "--"}},
+    "tI1": {(GAMMA_LABEL, "N"): "orange"},
+    "tI2": {(GAMMA_LABEL, "N"): "orange"},
+    "oF1": {(GAMMA_LABEL, "L"): "orange"},
+    "oF2": {(GAMMA_LABEL, "L"): "orange"},
+    "oF3": {(GAMMA_LABEL, "L"): "orange"},
+    "oI1": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI2": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oI3": {
+        (GAMMA_LABEL, "T"): "orange",
+        (GAMMA_LABEL, "R"): "orange",
+        (GAMMA_LABEL, "S"): "orange",
+    },
+    "oA1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oA2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC1": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "oC2": {
+        (GAMMA_LABEL, "S"): "orange",
+        ("Z", "R"): "purple",
+    },
+    "hR1": {
+        (GAMMA_LABEL, "L"): "orange",
+        (GAMMA_LABEL, "F"): "orange",
+    },
+    "hR2": {(GAMMA_LABEL, "L"): "orange"},
+    "mP1": {
+        (GAMMA_LABEL, "B"): "orange",
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        ("Z", "D"): "purple",
+        ("Z", "E"): "purple",
+        ("Z", "C_2"): "purple",
+    },
+    "mC1": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "Y_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+    },
+    "mC2": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+        ("M", "Y"): "purple",
+    },
+    "mC3": {
+        (GAMMA_LABEL, "A"): "orange",
+        (GAMMA_LABEL, "M_2"): "orange",
+        (GAMMA_LABEL, "L_2"): "orange",
+        (GAMMA_LABEL, "V_2"): "orange",
+    },
+}
 
 
 def _get_bz_path_style(lattice_type, k1, k2):

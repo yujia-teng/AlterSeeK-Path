@@ -4,8 +4,6 @@ k-point, drive the interactive Step 0-5 workflow, and write KPOINTS output.
 Extracted from alterseek_path.py (restructuring phase 4).
 """
 import os
-import shutil
-import sys
 from typing import List, Optional
 import numpy as np
 
@@ -19,14 +17,14 @@ except ImportError as _exc:
     FIND_SF_AVAILABLE = False
 
 try:
-    from compute_centroid_hybrid import (run as compute_centroid,
-                                         no_altermagnetism_reason,
-                                         is_valid_2d_spin_flip,
-                                         is_trivial_2d_spin_flip,
-                                         plot_spin_flip_figure,
-                                         plot_spin_bz_figure,
-                                         plot_spin_bz_top_view_figure,
-                                         describe_spinflip_op)
+    from compute_centroid_hybrid import run as compute_centroid
+    from symmetry import (no_altermagnetism_reason,
+                          is_valid_2d_spin_flip,
+                          is_trivial_2d_spin_flip,
+                          describe_spinflip_op)
+    from plotting_3d import (plot_spin_flip_figure,
+                             plot_spin_bz_figure,
+                             plot_spin_bz_top_view_figure)
     from plot_2d_figures import plot_2d_figures
     import matplotlib.pyplot as plt
     CENTROID_AVAILABLE = True

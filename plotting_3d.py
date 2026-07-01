@@ -5,31 +5,39 @@ Extracted from compute_centroid_hybrid.py (restructuring phase 1).
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial import ConvexHull, HalfspaceIntersection, Voronoi
+from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import proj3d
 from matplotlib.patches import FancyArrowPatch
+
 from plotting_common import _get_bz_path_style, _save_figure, _print_saved_paths, _math_label
-from compute_centroid_hybrid import (
-    IBZ_FACE_COLORS,
+from symmetry import (
     _axis_bz_exit,
-    _bz_kz_plane_outline,
     _classify_spin_down_ops,
     _classify_spinflip_op,
     _doubled_ibz_extra_flags,
     _format_miller,
-    _get_ibz_frame_edges,
     _is_doubled_ibz_extra_label,
-    _mapped_spin_hulls,
     _mirror_plane_bz_polygon,
     _perp_unit,
-    _points_on_kz_plane,
     _reduce_int_vector,
     _rotation_sense,
     _seekpath_label_to_internal,
-    find_bz_exit,
-    run,
 )
+from geometry import (
+    _bz_kz_plane_outline,
+    _get_ibz_frame_edges,
+    _mapped_spin_hulls,
+    _points_on_kz_plane,
+    find_bz_exit,
+)
+
+IBZ_FACE_COLORS = {
+    "up_main": "salmon",
+    "up_extra": "#e98f8f",
+    "down_main": "cornflowerblue",
+    "down_extra": "#91b2e8",
+}
 
 
 class _Arrow3D(FancyArrowPatch):
