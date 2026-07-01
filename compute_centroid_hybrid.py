@@ -537,6 +537,170 @@ def calculate_volume_centroid(hull):
     return w_cent / total_vol, total_vol
 
 
+# ---------------------------------------------------------------------------
+# 2D / slab helpers
+#
+# For a 2D material computed as a 3D slab (large vacuum along one axis) the
+# whole symmetry analysis is reused unchanged; only the geometry is restricted
+# to the physical reciprocal plane.  Two facts make this robust:
+#   * The reciprocal vector dual to the real vacuum axis is always along the
+#     layer normal, so the in-plane condition is *fractional* k=0 along that
+#     axis (not Cartesian kz=0).
+#   * seekpath may permute axes when it standardizes (monoclinic -> unique
+#     axis b), so the vacuum axis is detected in the standardized frame rather
+#     than taken from the user's --vacuum-axis flag.
+# ---------------------------------------------------------------------------
+
+def detect_vacuum_axis_2d(b_matrix, sep_ratio=0.8, ortho_tol=0.05):
+    """Identify the slab vacuum axis in the standardized reciprocal frame.
+
+    The vacuum (out-of-plane) real axis is the longest, so its reciprocal
+    vector has the smallest norm.  The choice is cross-checked for
+    orthogonality to the in-plane reciprocal vectors (the vacuum reciprocal
+    vector lies along the layer normal).  For a proper slab the smallest
+    reciprocal norm is well separated and both checks pass; the flags let the
+    caller warn on an ambiguous cell.
+
+    Returns ``(axis_index, info)`` where ``info`` carries the diagnostics.
+    """
+    b = np.array(b_matrix, dtype=float)
+    norms = np.linalg.norm(b, axis=1)
+    axis = int(np.argmin(norms))
+    others = [i for i in range(3) if i != axis]
+    bn = b / norms[:, None]
+    dots = [abs(float(bn[axis] @ bn[j])) for j in others]
+    sorted_norms = np.sort(norms)
+    separated = bool(sorted_norms[0] < sep_ratio * sorted_norms[1])
+    orthogonal = bool(all(d < ortho_tol for d in dots))
+    info = {
+        "reciprocal_norms": [float(x) for x in norms],
+        "dots_to_in_plane": [float(d) for d in dots],
+        "separated": separated,
+        "orthogonal": orthogonal,
+    }
+    return axis, info
+
+
+def area_centroid_2d(frac_points, vacuum_axis, b_matrix):
+    """Area centroid of the in-plane IBZ polygon.
+
+    ``frac_points`` are fractional coordinates already restricted to the
+    physical plane (``k[vacuum_axis] == 0``).  The centroid is computed in the
+    in-plane fractional coordinates and mapped back through ``b_matrix``; this
+    is exact because the area centroid is affine-equivariant, so a monoclinic
+    in-plane shear does not require any special handling.
+
+    Returns ``(centroid_frac, centroid_cart, area_frac)`` with the vacuum
+    fractional component set to exactly 0.
+    """
+    in_plane = [i for i in range(3) if i != vacuum_axis]
+    pts2 = np.array(frac_points, dtype=float)[:, in_plane]
+    uniq = []
+    for p in pts2:
+        if not any(np.allclose(p, q, atol=1e-8) for q in uniq):
+            uniq.append(p)
+    pts2 = np.array(uniq, dtype=float)
+    area = 0.0
+    if len(pts2) < 3:
+        c2 = pts2.mean(axis=0) if len(pts2) else np.zeros(2)
+    else:
+        hull = ConvexHull(pts2)
+        poly = pts2[hull.vertices]
+        x, y = poly[:, 0], poly[:, 1]
+        cross = x * np.roll(y, -1) - np.roll(x, -1) * y
+        a2 = float(np.sum(cross))
+        if abs(a2) < 1e-12:
+            c2 = poly.mean(axis=0)
+        else:
+            cx = float(np.sum((x + np.roll(x, -1)) * cross) / (3.0 * a2))
+            cy = float(np.sum((y + np.roll(y, -1)) * cross) / (3.0 * a2))
+            c2 = np.array([cx, cy], dtype=float)
+            area = abs(a2) / 2.0
+    centroid_frac = np.zeros(3)
+    centroid_frac[in_plane[0]] = c2[0]
+    centroid_frac[in_plane[1]] = c2[1]
+    centroid_frac[vacuum_axis] = 0.0
+    centroid_cart = centroid_frac @ np.array(b_matrix, dtype=float)
+    return centroid_frac, centroid_cart, area
+
+
+def ordered_2d_polygon_frac(frac_points, vacuum_axis):
+    """Return the in-plane IBZ polygon vertices (3D fractional, vacuum=0),
+    ordered around the convex hull.  Used by the 2D spin-pattern figure."""
+    in_plane = [i for i in range(3) if i != vacuum_axis]
+    pts = np.array(frac_points, dtype=float)
+    uniq = []
+    for p in pts:
+        if not any(np.allclose(p, q, atol=1e-8) for q in uniq):
+            uniq.append(p)
+    uniq = np.array(uniq, dtype=float)
+    if len(uniq) < 3:
+        return uniq.tolist()
+    hull = ConvexHull(uniq[:, in_plane])
+    return uniq[hull.vertices].tolist()
+
+
+def keeps_2d_plane(R, vacuum_axis, tol=1e-6):
+    """True if operation R maps in-plane k back into the plane (Filter 1).
+
+    For a true layer group every operation passes; this guards against spurious
+    3D bulk operations (C4x, C3[111], ...) that would send an in-plane k out of
+    the vacuum k=0 plane.
+    """
+    R = np.array(R, dtype=float)
+    in_plane = [i for i in range(3) if i != vacuum_axis]
+    return all(abs(R[vacuum_axis, i]) < tol for i in in_plane)
+
+
+def is_trivial_2d_spin_flip(R, vacuum_axis, tol=1e-6):
+    """True if R's in-plane 2x2 block is +-I (Filter 2 -- a trivial 2D flip).
+
+    +I  (e.g. mz)            : k_par -> k_par, forces E_up = E_down everywhere.
+    -I  (e.g. C2z, inversion): k_par -> -k_par, PT-like for collinear spins.
+    Either way there is no in-plane altermagnetic splitting.
+    """
+    R = np.array(R, dtype=float)
+    in_plane = [i for i in range(3) if i != vacuum_axis]
+    block = R[np.ix_(in_plane, in_plane)]
+    return (np.allclose(block, np.eye(2), atol=tol)
+            or np.allclose(block, -np.eye(2), atol=tol))
+
+
+def is_valid_2d_spin_flip(R, vacuum_axis, tol=1e-6):
+    """True if R is a genuine 2D spin-flip: keeps the plane and is non-trivial."""
+    return (keeps_2d_plane(R, vacuum_axis, tol)
+            and not is_trivial_2d_spin_flip(R, vacuum_axis, tol))
+
+
+def check_input_slab(a_matrix, declared_axis, ortho_tol=0.02):
+    """Sanity-check that the INPUT cell looks like a proper 2D slab.
+
+    A real 2D slab has its vacuum axis orthogonal to the two in-plane axes and
+    longer than them.  A tilted/elongated bulk cell (the common mistake of
+    just stretching c of a 3D structure) fails these.  Returns a list of
+    human-readable warning strings (empty when the cell looks fine).
+    """
+    A = np.array(a_matrix, dtype=float)
+    lengths = np.linalg.norm(A, axis=1)
+    others = [i for i in range(3) if i != declared_axis]
+    An = A / lengths[:, None]
+    dots = [abs(float(An[declared_axis] @ An[j])) for j in others]
+    name = "abc"[declared_axis]
+    warns = []
+    if any(d > ortho_tol for d in dots):
+        warns.append(
+            f"input vacuum axis '{name}' is not orthogonal to the in-plane axes "
+            f"(|cos| = {[round(d, 3) for d in dots]}); this does not look like a "
+            "proper 2D slab (a tilted or elongated bulk cell?)."
+        )
+    if lengths[declared_axis] < max(lengths[j] for j in others):
+        warns.append(
+            f"input vacuum axis '{name}' (length {lengths[declared_axis]:.2f}) is not "
+            "the longest axis; is there real vacuum along it?"
+        )
+    return warns
+
+
 def compute_symbolic_centroid(kpoints_frac, hull, labels_list, lattice_type, conv_params):
     """Compute symbolic centroid (exact fractions or parametric)."""
     data = LATTICE_DATA[lattice_type]
@@ -1257,13 +1421,26 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         # cell. The 60° gap is placed at the BACK (away from the camera for the
         # starting view) and the arrowhead sits on the FRONT of the ring.
         order = op['order'] or 2
-        prefix = 'C' if op_type == 'rotation' else 'S'
-        # Distinguish the rotation sense (C6 vs C6^-1) by a +/- superscript,
+        # International/Bilbao numeral convention instead of Schoenflies: a
+        # proper rotation Cn is just its order n; an improper rotoreflection
+        # Sn is relabeled by its rotoinversion-axis order n-bar, using the
+        # standard correspondence S3<->6bar, S4<->4bar, S6<->3bar (S1/S2 are
+        # the separately-handled mirror/inversion cases and never reach here).
+        if op_type == 'rotation':
+            display_order = order
+            improper = False
+        else:
+            display_order = {3: 6, 4: 4, 6: 3}.get(order, order)
+            improper = True
+        # Distinguish the rotation sense (n^+ vs n^-) by a +/- superscript,
         # measured about the drawn (upper-hemisphere) axis. None for order 2.
         sense = _rotation_sense(R_cart, axis)
         sgn = '' if (order < 3 or sense == 0) else ('+' if sense > 0 else '-')
-        order_str = (rf"$\mathbf{{{prefix}_{{{order}}}^{{{sgn}}}}}$" if sgn
-                     else rf"$\mathbf{{{prefix}_{{{order}}}}}$")
+        idx = _reduce_int_vector(np.asarray(axis) @ np.linalg.inv(np.asarray(b_matrix)))
+        axis_sub = "".join(rf"\bar{{{abs(i)}}}" if i < 0 else f"{i}" for i in idx)
+        digit = rf"\bar{{{display_order}}}" if improper else f"{display_order}"
+        order_str = (rf"$\mathbf{{{digit}^{{{sgn}}}_{{{axis_sub}}}}}$" if sgn
+                     else rf"$\mathbf{{{digit}_{{{axis_sub}}}}}$")
         u = _perp_unit(axis)
         v = np.cross(axis, u)
         v = v / np.linalg.norm(v)
@@ -2210,6 +2387,8 @@ def run(
     defer_show=False,
     verbose=True,
     seekpath_type_numbers=None,
+    mode_2d=False,
+    input_vacuum_axis=2,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -2289,6 +2468,23 @@ def run(
     _conv_lat = np.array(sp_result.get('conv_lattice', sp_result['primitive_lattice']))
     b_matrix_conv = np.linalg.inv(_conv_lat).T
     b1, b2, b3 = b_matrix
+
+    # ---- 2D / slab mode setup ----
+    # Detect the vacuum axis in the *standardized* frame (seekpath may permute
+    # axes, e.g. monoclinic -> unique axis b), and sanity-check the input cell.
+    vacuum_axis = None
+    if mode_2d:
+        vacuum_axis, vac_info = detect_vacuum_axis_2d(b_matrix)
+        if verbose:
+            print(f"\n[2D mode] vacuum axis (standardized frame): "
+                  f"{vacuum_axis} ('{'abc'[vacuum_axis]}'); reciprocal norms "
+                  f"{[round(x, 4) for x in vac_info['reciprocal_norms']]}")
+        if not (vac_info['separated'] and vac_info['orthogonal']):
+            print("[2D mode][Warning] vacuum-axis detection is ambiguous "
+                  f"(separated={vac_info['separated']}, orthogonal={vac_info['orthogonal']}); "
+                  "verify the structure is a proper slab.")
+        for w in check_input_slab(a_matrix, input_vacuum_axis):
+            print(f"[2D mode][Warning] {w}")
 
     sg = dataset.number
     laue_group = laue_group_from_point_group(dataset.pointgroup)
@@ -2372,7 +2568,42 @@ def run(
     labels_list = list(kpoints_cart_centroid.keys())
     points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
 
-    if sg in (1, 2):
+    ibz_polygon_frac = None
+    if mode_2d:
+        # 2D slab: the physical IBZ is the k[vacuum_axis]=0 cross-section.
+        # Restrict the curated hull points to that plane and take the 2D area
+        # centroid (the 3D volume centroid/ConvexHull are meaningless here and
+        # ConvexHull crashes on coplanar input).
+        in_plane_labels = [
+            lab for lab in labels_list
+            if abs(kpoints_frac_centroid[lab][vacuum_axis]) < 1e-4
+        ]
+        # A "<base>_2" HPKOT point that is genuinely a distinct 3D hull
+        # vertex (e.g. mP1's B_2/D_2, needed for the real 3D IBZ volume) can
+        # still be a redundant mirror-image duplicate once sliced to this 2D
+        # plane, if both "<base>" and "<base>_2" happen to survive the
+        # in-plane filter. Keeping both would double the in-plane hull's
+        # extent along whichever coordinate differs between them, pushing
+        # Gamma off being a hull corner and skewing the 2D area centroid.
+        # This is a 2D-only reduction -- the curated 3D hull table itself is
+        # untouched, since 3D genuinely needs both points.
+        base_labels = {lab for lab in in_plane_labels if not lab.endswith('_2')}
+        in_plane_labels = [
+            lab for lab in in_plane_labels
+            if not (lab.endswith('_2') and lab[:-2] in base_labels)
+        ]
+        frac_pts = np.array([kpoints_frac_centroid[lab] for lab in in_plane_labels])
+        hull = None
+        centroid_frac, centroid_cart, ibz_vol = area_centroid_2d(
+            frac_pts, vacuum_axis, b_matrix)
+        ibz_polygon_frac = ordered_2d_polygon_frac(frac_pts, vacuum_axis)
+        if verbose:
+            print(f"[2D mode] in-plane hull labels: {len(in_plane_labels)} / "
+                  f"{len(labels_list)} ({', '.join(in_plane_labels)})")
+            print(f"[2D mode] area centroid (frac): "
+                  f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]"
+                  f"  area={ibz_vol:.6f}")
+    elif sg in (1, 2):
         # Triclinic: IBZ boundary is hard to define on Wigner-Seitz BZ.
         # Skip hull/centroid --not needed (no altermagnetic splitting).
         hull = None
@@ -2432,9 +2663,22 @@ def run(
     # Selected band path. For doubled-IBZ cases, copied vertices may either be
     # included in project-defined path segments or appended as isolated
     # general-point anchors when no nonredundant high-symmetry edge is needed.
-    if (75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}) or (
+    #
+    # The doubled-IBZ construction (SG 75-88 tP1/tI1/tI2, SG 168-176 hP2)
+    # doubles the wedge because the *actual* point group (4, -4, 4/m, 6, -6,
+    # 6/m, 3, -3) has no vertical mirrors -- that deficiency is an in-plane
+    # fact, not a k_z/bulk-only one, so it still applies in 2D. The curated
+    # hull (kpoints_frac_centroid, from get_hull_kpoints below) always
+    # includes the doubled _A points regardless of mode_2d, and the 2D-mode
+    # centroid/ibz_polygon_frac block further down already uses that doubled
+    # hull. So band_kpath must also use the doubled hull_kpath in 2D mode --
+    # otherwise the *displayed* wedge is only half of what the (correctly
+    # doubled) centroid was computed from, and the plotted k point ends up
+    # looking off-center/outside a too-small triangle.
+    doubled_ibz_case = (75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}) or (
         168 <= sg <= 176 and sc_type == 'hP2'
-    ):
+    )
+    if doubled_ibz_case:
         band_kpath = list(hull_kpath)
     else:
         band_kpath = list(kpath)
@@ -2474,6 +2718,52 @@ def run(
         if label not in path_labels
     ]
 
+    if mode_2d:
+        # Keep only path segments and anchors that live in the physical plane
+        # (both endpoints have fractional k[vacuum_axis] ~ 0). Out-of-plane
+        # high-symmetry points (e.g. Z, A, R) are the same in-plane points
+        # raised along the dead vacuum reciprocal direction and are dropped.
+        def _in_plane_label(lbl):
+            v = (band_kpoints_frac.get(lbl)
+                 or kpoints_frac_centroid.get(lbl)
+                 or path_kpoints_frac.get(lbl))
+            return v is not None and abs(v[vacuum_axis]) < 1e-4
+        band_kpath = [
+            seg for seg in band_kpath if all(_in_plane_label(l) for l in seg)
+        ]
+        extra_general_vertices = [
+            l for l in extra_general_vertices if _in_plane_label(l)
+        ]
+        path_labels = {label for segment in band_kpath for label in segment}
+
+        if doubled_ibz_case:
+            # The 3D doubled-IBZ chain (e.g. tP1's A-R_A-X_A-M) only reaches
+            # its copied _A vertex via out-of-plane anchors (A, R_A, ...),
+            # which the plane filter above just dropped. That leaves the
+            # surviving in-plane tail (e.g. X_A-M) as a disconnected stub
+            # with no edge back to Gamma, even though X_A is a genuine
+            # vertex of the physical in-plane doubled wedge (Gamma-X-M-X_A).
+            # Close the loop explicitly: any doubled _A/_B-style vertex that
+            # is in-plane but not directly connected to Gamma gets a new
+            # Gamma-<vertex> segment.
+            def _is_doubled_label(lbl):
+                base = lbl[1:] if lbl.startswith('_') else lbl
+                return '_A' in base or '_B' in base or base.endswith('_0A')
+
+            connected_to_gamma = {
+                seg[1] if seg[0] == GAMMA_LABEL else seg[0]
+                for seg in band_kpath if GAMMA_LABEL in seg
+            }
+            doubled_labels = [l for l in path_labels if _is_doubled_label(l)]
+            for label in doubled_labels:
+                if label not in connected_to_gamma:
+                    band_kpath.append((GAMMA_LABEL, label))
+            path_labels = {label for segment in band_kpath for label in segment}
+
+        if verbose:
+            print(f"[2D mode] in-plane band path: {len(band_kpath)} segments, "
+                  f"labels {sorted(path_labels)}")
+
     # For plotting: draw the selected band path on top of the project IBZ hull.
     # Add path-only optional points (e.g. H_2) only when the selected path
     # actually uses them; do not let them affect the hull or centroid.
@@ -2494,8 +2784,9 @@ def run(
                   else f"IBZ + BZ: {basename} ({sc_display})")
 
     display_figures = []
+    elev1, azim1 = 14, 20
     fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_display}.png')
-    if show_plot:
+    if show_plot and not mode_2d:
         # Interactive mode: create the figure now. alterseek_path can defer
         # the actual plt.show() call until all prompts and file writes finish.
         fig1, ax1 = setup_3d_ax(fig1_title,
@@ -2531,7 +2822,8 @@ def run(
         elev1, azim1 = 14, 20
 
     # Render with dashed back-edges and save unless deferred post-show saving is active
-    if not (show_plot and defer_show):
+    # (skipped in 2D mode: Figures stay 3D-only and are not produced for slabs yet)
+    if not (show_plot and defer_show) and not mode_2d:
         fig1s, ax1s = setup_3d_ax(fig1_title,
                                   bz_loops, b_matrix, bz_center, bz_span,
                                   elev=elev1, azim=azim1, dashed_back=True)
@@ -2578,6 +2870,9 @@ def run(
         'unique_ops': unique_ops,
         'b_matrix_conv': b_matrix_conv,
         'b_matrix_input': b_matrix_input,
+        'mode_2d': mode_2d,
+        'vacuum_axis': vacuum_axis,
+        'ibz_polygon_frac': ibz_polygon_frac,
         'seekpath_rotation_matrix': np.array(sp_result['rotation_matrix']),
         'standardized_structure_path': standardized_structure_path,
         'standard_mapping_path': standard_mapping_path,

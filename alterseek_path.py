@@ -38,10 +38,13 @@ except ImportError as _exc:
 try:
     from compute_centroid_hybrid import (run as compute_centroid,
                                          no_altermagnetism_reason,
+                                         is_valid_2d_spin_flip,
+                                         is_trivial_2d_spin_flip,
                                          plot_spin_flip_figure,
                                          plot_spin_bz_figure,
                                          plot_spin_bz_top_view_figure,
                                          describe_spinflip_op)
+    from plot_2d_figures import plot_2d_figures
     import matplotlib.pyplot as plt
     CENTROID_AVAILABLE = True
 except ImportError as _exc:
@@ -53,6 +56,7 @@ except ImportError as _exc:
     plot_spin_bz_figure = None
     plot_spin_bz_top_view_figure = None
     describe_spinflip_op = None
+    plot_2d_figures = None
     plt = None
 
 
@@ -586,7 +590,8 @@ def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
 
 
 class KPointsModifier:
-    def __init__(self, magnetic_setting: bool = False, output_verbose: bool = False):
+    def __init__(self, magnetic_setting: bool = False, output_verbose: bool = False,
+                 mode_2d: bool = False, input_vacuum_axis: int = 2):
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
@@ -595,6 +600,8 @@ class KPointsModifier:
         self.kpoints_basis_rotation = None
         self.magnetic_setting = magnetic_setting
         self.output_verbose = output_verbose
+        self.mode_2d = mode_2d
+        self.input_vacuum_axis = input_vacuum_axis
 
     @staticmethod
     def _display_label(label: str) -> str:
@@ -710,6 +717,12 @@ class KPointsModifier:
                 f"Output-basis conversion failed for k-point '{point[3]}': {exc}. "
                 "Refusing to write unconverted coordinates into KPOINTS."
             ) from exc
+        k_out = [k_out[0], k_out[1], k_out[2]]
+        if self.mode_2d:
+            # The physical 2D path lies in the input vacuum k=0 plane; clear any
+            # numerical residue along that axis so the written KPOINTS are exactly
+            # in-plane.
+            k_out[self.input_vacuum_axis] = 0.0
         return [k_out[0], k_out[1], k_out[2], point[3]]
 
     def load_flip_operations(self, filename: str = "spin_flip_operations.txt") -> List[np.ndarray]:
@@ -1242,6 +1255,8 @@ class KPointsModifier:
                             centroid_struct_file, output_dir='.', show_plot=True,
                             defer_show=True, verbose=False,
                             seekpath_type_numbers=centroid_seekpath_type_numbers,
+                            mode_2d=self.mode_2d,
+                            input_vacuum_axis=self.input_vacuum_axis,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
@@ -1336,6 +1351,8 @@ class KPointsModifier:
                         centroid_struct_file, output_dir='.', show_plot=True,
                         defer_show=True, verbose=False,
                         seekpath_type_numbers=centroid_seekpath_type_numbers,
+                        mode_2d=self.mode_2d,
+                        input_vacuum_axis=self.input_vacuum_axis,
                     )
                     display_figures.extend(centroid_result.get('display_figures', []))
                     print(
@@ -1473,7 +1490,9 @@ class KPointsModifier:
             try:
                 result = compute_centroid(centroid_struct_file, output_dir='.', show_plot=True,
                                           defer_show=True, verbose=False,
-                                          seekpath_type_numbers=centroid_seekpath_type_numbers)
+                                          seekpath_type_numbers=centroid_seekpath_type_numbers,
+                                          mode_2d=self.mode_2d,
+                                          input_vacuum_axis=self.input_vacuum_axis)
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]
@@ -1566,6 +1585,28 @@ class KPointsModifier:
 
         flip_ops = _inversion_extended(flip_ops)
         preserve_ops = _inversion_extended(preserve_ops)
+
+        # 2D mode: keep only genuine in-plane spin-flip operations. A flip
+        # operation whose in-plane 2x2 block is +-I (C2z/mz/inversion type)
+        # produces no in-plane splitting, so it must not be chosen for the
+        # 2D path. If none survive, the slab is not a 2D altermagnet.
+        if self.mode_2d and flip_ops:
+            vax = self.input_vacuum_axis
+            valid_flip_ops = [op for op in flip_ops
+                              if is_valid_2d_spin_flip(op, vax)]
+            n_excluded = len(flip_ops) - len(valid_flip_ops)
+            if valid_flip_ops:
+                print(f"[2D mode] In-plane spin splitting: YES "
+                      f"({len(valid_flip_ops)} valid 2D spin-flip ops"
+                      + (f", {n_excluded} trivial C2/m ops excluded" if n_excluded else "")
+                      + ").")
+                flip_ops = valid_flip_ops
+            else:
+                print("[2D mode] In-plane spin splitting: NO -- every spin-flip "
+                      "operation acts as +-identity in-plane (C2z/mz/inversion "
+                      "type). This slab is not a 2D altermagnet; writing the "
+                      "ordinary in-plane path without a k' partner.")
+                flip_ops = []
 
         # Operation naming: the listed matrices are in the INPUT-cell fractional
         # basis, so the axis cannot be read from the integers directly. Convert
@@ -1745,7 +1786,21 @@ class KPointsModifier:
                 # Generate Figures 2-4 (spin-flip, spin-BZ, kz=0 top view).
                 # One shared call scaffold; per-figure kwargs hold the
                 # differences between the three plots.
-                if centroid_result is not None:
+                if centroid_result is not None and self.mode_2d:
+                    # 2D slab mode: render dedicated top-down 2D figures instead
+                    # of the tilted 3D BZ plate.
+                    basename = (os.path.splitext(os.path.basename(struct_file))[0]
+                                if struct_file else 'output')
+                    if plot_2d_figures is not None and 'b_matrix' in centroid_result:
+                        try:
+                            plot_2d_figures(
+                                centroid_result, general_kpoint, R_for_kpts,
+                                basename, output_dir='.',
+                                flip_ops_for_plot=(flip_ops_for_plot
+                                                   if flip_ops_for_plot else None))
+                        except Exception as _e:
+                            print(f"[Warning] Could not generate 2D figures: {_e}")
+                elif centroid_result is not None:
                     basename = (os.path.splitext(os.path.basename(struct_file))[0]
                                 if struct_file else 'output')
                     sc_type = centroid_result.get('sc_type', 'BZ')
@@ -1878,11 +1933,28 @@ def main():
         choices=["verbose"],
         help="verbose: keep SSG-setting intermediate/helper structures for debugging.",
     )
+    parser.add_argument(
+        "--2d",
+        dest="mode_2d",
+        action="store_true",
+        help="2D/slab mode: restrict the k-path and IBZ centroid to the physical "
+             "in-plane (vacuum k=0) reciprocal plane.",
+    )
+    parser.add_argument(
+        "--vacuum-axis",
+        choices=["a", "b", "c"],
+        default="c",
+        help="Input-cell vacuum axis for the 2D-slab sanity check (default: c). "
+             "The slicing axis is auto-detected in the standardized frame "
+             "regardless of this flag.",
+    )
     args = parser.parse_args(argv)
 
     modifier = KPointsModifier(
         magnetic_setting=args.ssg_setting,
         output_verbose=args.output == "verbose",
+        mode_2d=args.mode_2d,
+        input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],
     )
     modifier.interactive_modify()
 
