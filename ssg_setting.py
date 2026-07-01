@@ -65,7 +65,7 @@ def _build_marker_helper(lattice, symbols, counts, positions, operations):
 def _spin_axis_from_moments(moments):
     for moment in np.asarray(moments, dtype=float):
         norm = np.linalg.norm(moment)
-        if norm > 1e-8:
+        if norm > 1e-10:
             return moment / norm
     raise ValueError("No nonzero magnetic moment found.")
 
@@ -216,7 +216,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         axis = None
         for moment in ordered_moments:
             norm = np.linalg.norm(moment)
-            if norm > 1e-8:
+            if norm > 1e-10:
                 axis = moment / norm
                 break
         if axis is not None:
