@@ -1,0 +1,90 @@
+"""Shared figure I/O + label/style helpers.
+
+Extracted from compute_centroid_hybrid.py (restructuring phase 1).
+"""
+import os
+from lattice_kpoints import canonical_lattice_type
+from compute_centroid_hybrid import BZ_PATH_STYLE_OVERRIDES, BZ_SPECIAL_COLORS
+
+
+def _get_bz_path_style(lattice_type, k1, k2):
+    """Return the display style for a recommended HPKOT path segment."""
+    style = {"color": "red", "ls": "-", "lw": 4.0, "alpha": 0.9}
+    if not lattice_type:
+        return style
+
+    try:
+        lattice_key = canonical_lattice_type(lattice_type)
+    except Exception:
+        lattice_key = lattice_type
+
+    if lattice_key in {"aP2", "aP3"}:
+        style["color"] = BZ_SPECIAL_COLORS["orange"]
+        style["alpha"] = 0.95
+        return style
+
+    overrides = BZ_PATH_STYLE_OVERRIDES.get(lattice_key, {})
+    override = overrides.get((k1, k2), overrides.get((k2, k1)))
+    if override:
+        if isinstance(override, dict):
+            style.update(override)
+            style["color"] = BZ_SPECIAL_COLORS.get(style["color"], style["color"])
+        else:
+            style["color"] = BZ_SPECIAL_COLORS.get(override, override)
+        style["alpha"] = 0.95
+    return style
+
+
+def _figure_output_paths(output_path):
+    """Return the requested figure output paths, preserving PNG as the default."""
+    root, ext = os.path.splitext(output_path)
+    default_fmt = ext[1:] if ext else 'png'
+    raw_formats = os.environ.get('ALTERSEEK_BZ_FORMATS', default_fmt)
+    formats = []
+    for item in raw_formats.replace(';', ',').split(','):
+        fmt = item.strip().lower().lstrip('.')
+        if fmt and fmt not in formats:
+            formats.append(fmt)
+    if not formats:
+        formats = [default_fmt]
+    return [f"{root}.{fmt}" for fmt in formats]
+
+
+def _save_figure(fig, output_path, **kwargs):
+    saved_paths = _figure_output_paths(output_path)
+    for path in saved_paths:
+        fig.savefig(path, **kwargs)
+    return saved_paths
+
+
+def _print_saved_paths(saved_paths, verbose=True):
+    if not verbose:
+        return
+    for path in saved_paths:
+        print(f"Saved: {path}")
+
+
+def _math_label(label):
+    """Return a bold mathtext label for high-symmetry point names."""
+    label = str(label)
+    prime = label.endswith("'")
+    base = label.rstrip("'")
+    if base == '\u0393' or base.upper() == "GAMMA":
+        symbol = r"\Gamma"
+    elif '_' in base:
+        head, sub = base.split('_', 1)
+        greek = {
+            "DELTA": r"\Delta",
+            "LAMBDA": r"\Lambda",
+            "SIGMA": r"\Sigma",
+        }
+        symbol = rf"{greek.get(head.upper(), head)}_{{{sub}}}"
+    else:
+        greek = {
+            "DELTA": r"\Delta",
+            "LAMBDA": r"\Lambda",
+            "SIGMA": r"\Sigma",
+        }
+        symbol = greek.get(base.upper(), base)
+    prime_part = "\u2032" if prime else ""
+    return rf"$\mathbf{{{symbol}}}$" + prime_part
