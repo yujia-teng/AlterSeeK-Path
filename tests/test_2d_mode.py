@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 
 import compute_centroid_hybrid as cc
+import geometry
+import symmetry
 
 
 def _diag(vals):
@@ -35,14 +37,14 @@ C2X = _diag([1, -1, -1])                        # in-plane diag(1, -1) -> valid
 
 @pytest.mark.parametrize("op", [C2Z, MZ, INV])
 def test_trivial_flip_ops_axis_z(op):
-    assert cc.is_trivial_2d_spin_flip(op, 2)
-    assert not cc.is_valid_2d_spin_flip(op, 2)
+    assert symmetry.is_trivial_2d_spin_flip(op, 2)
+    assert not symmetry.is_valid_2d_spin_flip(op, 2)
 
 
 @pytest.mark.parametrize("op", [C4Z, MX, C2X])
 def test_valid_flip_ops_axis_z(op):
-    assert not cc.is_trivial_2d_spin_flip(op, 2)
-    assert cc.is_valid_2d_spin_flip(op, 2)
+    assert not symmetry.is_trivial_2d_spin_flip(op, 2)
+    assert symmetry.is_valid_2d_spin_flip(op, 2)
 
 
 def test_classification_is_axis_aware_permutation():
@@ -50,9 +52,9 @@ def test_classification_is_axis_aware_permutation():
     c4x = np.array([[1., 0, 0], [0, 0, -1], [0, 1, 0]])   # rotation about x -> valid
     c2x = _diag([1, -1, -1])                               # in-plane (y,z) = -I -> trivial
     mx = _diag([-1, 1, 1])                                 # in-plane (y,z) = +I -> trivial
-    assert cc.is_valid_2d_spin_flip(c4x, 0)
-    assert cc.is_trivial_2d_spin_flip(c2x, 0)
-    assert cc.is_trivial_2d_spin_flip(mx, 0)
+    assert symmetry.is_valid_2d_spin_flip(c4x, 0)
+    assert symmetry.is_trivial_2d_spin_flip(c2x, 0)
+    assert symmetry.is_trivial_2d_spin_flip(mx, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -60,10 +62,10 @@ def test_classification_is_axis_aware_permutation():
 # ---------------------------------------------------------------------------
 
 def test_keeps_plane_guard():
-    assert cc.keeps_2d_plane(C4Z, 2)
+    assert symmetry.keeps_2d_plane(C4Z, 2)
     out_of_plane = np.array([[0., 0, 1], [0, 1, 0], [1, 0, 0]])  # swaps x and z
-    assert not cc.keeps_2d_plane(out_of_plane, 2)
-    assert not cc.is_valid_2d_spin_flip(out_of_plane, 2)         # fails Filter 1
+    assert not symmetry.keeps_2d_plane(out_of_plane, 2)
+    assert not symmetry.is_valid_2d_spin_flip(out_of_plane, 2)         # fails Filter 1
 
 
 # ---------------------------------------------------------------------------
@@ -73,13 +75,13 @@ def test_keeps_plane_guard():
 def test_detect_vacuum_axis_shortest_reciprocal():
     # Reciprocal rows: axis 1 is much shorter -> the vacuum direction.
     b = _diag([2.0, 0.3, 2.0])
-    axis, info = cc.detect_vacuum_axis_2d(b)
+    axis, info = geometry.detect_vacuum_axis_2d(b)
     assert axis == 1
     assert info["separated"] and info["orthogonal"]
 
 
 def test_detect_vacuum_axis_ambiguous_when_cubic():
-    axis, info = cc.detect_vacuum_axis_2d(_diag([1.0, 1.0, 1.0]))
+    axis, info = geometry.detect_vacuum_axis_2d(_diag([1.0, 1.0, 1.0]))
     assert not info["separated"]
 
 
@@ -89,7 +91,7 @@ def test_detect_vacuum_axis_ambiguous_when_cubic():
 
 def test_area_centroid_unit_square():
     pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
-    cfrac, ccart, area = cc.area_centroid_2d(pts, 2, np.eye(3))
+    cfrac, ccart, area = geometry.area_centroid_2d(pts, 2, np.eye(3))
     assert np.allclose(cfrac, [0.5, 0.5, 0.0])
     assert cfrac[2] == 0.0
     assert abs(area - 1.0) < 1e-9
@@ -97,7 +99,7 @@ def test_area_centroid_unit_square():
 
 def test_area_centroid_triangle():
     pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=float)
-    cfrac, _ccart, area = cc.area_centroid_2d(pts, 2, np.eye(3))
+    cfrac, _ccart, area = geometry.area_centroid_2d(pts, 2, np.eye(3))
     assert np.allclose(cfrac, [1 / 3, 1 / 3, 0.0])
     assert abs(area - 0.5) < 1e-9
 
@@ -105,7 +107,7 @@ def test_area_centroid_triangle():
 def test_ordered_polygon_drops_interior_point():
     pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
                     [0.5, 0.5, 0]], dtype=float)
-    poly = cc.ordered_2d_polygon_frac(pts, 2)
+    poly = geometry.ordered_2d_polygon_frac(pts, 2)
     assert len(poly) == 4                                  # interior point excluded
     assert all(abs(p[2]) < 1e-12 for p in poly)
 
@@ -115,16 +117,16 @@ def test_ordered_polygon_drops_interior_point():
 # ---------------------------------------------------------------------------
 
 def test_input_slab_clean():
-    assert cc.check_input_slab(_diag([3.0, 3.0, 20.0]), 2) == []
+    assert geometry.check_input_slab(_diag([3.0, 3.0, 20.0]), 2) == []
 
 
 def test_input_slab_tilted_axis_warns():
     tilted = np.array([[3., 0, 0], [0, 3, 0], [1.5, 0, 20.]])  # c not orthogonal to a
-    assert cc.check_input_slab(tilted, 2)                       # non-empty
+    assert geometry.check_input_slab(tilted, 2)                       # non-empty
 
 
 def test_input_slab_no_vacuum_warns():
-    assert cc.check_input_slab(_diag([3.0, 3.0, 2.0]), 2)       # c not the longest
+    assert geometry.check_input_slab(_diag([3.0, 3.0, 2.0]), 2)       # c not the longest
 
 
 # ---------------------------------------------------------------------------

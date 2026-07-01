@@ -1,4 +1,4 @@
-from compute_centroid_hybrid import _doubled_ibz_extra_flags
+from symmetry import _doubled_ibz_extra_flags
 
 
 def test_ti_copied_sector_labels_include_zero_subscript_variants():

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from alterseek_path import KPointsModifier
+from kpoints import KPointsModifier
 
 
 def test_gamma_label_is_vasp_safe():
@@ -27,7 +27,7 @@ def test_format_path_joins_continuous_and_breaks_discontinuous():
 
 
 def test_dedupe_frac_positions_wraps_periodic_images():
-    from alterseek_path import _dedupe_frac_positions
+    from io_vasp import _dedupe_frac_positions
     unique = _dedupe_frac_positions([
         [0.25, 0.25, 0.25],
         [1.25, 0.25, -0.75],   # same site shifted by lattice vectors
