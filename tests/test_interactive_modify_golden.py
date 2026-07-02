@@ -12,6 +12,11 @@ from pathlib import Path
 
 import pytest
 
+# The full interactive flow runs Step 0 (FindSpinGroup) and reads the structure
+# with ASE; skip cleanly (e.g. CI) when those optional deps are not installed.
+pytest.importorskip("findspingroup")
+pytest.importorskip("ase")
+
 REPO = Path(__file__).resolve().parents[1]
 POSCAR = REPO / "data" / "case_12_t-P4mmm-2121" / "POSCAR"
 REFERENCE = Path(__file__).parent / "references" / "case12_golden_kpoints.txt"
