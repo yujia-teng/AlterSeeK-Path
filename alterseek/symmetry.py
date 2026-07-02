@@ -216,8 +216,14 @@ def _classify_spinflip_op(R_cart):
 
 def _mirror_plane_bz_polygon(normal, bz_loops):
     """
-    Return the polygon (N,3) where the mirror plane n·k=0 cuts the BZ edges,
-    sorted angularly around the centroid.  Returns None if fewer than 3 pts.
+    Return a flat rectangle (4,3) representing the mirror plane n·k=0, centered
+    on Gamma (the plane always passes through the origin) and sized to the
+    axis-aligned bounding box (in-plane) of where the plane actually cuts the
+    BZ edges. This reads as a plain textbook mirror-plane rectangle rather than
+    tracing the BZ's own cross-section outline at that cut (which for e.g. a
+    horizontal mirror in a hexagonal BZ would itself be a hexagon), while
+    staying tightly sized to the true local cut extent instead of a uniform
+    whole-BZ radius. Returns None if fewer than 3 intersection points.
     """
     n = np.asarray(normal, dtype=float)
     n = n / np.linalg.norm(n)
@@ -241,15 +247,15 @@ def _mirror_plane_bz_polygon(normal, bz_loops):
     if len(pts) < 3:
         return None
 
-    centroid = pts.mean(axis=0)
     u = _perp_unit(n)
     v = np.cross(n, u)
     v = v / np.linalg.norm(v)
     uv = np.column_stack([u, v])
     coords_2d = pts @ uv
-    c2d = centroid @ uv
-    angles = np.arctan2(coords_2d[:, 1] - c2d[1], coords_2d[:, 0] - c2d[0])
-    return pts[np.argsort(angles)]
+    umin, vmin = coords_2d.min(axis=0)
+    umax, vmax = coords_2d.max(axis=0)
+    corners_2d = [(umax, vmax), (umin, vmax), (umin, vmin), (umax, vmin)]
+    return np.array([c[0] * u + c[1] * v for c in corners_2d])
 
 
 def _reduce_int_vector(vec):
