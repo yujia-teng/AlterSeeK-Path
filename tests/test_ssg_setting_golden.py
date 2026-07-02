@@ -2,10 +2,10 @@
 
 --ssg-setting (ssg_setting.py + KPointsModifier(magnetic_setting=True) +
 FindSpinGroup's acc-primitive setting) had no automated coverage. This drives it
-end-to-end on a GdAuGe 2x1x1 supercell (SUPERCELL_211.vasp): the structural cell
-is low-symmetry (oC1/mP1) but --ssg-setting recovers the hP2 magnetic primitive
-and writes the hP2 butterfly path. Verified byte-identical between `main` and the
-`restructure` branch when this test was written.
+end-to-end on a GdAuGe 2x1x1 supercell (SUPERCELL_211.vasp) with the correct
+AFM magnetic order (moments 1 -1 1 -1 along c, alternating by the a1-doubling
+translation): --ssg-setting recovers the oC1 orthorhombic magnetic primitive
+(MSG P_Cmc2_1, BNS 26.76) and writes its default (non-altermagnetic) path.
 
 Guards the shared helpers in ssg_setting.py / find_sf_operations.py (the deferred
 de-duplication) and the SSG branch of interactive_modify against future breakage.
@@ -36,9 +36,10 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     if ssg_setting.find_spin_group_acc_primitive is None:
         pytest.skip("findspingroup acc-primitive setting unavailable")
 
-    # struct file, spin axis, moments (4 Gd: c-axis AFM + + - -), [Enter]=auto
-    # path, [Enter]=Option 1 op, [Enter]=vasp, output filename.
-    answers = "\n".join([str(POSCAR), "0 0 1", "5 5 -5 -5", "", "", "", "OUT"]) + "\n"
+    # struct file, spin axis, moments (4 Gd: AFM 1 -1 1 -1), [Enter]=auto path
+    # (not altermagnetic, so no operation-choice prompt), [Enter]=vasp,
+    # output filename.
+    answers = "\n".join([str(POSCAR), "0 0 1", "1 -1 1 -1", "", "", "OUT"]) + "\n"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
