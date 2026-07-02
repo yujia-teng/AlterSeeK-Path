@@ -25,7 +25,7 @@ REFERENCE = Path(__file__).parent / "references" / "case12_golden_kpoints.txt"
 @pytest.mark.skipif(not POSCAR.exists(), reason="case_12 POSCAR not present")
 def test_interactive_modify_case12_golden(tmp_path, monkeypatch):
     try:
-        from kpoints import KPointsModifier
+        from alterseek.kpoints import KPointsModifier
     except Exception as exc:  # pragma: no cover - deps missing
         pytest.skip(f"kpoints/deps unavailable: {exc}")
 

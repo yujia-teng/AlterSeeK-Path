@@ -8,7 +8,7 @@
 #              compute_centroid_hybrid / plotting_* / symmetry / geometry).
 import sys
 
-from kpoints import KPointsModifier
+from alterseek.kpoints import KPointsModifier
 
 
 def main():

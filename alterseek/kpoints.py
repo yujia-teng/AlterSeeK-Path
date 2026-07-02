@@ -8,7 +8,7 @@ from typing import List, Optional
 import numpy as np
 
 try:
-    from find_sf_operations import run as find_sf_run
+    from .find_sf_operations import run as find_sf_run
     FIND_SF_AVAILABLE = True
 except ImportError as _exc:
     print(f"[Warning] find_sf_operations unavailable ({_exc}); "
@@ -17,15 +17,15 @@ except ImportError as _exc:
     FIND_SF_AVAILABLE = False
 
 try:
-    from compute_centroid_hybrid import run as compute_centroid
-    from symmetry import (no_altermagnetism_reason,
+    from .compute_centroid_hybrid import run as compute_centroid
+    from .symmetry import (no_altermagnetism_reason,
                           is_valid_2d_spin_flip,
                           is_trivial_2d_spin_flip,
                           describe_spinflip_op)
-    from plotting_3d import (plot_spin_flip_figure,
+    from .plotting_3d import (plot_spin_flip_figure,
                              plot_spin_bz_figure,
                              plot_spin_bz_top_view_figure)
-    from plot_2d_figures import plot_2d_figures
+    from .plot_2d_figures import plot_2d_figures
     import matplotlib.pyplot as plt
     CENTROID_AVAILABLE = True
 except ImportError as _exc:
@@ -43,11 +43,11 @@ except ImportError as _exc:
     plot_2d_figures = None
     plt = None
 
-from ssg_setting import (
+from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
 )
-from io_vasp import write_bandplot_lattice_config
+from .io_vasp import write_bandplot_lattice_config
 
 
 STEP0_VERBOSE_SUMMARY = False

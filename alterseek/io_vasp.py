@@ -7,7 +7,7 @@ import os
 import numpy as np
 
 try:
-    from find_sf_operations import parse_cartesian_spin_axis, parse_magmoms
+    from .find_sf_operations import parse_cartesian_spin_axis, parse_magmoms
 except ImportError:  # pragma: no cover
     parse_cartesian_spin_axis = None
     parse_magmoms = None

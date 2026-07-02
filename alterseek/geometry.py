@@ -5,8 +5,8 @@ Extracted from compute_centroid_hybrid.py (restructuring phase 3).
 import numpy as np
 from scipy.spatial import ConvexHull, HalfspaceIntersection, Voronoi
 import sympy as sp
-from symmetry import _is_doubled_ibz_extra_label
-from lattice_kpoints import LATTICE_DATA
+from .symmetry import _is_doubled_ibz_extra_label
+from .lattice_kpoints import LATTICE_DATA
 
 
 def get_symmetry_operations(b_matrix, dataset):

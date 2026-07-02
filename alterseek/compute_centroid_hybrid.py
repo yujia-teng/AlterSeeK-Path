@@ -153,16 +153,16 @@ def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matr
         f.write("\n".join(lines))
 
 
-from lattice_kpoints import (
+from .lattice_kpoints import (
     get_kpoints, get_hull_kpoints, get_hull_kpath,
     get_display_labels, get_params, _normalize_label,
 )
-from symmetry import (
+from .symmetry import (
     laue_group_from_point_group,
     no_altermagnetism_reason,
     seekpath_to_hpkot_type,
 )
-from geometry import (
+from .geometry import (
     get_symmetry_operations,
     calculate_volume_centroid,
     detect_vacuum_axis_2d,
@@ -173,12 +173,12 @@ from geometry import (
     get_bz_loops,
     build_symmetry_ibz_cell,
 )
-from plotting_common import (
+from .plotting_common import (
     GAMMA_LABEL,
     _save_figure,
     _print_saved_paths,
 )
-from plotting_3d import setup_3d_ax, plot_ibz
+from .plotting_3d import setup_3d_ax, plot_ibz
 
 
 def run(

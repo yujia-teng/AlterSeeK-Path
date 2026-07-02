@@ -3,7 +3,7 @@
 Extracted from compute_centroid_hybrid.py (restructuring phase 1).
 """
 import os
-from lattice_kpoints import canonical_lattice_type
+from .lattice_kpoints import canonical_lattice_type
 
 GAMMA_LABEL = "\u0393"
 BZ_SPECIAL_COLORS = {

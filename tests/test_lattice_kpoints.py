@@ -8,7 +8,7 @@ either fix the code or consciously update the golden value here.
 
 import pytest
 
-import lattice_kpoints as lk
+from alterseek import lattice_kpoints as lk
 
 GAMMA = "Γ"
 

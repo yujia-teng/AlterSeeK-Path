@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - scipy is a hard dependency in practice
     ConvexHull = None
 
 try:
-    from symmetry import (
+    from .symmetry import (
         _classify_spinflip_op, _reduce_int_vector, _format_miller,
         _rotation_sense,
     )

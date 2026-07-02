@@ -13,9 +13,9 @@ Covers the pieces that have no 3D analogue:
 import numpy as np
 import pytest
 
-import compute_centroid_hybrid as cc
-import geometry
-import symmetry
+from alterseek import compute_centroid_hybrid as cc
+from alterseek import geometry
+from alterseek import symmetry
 
 
 def _diag(vals):

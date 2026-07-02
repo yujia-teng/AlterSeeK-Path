@@ -29,8 +29,8 @@ GOLDEN = REF_DIR / "ssg_supercell211_golden_kpoints.txt"
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
 def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     try:
-        from kpoints import KPointsModifier
-        import ssg_setting
+        from alterseek.kpoints import KPointsModifier
+        from alterseek import ssg_setting
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"kpoints/ssg_setting unavailable: {exc}")
     if ssg_setting.find_spin_group_acc_primitive is None:

@@ -10,8 +10,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import proj3d
 from matplotlib.patches import FancyArrowPatch
 
-from plotting_common import _get_bz_path_style, _save_figure, _print_saved_paths, _math_label
-from symmetry import (
+from .plotting_common import _get_bz_path_style, _save_figure, _print_saved_paths, _math_label
+from .symmetry import (
     _axis_bz_exit,
     _classify_spin_down_ops,
     _classify_spinflip_op,
@@ -24,7 +24,7 @@ from symmetry import (
     _rotation_sense,
     _seekpath_label_to_internal,
 )
-from geometry import (
+from .geometry import (
     _bz_kz_plane_outline,
     _get_ibz_frame_edges,
     _mapped_spin_hulls,

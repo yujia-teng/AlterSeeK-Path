@@ -260,7 +260,7 @@ def _canonical_lattice_type(lattice_type: str) -> str:
     if lattice_type.upper().startswith("ORCF"):
         return lattice_type
     try:
-        from lattice_kpoints import canonical_lattice_type
+        from alterseek.lattice_kpoints import canonical_lattice_type
 
         return canonical_lattice_type(lattice_type)
     except Exception:

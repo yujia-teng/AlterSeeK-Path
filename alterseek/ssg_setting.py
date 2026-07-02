@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
     find_spin_group_acc_primitive_from_data = None
     FIND_SG_MAGNETIC_SETTING_AVAILABLE = False
 
-from io_vasp import (
+from .io_vasp import (
     _group_poscar_sites, _write_poscar, _write_without_species,
     _reciprocal_from_poscar, _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
