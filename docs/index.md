@@ -16,6 +16,13 @@ Run the interactive k-path workflow:
 alterseek-path
 ```
 
+Run the same workflow in 2D/slab mode (see [Workflow](workflow.md) for
+details):
+
+```bash
+alterseek-path --2d
+```
+
 Plot a generated spin-resolved band structure:
 
 ```bash
@@ -28,8 +35,8 @@ options.
 Standalone utilities are also available:
 
 ```bash
-python find_sf_operations.py
-python compute_centroid_hybrid.py POSCAR
+python -m alterseek.find_sf_operations
+python -m alterseek.compute_centroid_hybrid POSCAR
 ```
 
 ## Current Scope

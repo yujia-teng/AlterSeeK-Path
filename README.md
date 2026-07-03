@@ -126,6 +126,43 @@ Saved: GdAuGe_spinbz_top_hP2.png
 
 ---
 
+## 2D / Slab Mode
+
+For 2D materials computed as slabs (vacuum along one lattice vector), run:
+
+```bash
+alterseek-path --2d
+```
+
+2D mode keeps the full 3D symmetry analysis and restricts the k-path and the
+IBZ centroid to the physical in-plane (vacuum k = 0) reciprocal plane. Step 3
+reports whether any spin-flip operation produces in-plane spin splitting:
+
+```text
+[2D mode] In-plane spin splitting: YES
+```
+
+If no valid in-plane operation exists, the ordinary in-plane path is written
+without `k'`.
+
+The vacuum direction is auto-detected in the standardized cell.
+`--vacuum-axis {a,b,c}` (default `c`) describes the vacuum axis of the input
+cell and is used for an input sanity check; the slicing axis is detected
+automatically regardless of this flag. The slab should follow the usual
+2D-structure convention, with the vacuum axis perpendicular to the layer
+plane.
+
+All k-points written to `KPOINTS_modified` have zero component along the
+vacuum axis. Instead of the 3D figures, 2D mode saves top-down figures:
+
+```text
+*_2d_ibz_<type>.png
+*_2d_spinflip_<type>.png
+*_2d_spinbz_<type>.png
+```
+
+---
+
 ## Band Plotting
 
 After the VASP band calculation:
@@ -186,9 +223,11 @@ Command-line options override the TOML file. For example:
 alterseek-path bandplot -o alterband.pdf
 ```
 
-When `lattice_type` is present, special path intervals are shaded light
-grey in the band plot. For direct plotting, you can set it manually, for
-example `lattice_type = "oF3"`.
+Ordinary path intervals are shaded a uniform grey, and `k|k'` separator gaps
+stay white. When `lattice_type` is present, it enables lattice-aware label
+handling (for example, repairing VASPKIT-truncated labels for `oI2`/`oI3`).
+For direct plotting, you can set it manually, for example
+`lattice_type = "oF3"`.
 
 Use `split_panels = 2` or `split_panels = 3` for long paths that should be
 rendered as stacked panels. Missing or `0` keeps a single panel.
@@ -204,13 +243,13 @@ Useful options include `--emin`, `--emax`, `--klabels`, `--up`, `--down`,
 Standalone spin-flip analysis:
 
 ```bash
-python find_sf_operations.py
+python -m alterseek.find_sf_operations
 ```
 
 IBZ centroid and BZ visualization for one structure:
 
 ```bash
-python compute_centroid_hybrid.py POSCAR
+python -m alterseek.compute_centroid_hybrid POSCAR
 ```
 
 ---

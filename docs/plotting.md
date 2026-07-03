@@ -63,7 +63,7 @@ output = "alterband.png"
 
 | Setting | Meaning |
 |---------|---------|
-| `lattice_type` | SeeK-path lattice key used for special interval shading |
+| `lattice_type` | SeeK-path lattice key enabling lattice-aware label handling |
 | `emin`, `emax` | energy window in eV |
 | `fig_width`, `fig_height` | figure size in inches |
 | `gap_width_inches` | visual width of each `k|k'` separator gap |
@@ -96,11 +96,14 @@ Use explicit input filenames if your VASPKIT outputs have different names:
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
 ```
 
-## Special Interval Shading
+## Interval Shading And Lattice Type
 
-When `lattice_type` is present, special path intervals are shaded light grey in
-the band plot. The main workflow writes this value automatically after KPOINTS
-generation. For direct plotting, set it manually, for example:
+Ordinary path intervals are shaded a uniform grey, and `k|k'` separator gaps
+stay white; this does not depend on `lattice_type`. When `lattice_type` is
+present, it enables lattice-aware label handling, such as repairing
+VASPKIT-truncated tick labels for `oI2`/`oI3`. The main workflow writes this
+value automatically after KPOINTS generation. For direct plotting, set it
+manually, for example:
 
 ```toml
 lattice_type = "oF3"

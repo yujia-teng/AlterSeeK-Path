@@ -137,6 +137,46 @@ and spin-BZ figures.
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
 The workflow prints a note and writes the ordinary default path.
 
+## 2D / Slab Mode
+
+For 2D materials computed as slabs (vacuum along one lattice vector), run:
+
+```bash
+alterseek-path --2d
+```
+
+2D mode keeps the full 3D symmetry analysis unchanged and restricts the
+output to the physical k-plane: the k-path, the general k point (now the 2D
+IBZ area centroid), and all written k-points lie in the in-plane
+(vacuum k = 0) reciprocal plane.
+
+Step 3 additionally classifies each spin-flip operation by its in-plane
+action and reports a verdict:
+
+```text
+[2D mode] In-plane spin splitting: YES
+```
+
+Operations whose in-plane action is trivial (identity or a simple k to -k
+map) produce no in-plane splitting. If no valid operation remains, the
+verdict is `NO` and the ordinary in-plane path is written without `k'`.
+
+The vacuum direction is auto-detected in the standardized cell.
+`--vacuum-axis {a,b,c}` (default `c`) describes the vacuum axis of the input
+cell and is used for an input sanity check; the slicing axis is detected
+automatically regardless of this flag. The slab should follow the usual
+2D-structure convention, with the vacuum axis perpendicular to the layer
+plane. The workflow warns if the input cell has no clear vacuum gap or a
+tilted vacuum axis.
+
+Instead of the 3D figures, 2D mode saves top-down figures:
+
+| File | Description |
+|------|-------------|
+| `*_2d_ibz_*.png` | 2D BZ outline, in-plane path, and the general k point |
+| `*_2d_spinflip_*.png` | spin-up IBZ and its spin-flip image with path connections |
+| `*_2d_spinbz_*.png` | spin-colored 2D BZ domain pattern |
+
 ## Next Step
 
 After running the VASP band calculation, see [Plotting](plotting.md) for
