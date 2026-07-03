@@ -50,7 +50,7 @@ KPOINTS_alter
 
 An optional `alterseek_input.toml` file can supply any of these answers (plus
 the Step 3 operation choice and Step 5 output code) so repeated runs don't
-require retyping them. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow.html#skipping-repeated-prompts-with-alterseek_inputtoml)
+require retyping them. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#skipping-repeated-prompts-with-alterseek_inputtoml)
 for the field reference.
 
 ---
@@ -126,7 +126,7 @@ alterseek-path --2d
 
 2D mode restricts the k-path and IBZ centroid to the physical in-plane
 (vacuum k = 0) reciprocal plane, and reports whether any spin-flip operation
-produces in-plane spin splitting. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow.html#2d--slab-mode)
+produces in-plane spin splitting. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#2d-slab-mode)
 for the vacuum-axis detection details and output figures.
 
 ---
@@ -142,7 +142,7 @@ alterseek-path bandplot
 This reads `KLABELS`/`REFORMATTED_BAND_UP.dat`/`REFORMATTED_BAND_DW.dat` and
 writes `alterband.png`, using settings from `alterband.toml` (written
 automatically by the main workflow) if present. See
-[Plotting](https://yujia-teng.github.io/AlterSeeK-Path/plotting.html) for the
+[Plotting](https://yujia-teng.github.io/AlterSeeK-Path/plotting/) for the
 full settings reference (energy window, split panels, gap width, etc.).
 
 ---
