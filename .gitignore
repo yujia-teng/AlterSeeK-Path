@@ -22,7 +22,7 @@ flip_spin_operations.txt
 preserve_spin_operations.txt
 spin_flip_operations.txt
 spin_preserve_operations.txt
-KPOINTS_modified
+KPOINTS_alter
 *_ibz_*.png
 *_spinflip_*.png
 *_spinbz_*.png

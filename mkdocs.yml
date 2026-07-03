@@ -24,7 +24,6 @@ nav:
   - Installation: installation.md
   - Workflow: workflow.md
   - Plotting: plotting.md
-  - Examples: examples.md
 
 markdown_extensions:
   - admonition

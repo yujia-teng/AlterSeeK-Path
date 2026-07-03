@@ -4,7 +4,7 @@ AlterSeeK-Path includes a band plotter for spin-resolved VASP band structures.
 
 ## Basic Workflow
 
-1. Generate `KPOINTS_modified` with `alterseek-path`.
+1. Generate `KPOINTS_alter` with `alterseek-path`.
 2. Run the VASP band calculation.
 3. Run VASPKIT task `211` to generate the reformatted band files.
 4. Run:
@@ -44,11 +44,10 @@ alterseek-path bandplot -o alterband.pdf
 
 ## Plot Settings
 
-If a file named `alterband.toml` exists in the same directory, the band plotter
-uses it automatically. The main `alterseek-path` workflow writes this file after
-KPOINTS generation and records the detected lattice type when available.
-
-A typical configuration is:
+If `alterband.toml` exists in the same directory, the band plotter uses it
+automatically. The main `alterseek-path` workflow writes this file after
+KPOINTS generation, recording the detected lattice type. A typical
+configuration:
 
 ```toml
 lattice_type = "hP2"
@@ -61,90 +60,23 @@ split_panels = 0
 output = "alterband.png"
 ```
 
-| Setting | Meaning |
-|---------|---------|
-| `lattice_type` | SeeK-path lattice key enabling lattice-aware label handling |
-| `emin`, `emax` | energy window in eV |
-| `fig_width`, `fig_height` | figure size in inches |
-| `gap_width_inches` | visual width of each `k|k'` separator gap |
-| `split_panels` | `0` for one panel, `2` or `3` for stacked panels |
-| `output` | output image filename, usually `.png` or `.pdf` |
+| Setting | Meaning | Equivalent CLI flag |
+|---------|---------|----------------------|
+| `lattice_type` | Enables lattice-aware label handling (e.g. repairing VASPKIT-truncated `oI2`/`oI3` labels). Does not affect the uniform-grey path shading. | `--lattice-type` |
+| `emin`, `emax` | Energy window in eV | `--emin`, `--emax` |
+| `fig_width`, `fig_height` | Figure size in inches | -- |
+| `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths | `--gap-width-inches` |
+| `split_panels` | `0` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) | `--split-panels` |
+| `output` | Output image filename (`.png` or `.pdf`) | `-o` |
 
-Then run:
-
-```bash
-alterseek-path bandplot
-```
-
-Command-line options override the TOML file:
+Command-line flags override the TOML file, e.g.:
 
 ```bash
-alterseek-path bandplot -o alterband.pdf
+alterseek-path bandplot --emin -3 --emax 3 --lattice-type mC2 --split-panels 2 -o alterband.pdf
 ```
 
-## Energy Window And Files
-
-Set the energy window from the command line:
-
-```bash
-alterseek-path bandplot --emin -3 --emax 3
-```
-
-Use explicit input filenames if your VASPKIT outputs have different names:
+Use explicit filenames if your VASPKIT outputs have different names:
 
 ```bash
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
-```
-
-## Interval Shading And Lattice Type
-
-Ordinary path intervals are shaded a uniform grey, and `k|k'` separator gaps
-stay white; this does not depend on `lattice_type`. When `lattice_type` is
-present, it enables lattice-aware label handling, such as repairing
-VASPKIT-truncated tick labels for `oI2`/`oI3`. The main workflow writes this
-value automatically after KPOINTS generation. For direct plotting, set it
-manually, for example:
-
-```toml
-lattice_type = "oF3"
-```
-
-or pass it on the command line:
-
-```bash
-alterseek-path bandplot --lattice-type mC2
-```
-
-## Split Panels
-
-Use split panels for long paths that are difficult to read in one row:
-
-```toml
-split_panels = 2
-```
-
-or:
-
-```toml
-split_panels = 3
-```
-
-Use `split_panels = 0` for one panel, `2` for two stacked panels, or `3` for
-three stacked panels. The split affects only rendering; it does not change
-KPOINTS or band data.
-
-The same option can be passed from the command line:
-
-```bash
-alterseek-path bandplot --split-panels 2
-```
-
-## Gap Width
-
-`gap_width_inches` sets the full visual width of every `k|k'` separator gap.
-This keeps the printed separator size consistent across figures with different
-path lengths.
-
-```bash
-alterseek-path bandplot --gap-width-inches 0.04
 ```

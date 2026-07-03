@@ -37,14 +37,14 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
         pytest.skip("findspingroup acc-primitive setting unavailable")
 
     # struct file, spin axis, moments (4 Gd: AFM 1 -1 1 -1), [Enter]=auto path
-    # (not altermagnetic, so no operation-choice prompt), [Enter]=vasp,
-    # output filename.
-    answers = "\n".join([str(POSCAR), "0 0 1", "1 -1 1 -1", "", "", "OUT"]) + "\n"
+    # (not altermagnetic, so no operation-choice prompt), [Enter]=vasp.
+    # Output filename is fixed (KPOINTS_alter), no longer prompted.
+    answers = "\n".join([str(POSCAR), "0 0 1", "1 -1 1 -1", "", ""]) + "\n"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
     KPointsModifier(magnetic_setting=True).interactive_modify()
 
-    produced = (tmp_path / "OUT").read_text(encoding="utf-8")
+    produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = GOLDEN.read_text(encoding="utf-8")
     assert produced.splitlines() == expected.splitlines()

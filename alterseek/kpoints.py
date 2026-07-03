@@ -52,6 +52,27 @@ from .io_vasp import write_bandplot_lattice_config
 
 STEP0_VERBOSE_SUMMARY = False
 
+INPUT_CONFIG_FILE = "alterseek_input.toml"
+
+
+def _read_input_config(path=INPUT_CONFIG_FILE):
+    """Read optional per-run answers (structure, spin_axis, moments,
+    flip_option, path, output_code) from a TOML file. Any key present skips
+    its interactive prompt; missing keys (or a missing file) fall back to the
+    normal prompt unchanged."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        import tomllib
+        with open(path, "rb") as f:
+            config = tomllib.load(f)
+        if not isinstance(config, dict):
+            raise ValueError("config file must contain key-value settings")
+        return config
+    except Exception as exc:
+        print(f"[Warning] Failed to read {path}: {exc}. Falling back to interactive prompts.")
+        return {}
+
 
 class KPointsModifier:
     def __init__(self, magnetic_setting: bool = False, output_verbose: bool = False,
@@ -512,7 +533,7 @@ class KPointsModifier:
         )
         return path_sequence
     
-    def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_modified",
+    def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
                            transformation_matrix: Optional[np.ndarray] = None,
                            transformation_label: Optional[str] = None):
         """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
@@ -580,7 +601,7 @@ class KPointsModifier:
             return False
 
     def write_kpoints_file_qe(self, new_kpoints: List[List],
-                              output_file: str = "KPOINTS_modified_qe",
+                              output_file: str = "KPOINTS_alter_qe",
                               transformation_matrix: Optional[np.ndarray] = None,
                               transformation_label: Optional[str] = None,
                               ninterp: int = 30):
@@ -722,10 +743,13 @@ class KPointsModifier:
                 except Exception as _e:
                     print(f"[Warning] Could not generate {fig_name} figure: {_e}")
 
-    def _select_spin_flip_operation(self, flip_ops, centroid_result):
+    def _select_spin_flip_operation(self, flip_ops, centroid_result, preset_choice=None):
         """Step 3: choose the spin-flip operation R (default Option 1 /
         numbered / 'list' / 'manual').  Returns (R, selected_transformation_label).
-        Extracted from interactive_modify (phase 5)."""
+        Extracted from interactive_modify (phase 5). `preset_choice`, if given
+        (from alterseek_input.toml's `flip_option`), supplies the answer for
+        the first prompt instead of reading stdin; an invalid preset falls
+        through to the normal interactive prompt on the next iteration."""
         def _op_name(op_input):
             if describe_spinflip_op is None:
                 return ""
@@ -762,9 +786,15 @@ class KPointsModifier:
                       "the operation name")
                 print("  is in fractional basis.")
             print("Default R: Option 1")
+            _preset_pending = preset_choice is not None
             while R is None:
                 print("Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': ", end='', flush=True)
-                choice = input().strip().lower()
+                if _preset_pending:
+                    choice = str(preset_choice).strip().lower()
+                    _preset_pending = False
+                    print(choice)
+                else:
+                    choice = input().strip().lower()
 
                 if not choice:
                     R = flip_ops[0]
@@ -898,10 +928,22 @@ class KPointsModifier:
         RESET = "\033[0m"
         print("=== Altermagnetic K-Path Generator ===")
 
+        input_config = _read_input_config()
+
+        def _ask(prompt_text, key):
+            print(prompt_text, end='', flush=True)
+            if key in input_config:
+                val = str(input_config[key]).strip()
+                print(val)
+                return val
+            return input().strip()
+
         # Step 0: Compute spin-flip operations from structure
         print(f"\n{BOLD}>>> Step 0: Spin symmetry{RESET}")
-        print("Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): ", end='', flush=True)
-        struct_file = input().strip()
+        struct_file = _ask(
+            "Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): ",
+            "structure",
+        )
         if not struct_file: struct_file = "POSCAR"
 
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
@@ -917,9 +959,9 @@ class KPointsModifier:
         self.extra_general_points = []
 
         if not os.path.exists(struct_file):
-            print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing spin_flip_operations.txt")
-            struct_file = None
-            centroid_struct_file = None
+            print(f"[Error] Structure file '{struct_file}' not found. Aborting "
+                  "(not falling back to a possibly stale spin_flip_operations.txt).")
+            return
         elif not FIND_SF_AVAILABLE:
             print("[Note] find_sf_operations.py not found. Skipping Step 0.")
             struct_file = None
@@ -932,10 +974,13 @@ class KPointsModifier:
                 print("Detected .mcif file --magnetic moments will be read from file.")
                 moments_str = ""
             else:
-                print("Spin axis in Cartesian coordinates (default: 0 0 1): ", end='', flush=True)
-                spin_axis_cart = input().strip()
-                print("Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): ", end='', flush=True)
-                moments_str = input().strip()
+                spin_axis_cart = _ask(
+                    "Spin axis in Cartesian coordinates (default: 0 0 1): ", "spin_axis"
+                )
+                moments_str = _ask(
+                    "Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): ",
+                    "moments",
+                )
             if not is_mcif and not moments_str:
                 standard_path_reason = "No magnetic moments entered."
                 standard_path_reason_reported = True
@@ -1091,8 +1136,10 @@ class KPointsModifier:
                     centroid_result.get('ibz_kpath', sp_path)
                 )
                 print(f"Path: {self._format_path(displayed_path)}")
-                print("Press [Enter] to use this path, or type a filename to load your own: ", end='', flush=True)
-                path_choice = input().strip()
+                path_choice = _ask(
+                    "Press [Enter] to use this path, or type a filename to load your own: ",
+                    "path",
+                )
                 if not path_choice:
                     # Build kpoints_data in the same HPKOT/SeeK-path convention
                     # as Figure 1.  lattice_kpoints.py may include curated
@@ -1247,29 +1294,24 @@ class KPointsModifier:
                 except ValueError:
                     print("Invalid input. Please enter three numbers.")
 
-        if standard_path_reason:
-            if not standard_path_reason_reported:
-                print(f"\n{BOLD}[Note] {standard_path_reason}{RESET}")
+        def _write_ordinary_path_and_stop(reason, reason_reported):
+            if not reason_reported:
+                print(f"\n{BOLD}[Note] {reason}{RESET}")
             print("Writing ordinary k-path with non-spin-flip general-k anchors.")
             print(f"\n{BOLD}>>> Step 5: Save{RESET}")
-            print("Output code ([vasp]/qe): ", end='', flush=True)
-            code_choice = input().strip().lower()
+            code_choice = _ask("Output code ([vasp]/qe): ", "output_code").lower()
             standard_general_path = self.insert_general_kpoint_anchors(
                 general_kpoint,
                 self.extra_general_points,
             )
             if code_choice == "qe":
-                if self.write_kpoints_file_qe(standard_general_path, "KPOINTS_modified_qe", None):
+                if self.write_kpoints_file_qe(standard_general_path, "KPOINTS_alter_qe", None):
                     if centroid_result is not None:
                         write_bandplot_lattice_config(
                             centroid_result.get('lattice_key', centroid_result.get('sc_type'))
                         )
             else:
-                print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
-                output_file = input().strip()
-                if not output_file:
-                    output_file = "KPOINTS_modified"
-                if self.write_kpoints_file(standard_general_path, output_file, None):
+                if self.write_kpoints_file(standard_general_path, "KPOINTS_alter", None):
                     if centroid_result is not None:
                         write_bandplot_lattice_config(
                             centroid_result.get('lattice_key', centroid_result.get('sc_type'))
@@ -1282,6 +1324,9 @@ class KPointsModifier:
                     save_after_show = getattr(fig, '_alterseek_save_after_show', None)
                     if save_after_show is not None:
                         save_after_show()
+
+        if standard_path_reason:
+            _write_ordinary_path_and_stop(standard_path_reason, standard_path_reason_reported)
             return
 
         # Step 3: Input transformation matrix
@@ -1314,6 +1359,7 @@ class KPointsModifier:
         # operation whose in-plane 2x2 block is +-I (C2z/mz/inversion type)
         # produces no in-plane splitting, so it must not be chosen for the
         # 2D path. If none survive, the slab is not a 2D altermagnet.
+        _flip_ops_emptied_2d = False
         if self.mode_2d and flip_ops:
             vax = self.input_vacuum_axis
             valid_flip_ops = [op for op in flip_ops
@@ -1331,13 +1377,26 @@ class KPointsModifier:
                       "type). This slab is not a 2D altermagnet; writing the "
                       "ordinary in-plane path without a k' partner.")
                 flip_ops = []
+                _flip_ops_emptied_2d = True
+
+        if not flip_ops:
+            # No candidate spin-flip point operation survived (structural
+            # symmetry search found none, or the 2D in-plane filter emptied
+            # the list) -- this means "not altermagnetic" for this
+            # configuration, same as the Laue-group/no-moments cases handled
+            # above. Do not fall through to manual 3x3 matrix entry.
+            _write_ordinary_path_and_stop(
+                "No spin-flip point operation available: not altermagnetic.",
+                _flip_ops_emptied_2d,
+            )
+            return
 
         # Operation naming: the listed matrices are in the INPUT-cell fractional
         # basis, so the axis cannot be read from the integers directly. Convert
         # each through Cartesian (same path Figure 2 uses) and classify there, so
         # the name (Cn / Sn / m_{hkl} / inversion) matches the figure labels.
         R, selected_transformation_label = self._select_spin_flip_operation(
-            flip_ops, centroid_result)
+            flip_ops, centroid_result, preset_choice=input_config.get('flip_option'))
         # Step 4: Process k-points
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
@@ -1360,23 +1419,18 @@ class KPointsModifier:
                     new_kpoints, display_figures)
                 # Step 5: Save modified file
                 print(f"\n{BOLD}>>> Step 5: Save{RESET}")
-                print("Output code ([vasp]/qe): ", end='', flush=True)
-                code_choice = input().strip().lower()
+                code_choice = _ask("Output code ([vasp]/qe): ", "output_code").lower()
                 if code_choice == "qe":
                     if self.write_kpoints_file_qe(
-                        new_kpoints, "KPOINTS_modified_qe", R, selected_transformation_label
+                        new_kpoints, "KPOINTS_alter_qe", R, selected_transformation_label
                     ):
                         if centroid_result is not None:
                             write_bandplot_lattice_config(
                                 centroid_result.get('lattice_key', centroid_result.get('sc_type'))
                             )
                 else:
-                    print("Enter output filename (default: KPOINTS_modified): ", end='', flush=True)
-                    output_file = input().strip()
-                    if not output_file:
-                        output_file = "KPOINTS_modified"
                     if self.write_kpoints_file(
-                        new_kpoints, output_file, R, selected_transformation_label
+                        new_kpoints, "KPOINTS_alter", R, selected_transformation_label
                     ):
                         if centroid_result is not None:
                             write_bandplot_lattice_config(

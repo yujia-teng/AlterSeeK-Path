@@ -123,7 +123,7 @@ def _read_gnu_bands(path: Path, fermi_ev: float) -> tuple[np.ndarray, np.ndarray
 
 
 def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
-    """Parse KPOINTS_modified_qe written by write_kpoints_file_qe.
+    """Parse KPOINTS_alter_qe written by write_kpoints_file_qe.
 
     Returns list of (label, ninterp, k_index) for each waypoint.
     k_index is the 0-based index into the .gnu k-point array.
@@ -212,7 +212,7 @@ def _build_tick_data(
         if k_idx >= len(kpath):
             raise ValueError(
                 f"Waypoint '{label}' has k-index {k_idx} but .gnu file has only "
-                f"{len(kpath)} k-points — KPOINTS_modified_qe and .gnu file mismatch"
+                f"{len(kpath)} k-points — KPOINTS_alter_qe and .gnu file mismatch"
             )
         labels.append(label)
         positions.append(float(kpath[k_idx]))
@@ -224,7 +224,7 @@ def plot_alterband_qe(
     *,
     band_up: str | Path = "band_up.gnu",
     band_down: str | Path = "band_down.gnu",
-    kpoints_qe: str | Path = "KPOINTS_modified_qe",
+    kpoints_qe: str | Path = "KPOINTS_alter_qe",
     output: str | Path = "alterband_qe.png",
     fermi_ev: float = 0.0,
     elim: tuple[float, float] = DEFAULT_ELIM,
@@ -329,7 +329,7 @@ def main(argv: list[str] | None = None) -> None:
     output = plot_alterband_qe(
         band_up=config.get("band_up", "band_up.gnu"),
         band_down=config.get("band_down", "band_down.gnu"),
-        kpoints_qe=config.get("kpoints_qe", "KPOINTS_modified_qe"),
+        kpoints_qe=config.get("kpoints_qe", "KPOINTS_alter_qe"),
         output=out_path,
         fermi_ev=float(config.get("fermi_ev", 0.0)),
         elim=(emin, emax),
