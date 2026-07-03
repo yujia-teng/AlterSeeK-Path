@@ -147,11 +147,13 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 alterseek-path --ssg-setting
 ```
 
-By default, Figure 1/KPOINTS are built from the plain structural SeeK-path
-setting. `--ssg-setting` instead builds them from FindSpinGroup's spin-space-
-group acc-primitive magnetic setting (a "He-marker" helper structure
-representing the magnetic primitive cell), which can differ from the
-structural one. Falls back to the structural setting with a warning if this
+By default, Figure 1/KPOINTS are built from the original structural cell's
+symmetry. Magnetic order can lower that symmetry -- e.g. a hexagonal
+structural lattice whose magnetic pattern only respects orthorhombic
+symmetry. `--ssg-setting` instead builds Figure 1/KPOINTS from the magnetic
+primitive cell (the lower, magnetically-correct symmetry) via
+FindSpinGroup's spin-space-group setting, rather than the higher-symmetry
+structural cell. Falls back to the structural setting with a warning if this
 fails. Add `--output verbose` to keep the intermediate helper files for
 debugging instead of deleting them.
 
