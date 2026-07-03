@@ -131,6 +131,19 @@ for the vacuum-axis detection details and output figures.
 
 ---
 
+## `--ssg-setting`
+
+```bash
+alterseek-path --ssg-setting
+```
+
+Builds Figure 1/KPOINTS from FindSpinGroup's spin-space-group acc-primitive
+magnetic setting instead of the plain structural SeeK-path setting. See
+[Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#-ssg-setting)
+for details and the `--output verbose` flag.
+
+---
+
 ## Band Plotting
 
 After the VASP band calculation and VASPKIT task `211`, run:
