@@ -33,7 +33,7 @@ def main():
     parser.add_argument(
         "--ssg-setting",
         action="store_true",
-        help="Experimental: generate Figure 1/KPOINTS from FindSpinGroup SSG setting.",
+        help="Generate Figure 1/KPOINTS from FindSpinGroup's SSG setting.",
     )
     parser.add_argument(
         "--output",

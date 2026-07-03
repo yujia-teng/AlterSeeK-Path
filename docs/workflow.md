@@ -141,7 +141,7 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 | `*_2d_spinflip_*.png` | spin-up IBZ and its spin-flip image with path connections |
 | `*_2d_spinbz_*.png` | spin-colored 2D BZ domain pattern |
 
-## Experimental: `--ssg-setting`
+## `--ssg-setting`
 
 ```bash
 alterseek-path --ssg-setting
@@ -153,8 +153,7 @@ group acc-primitive magnetic setting (a "He-marker" helper structure
 representing the magnetic primitive cell), which can differ from the
 structural one. Falls back to the structural setting with a warning if this
 fails. Add `--output verbose` to keep the intermediate helper files for
-debugging instead of deleting them. This is an experimental workflow --
-expect rough edges.
+debugging instead of deleting them.
 
 ## Next Step
 
