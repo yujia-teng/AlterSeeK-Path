@@ -243,18 +243,6 @@ def _format_tick_label(label: str) -> str:
     return label
 
 
-def _label_key(label: str) -> str:
-    base = str(label).strip().strip("$").rstrip("'")
-    upper = base.upper()
-    if upper in {"GAMMA", "Γ", "\u8795"} or "GAMMA" in upper:
-        return "\u0393"
-    return base
-
-
-def _label_keys(label: str) -> list[str]:
-    return [_label_key(part) for part in str(label).split("|") if part]
-
-
 def _canonical_lattice_type(lattice_type: str) -> str:
     lattice_type = str(lattice_type).strip()
     if lattice_type.upper().startswith("ORCF"):

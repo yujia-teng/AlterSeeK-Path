@@ -253,25 +253,6 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
         ax.legend(loc='upper right')
 
 
-def plot_mapped_bz(ax, points_arr, hull, centroid_cart, unique_ops):
-    colormap = plt.colormaps["nipy_spectral"]
-    num_ops = len(unique_ops)
-    for i, R in enumerate(unique_ops):
-        mapped_pts = (R @ points_arr.T).T
-        if hull is not None:
-            ax.plot_trisurf(mapped_pts[:,0], mapped_pts[:,1], mapped_pts[:,2],
-                            triangles=hull.simplices, color=colormap(i/num_ops),
-                            edgecolor='none', alpha=0.2, shade=False)
-        mc = R @ centroid_cart
-        ax.scatter(mc[0], mc[1], mc[2], c='gold', marker='*', s=250,
-                   edgecolors='k', zorder=200,
-                   label="Mapped Centroids" if i == 0 else None, depthshade=False)
-        ax.text(mc[0], mc[1], mc[2], f"  {i+1}", fontsize=10, fontweight='bold', zorder=201)
-    avg_pt = np.mean(points_arr, axis=0)
-    ax.scatter(*avg_pt, c='cyan', marker='D', s=100, edgecolors='k', zorder=200, label='Avg Point')
-    ax.legend(loc='upper right')
-
-
 def _screen_xy(ax, pt3):
     """Project a 3D point to the axes' 2D projected (screen) coordinates."""
     x, y, _ = proj3d.proj_transform(pt3[0], pt3[1], pt3[2], ax.get_proj())

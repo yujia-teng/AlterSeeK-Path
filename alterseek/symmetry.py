@@ -93,10 +93,6 @@ def seekpath_to_hpkot_type(sp_result):
     return lattice_key, conv_params
 
 
-def seekpath_to_sc_type(sp_result):
-    return seekpath_to_hpkot_type(sp_result)
-
-
 def _seekpath_label_to_internal(label):
     if label == 'GAMMA':
         return '\u0393'

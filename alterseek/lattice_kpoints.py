@@ -240,16 +240,6 @@ def _normalize_label(label: str) -> str:
     return GREEK_LABELS.get(label, label)
 
 
-def _denormalize_label(label: str) -> str:
-    """Convert local labels back to SeeK-path table labels."""
-    if label == "\u0393":
-        return "GAMMA"
-    for raw, normalized in GREEK_LABELS.items():
-        if label == normalized:
-            return raw
-    return label
-
-
 def _normalize_path(path):
     return [(_normalize_label(a), _normalize_label(b)) for a, b in path]
 
@@ -464,25 +454,6 @@ def get_hull_kpath(lattice_type, spacegroup_number=None):
     return list(LATTICE_DATA[key]["kpath"])
 
 
-def get_path_kpoints(
-    lattice_type,
-    path_segments,
-    a=None,
-    b=None,
-    c=None,
-    alpha=None,
-    beta=None,
-    gamma=None,
-):
-    """Return just the point coordinates required by a band path."""
-    points = get_kpoints(
-        lattice_type, a=a, b=b, c=c, alpha=alpha, beta=beta, gamma=gamma,
-        include_hidden=False,
-    )
-    labels = {label for segment in path_segments for label in segment}
-    return {label: points[label] for label in labels if label in points}
-
-
 def get_kpath(lattice_type, spacegroup_number=None, with_time_reversal=True):
     """
     Return the HPKOT base path plus applicable paper-defined extra segments.
@@ -534,16 +505,6 @@ def get_params(
         return {}
     raw = _evaluate_kparams(data, a, b, c, alpha, beta, gamma)
     return {name: raw[name] for name, _expr in data["kparam_def"]}
-
-
-def seekpath_label_to_internal(label: str) -> str:
-    """Normalize a SeeK-path label for lookup in this module."""
-    return _normalize_label(label)
-
-
-def internal_label_to_seekpath(label: str) -> str:
-    """Convert a local label to the corresponding SeeK-path label."""
-    return _denormalize_label(label)
 
 
 # Historical detection helper retained for scripts that import it directly.

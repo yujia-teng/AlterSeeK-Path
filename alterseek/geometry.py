@@ -5,7 +5,6 @@ Extracted from compute_centroid_hybrid.py (restructuring phase 3).
 import numpy as np
 from scipy.spatial import ConvexHull, HalfspaceIntersection, Voronoi
 import sympy as sp
-from .symmetry import _is_doubled_ibz_extra_label
 from .lattice_kpoints import LATTICE_DATA
 
 
@@ -328,23 +327,6 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices, hull_labels=None):
             if cos_a < 0.97:
                 edges.append((hull_pts[i], hull_pts[j]))
     return edges
-
-
-def _split_hull_faces_by_extra_labels(hull_pts, hull_simplices, hull_labels=None):
-    points = np.array(hull_pts)
-    main_faces = []
-    extra_faces = []
-    for simplex in hull_simplices:
-        face = [points[s] for s in simplex]
-        if hull_labels is not None and any(
-            _is_doubled_ibz_extra_label(hull_labels[s])
-            for s in simplex
-            if s < len(hull_labels)
-        ):
-            extra_faces.append(face)
-        else:
-            main_faces.append(face)
-    return main_faces, extra_faces
 
 
 def _bz_halfspaces(b_matrix, grid_radius=2):
