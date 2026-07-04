@@ -30,11 +30,28 @@ pip install -e .
 alterseek-path
 ```
 
-The default output file is:
+This runs interactively, prompting for the structure file, spin axis,
+moments, k-path, and so on. The default output file is:
 
 ```text
 KPOINTS_alter
 ```
+
+To skip the prompts (e.g. for repeated runs on the same structure), put an
+`alterseek_input.toml` file in the working directory:
+
+```toml
+structure = "POSCAR"
+spin_axis = "0 0 1"
+moments = "5 -5"
+path = ""
+flip_option = 1
+output_code = "vasp"
+```
+
+`alterseek-path` reads any keys it finds and only prompts for the ones that
+are missing. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#skipping-repeated-prompts-with-alterseek_inputtoml)
+for the full field reference.
 
 ---
 
@@ -48,10 +65,8 @@ KPOINTS_alter
 - K-path: press Enter for the auto-generated path, or give a line-mode
   `KPATH.in`/KPOINTS-style file.
 
-An optional `alterseek_input.toml` file can supply any of these answers (plus
-the Step 3 operation choice and Step 5 output code) so repeated runs don't
-require retyping them. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#skipping-repeated-prompts-with-alterseek_inputtoml)
-for the field reference.
+These (plus the Step 3 operation choice and Step 5 output code) can also be
+supplied via `alterseek_input.toml` — see Quick Start above.
 
 ---
 

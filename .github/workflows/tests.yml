@@ -14,6 +14,6 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install numpy scipy sympy matplotlib spglib seekpath pymatgen pytest
+        run: pip install -r requirements.txt pytest
       - name: Run tests
         run: pytest tests -q
