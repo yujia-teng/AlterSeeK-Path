@@ -229,7 +229,21 @@ def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
         else:
             with open(filename, "w") as f:
                 f.write("# AlterSeeK band-plot settings\n")
+                f.write("# Reads: KLABELS, REFORMATTED_BAND_UP.dat, REFORMATTED_BAND_DW.dat\n")
                 f.write(line)
         print(f"Band plot config updated: {filename} ({line.strip()})")
     except Exception as exc:
         print(f"[Warning] Could not update band plot config '{filename}': {exc}")
+
+
+def write_qe_bandplot_config(filename="alterband_qe.toml"):
+    """Create the QE band-plot config file with a header comment, if missing."""
+    if os.path.exists(filename):
+        return
+    try:
+        with open(filename, "w") as f:
+            f.write("# AlterSeeK QE band-plot settings\n")
+            f.write("# Reads: band_up.gnu, band_down.gnu, KPOINTS_alter_qe\n")
+        print(f"Band plot config created: {filename}")
+    except Exception as exc:
+        print(f"[Warning] Could not create band plot config '{filename}': {exc}")

@@ -4,8 +4,6 @@ AlterSeeK-Path generates k-point paths for altermagnet band-structure calculatio
 
 ![AlterSeeK-Path example](./example/HEX.png)
 
-**Current support:** VASP workflows. Quantum ESPRESSO support is partial.
-
 For a longer user guide, see
 [yujia-teng.github.io/AlterSeeK-Path](https://yujia-teng.github.io/AlterSeeK-Path/).
 

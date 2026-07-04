@@ -47,7 +47,7 @@ from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
 )
-from .io_vasp import write_bandplot_lattice_config
+from .io_vasp import write_bandplot_lattice_config, write_qe_bandplot_config
 
 
 STEP0_VERBOSE_SUMMARY = False
@@ -1306,10 +1306,7 @@ class KPointsModifier:
             )
             if code_choice == "qe":
                 if self.write_kpoints_file_qe(standard_general_path, "KPOINTS_alter_qe", None):
-                    if centroid_result is not None:
-                        write_bandplot_lattice_config(
-                            centroid_result.get('lattice_key', centroid_result.get('sc_type'))
-                        )
+                    write_qe_bandplot_config()
             else:
                 if self.write_kpoints_file(standard_general_path, "KPOINTS_alter", None):
                     if centroid_result is not None:
@@ -1424,10 +1421,7 @@ class KPointsModifier:
                     if self.write_kpoints_file_qe(
                         new_kpoints, "KPOINTS_alter_qe", R, selected_transformation_label
                     ):
-                        if centroid_result is not None:
-                            write_bandplot_lattice_config(
-                                centroid_result.get('lattice_key', centroid_result.get('sc_type'))
-                            )
+                        write_qe_bandplot_config()
                 else:
                     if self.write_kpoints_file(
                         new_kpoints, "KPOINTS_alter", R, selected_transformation_label

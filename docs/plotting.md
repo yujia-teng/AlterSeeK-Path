@@ -62,7 +62,7 @@ output = "alterband.png"
 
 | Setting | Meaning | Equivalent CLI flag |
 |---------|---------|----------------------|
-| `lattice_type` | Enables lattice-aware label handling (e.g. repairing VASPKIT-truncated `oI2`/`oI3` labels). Does not affect the uniform-grey path shading. | `--lattice-type` |
+| `lattice_type` | Enables lattice-aware label handling (e.g. repairing VASPKIT-truncated `oI2`/`oI3` labels) | `--lattice-type` |
 | `emin`, `emax` | Energy window in eV | `--emin`, `--emax` |
 | `fig_width`, `fig_height` | Figure size in inches | -- |
 | `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths | `--gap-width-inches` |
@@ -80,3 +80,46 @@ Use explicit filenames if your VASPKIT outputs have different names:
 ```bash
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
 ```
+
+## Quantum ESPRESSO Band Plotting
+
+For QE workflows, use the separate `plot_alterband_qe.py` script (or
+`alterseek-bandplot-qe`) instead. It reads `bands.x` `.gnu` output and the
+`KPOINTS_alter_qe` waypoint file written by `alterseek-path`:
+
+```bash
+alterseek-bandplot-qe
+```
+
+Settings are config-file only (there is no CLI-flag equivalent besides
+`--config`/`-o`). If `alterband_qe.toml` exists in the working directory, it
+is used automatically:
+
+```toml
+band_up = "band_up.gnu"
+band_down = "band_down.gnu"
+fermi_ev = 0.0
+emin = -2
+emax = 2
+fig_width = 12
+fig_height = 5
+gap_width_inches = 0.05
+split_panels = 0
+output = "alterband_qe.png"
+```
+
+| Setting | Meaning |
+|---------|---------|
+| `band_up`, `band_down` | Spin-up/down `bands.x` `.gnu` files |
+| `kpoints_qe` | The `K_POINTS crystal_b` waypoint file written by `alterseek-path` |
+| `fermi_ev` | Energy shift applied before plotting (QE `.gnu` output is not pre-shifted to E_F, unlike VASPKIT's reformatted files) |
+| `emin`, `emax` | Energy window in eV |
+| `fig_width`, `fig_height` | Figure size in inches |
+| `gap_frac`, `gap_width_inches` | Same meaning as the VASP plotter's settings |
+| `split_panels` | `0` for one panel, `2`/`3` for stacked panels |
+| `rotate_xtick_labels`, `xtick_rotation` | Rotate x-axis tick labels |
+| `output` | Output image filename (`.png` or `.pdf`) |
+
+There is no `lattice_type` setting for QE plotting — it exists on the VASP
+side only to repair VASPKIT's truncated labels, which doesn't apply here
+since QE labels come from AlterSeeK-Path's own `KPOINTS_alter_qe` writer.

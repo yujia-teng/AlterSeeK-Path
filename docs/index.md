@@ -39,10 +39,7 @@ python -m alterseek.find_sf_operations
 python -m alterseek.compute_centroid_hybrid POSCAR
 ```
 
-## Current Scope
-
-AlterSeeK-Path currently focuses on VASP workflows. Quantum ESPRESSO support is
-partial.
+## Coordinate Conventions
 
 The internal path conventions follow SeeK-path labels and reciprocal
 bases. When writing VASP `KPOINTS`, the final numerical coordinates are

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,8 @@ from matplotlib.ticker import MaxNLocator
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_FIG_SIZE = (12.0, 5.0)
 DEFAULT_GAP_FRAC = 0.003
+DEFAULT_GAP_WIDTH_INCHES = 0.05
+DEFAULT_PANEL_GAP = 0.08
 GREY_COLOR = "0.65"
 BAND_LW = 0.7
 BAND_UP_COLOR = "black"
@@ -220,6 +223,110 @@ def _build_tick_data(
     return labels, positions
 
 
+def _is_valid_split_label(label: str) -> bool:
+    return label not in HELPER_LABELS
+
+
+def _split_indices(labels: list[str], split_panels: int) -> list[int]:
+    if split_panels in (None, 0, 1):
+        return []
+    if split_panels not in {2, 3}:
+        raise ValueError("split_panels must be 0, 2, or 3")
+
+    candidates = [
+        i for i in range(1, len(labels) - 1)
+        if _is_valid_split_label(labels[i])
+    ]
+    if not candidates:
+        return []
+
+    targets = [math.ceil(len(labels) / split_panels * i) for i in range(1, split_panels)]
+    selected: list[int] = []
+    for target in targets:
+        options = [idx for idx in candidates if idx not in selected]
+        if not options:
+            break
+
+        def score(idx: int) -> tuple[float, float, int]:
+            trial = sorted(selected + [idx])
+            bounds = [0, *trial, len(labels) - 1]
+            widths = [bounds[i + 1] - bounds[i] for i in range(len(bounds) - 1)]
+            return (abs(idx - target), max(widths) - min(widths), idx)
+
+        selected.append(min(options, key=score))
+
+    return sorted(selected)
+
+
+def _panel_ranges(labels: list[str], positions: list[float], split_panels: int):
+    splits = _split_indices(labels, split_panels)
+    bounds = [0, *splits, len(labels) - 1]
+    return [(positions[bounds[i]], positions[bounds[i + 1]]) for i in range(len(bounds) - 1)]
+
+
+def _draw_panel(
+    ax,
+    *,
+    labels: list[str],
+    positions: list[float],
+    tick_labels: list[str],
+    kpath: np.ndarray,
+    bands_up: np.ndarray,
+    bands_dw: np.ndarray,
+    elim: tuple[float, float],
+    xlim: tuple[float, float],
+    gap_half: float,
+    font_size: int,
+    rotate_xtick_labels: bool,
+    xtick_rotation: float,
+) -> None:
+    boundary_pos = [p for label, p in zip(labels, positions) if label not in HELPER_LABELS]
+    gap_pos = [p for label, p in zip(labels, positions) if label in GAP_LABELS]
+
+    for i in range(len(positions) - 1):
+        left, right = positions[i], positions[i + 1]
+        if right < xlim[0] or left > xlim[1]:
+            continue
+        if labels[i] in HELPER_LABELS or labels[i + 1] in HELPER_LABELS:
+            continue
+        ax.axvspan(left, right, color=GREY_COLOR, lw=0, zorder=0)
+
+    for ib in range(bands_dw.shape[1]):
+        ax.plot(kpath, bands_dw[:, ib], color=BAND_DOWN_COLOR, lw=BAND_LW, zorder=2)
+    for ib in range(bands_up.shape[1]):
+        ax.plot(kpath, bands_up[:, ib], color=BAND_UP_COLOR, lw=BAND_LW, zorder=3)
+
+    for pos in gap_pos:
+        ax.axvspan(pos - gap_half, pos + gap_half, color="white", zorder=4, lw=0)
+
+    for pos in boundary_pos:
+        if xlim[0] <= pos <= xlim[1]:
+            ax.axvline(x=pos, color=VLINE_COLOR, lw=VLINE_LW, zorder=5)
+
+    for pos in gap_pos:
+        if xlim[0] <= pos <= xlim[1]:
+            ax.axvline(x=pos - gap_half, color="black", lw=0.8, zorder=5)
+            ax.axvline(x=pos + gap_half, color="black", lw=0.8, zorder=5)
+
+    visible_ticks = [
+        (pos, lab) for pos, lab in zip(positions, tick_labels)
+        if xlim[0] <= pos <= xlim[1]
+    ]
+    ax.axhline(y=0, color=FERMI_COLOR, lw=FERMI_LW, ls="--", zorder=1)
+    ax.set_xticks([pos for pos, _ in visible_ticks])
+    xtick_label_kwargs: dict[str, Any] = {"fontsize": font_size}
+    if rotate_xtick_labels:
+        xtick_label_kwargs.update(
+            {"rotation": xtick_rotation, "ha": "right", "rotation_mode": "anchor"}
+        )
+    ax.set_xticklabels([lab for _, lab in visible_ticks], **xtick_label_kwargs)
+    ax.set_xlim(xlim)
+    ax.set_ylim(elim)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", labelsize=font_size)
+
+
 def plot_alterband_qe(
     *,
     band_up: str | Path = "band_up.gnu",
@@ -229,6 +336,11 @@ def plot_alterband_qe(
     fermi_ev: float = 0.0,
     elim: tuple[float, float] = DEFAULT_ELIM,
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
+    gap_frac: float = DEFAULT_GAP_FRAC,
+    gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
+    split_panels: int = 0,
+    rotate_xtick_labels: bool = False,
+    xtick_rotation: float = 45.0,
 ) -> Path:
     """Create the QE spin-resolved band plot and return the output path."""
     band_up_path = Path(band_up)
@@ -246,6 +358,15 @@ def plot_alterband_qe(
 
     waypoints = _parse_kpoints_qe(kpoints_path)
     labels, positions = _build_tick_data(waypoints, kpath)
+    x_total = positions[-1] - positions[0]
+    if x_total <= 0:
+        raise ValueError("KPOINTS_alter_qe positions must increase from first to last entry")
+    if gap_frac < 0:
+        raise ValueError("gap_frac must be non-negative")
+    if gap_width_inches is not None and gap_width_inches < 0:
+        raise ValueError("gap_width_inches must be non-negative")
+
+    tick_labels = [_format_tick_label(lbl) for lbl in labels]
 
     in_window = (
         ((bands_up.max(axis=0) >= elim[0]) & (bands_up.min(axis=0) <= elim[1]))
@@ -254,52 +375,52 @@ def plot_alterband_qe(
     bands_up = bands_up[:, in_window]
     bands_dw = bands_dw[:, in_window]
 
-    x_total = float(kpath[-1] - kpath[0])
-    gap_half = x_total * DEFAULT_GAP_FRAC
+    ranges = _panel_ranges(labels, positions, int(split_panels or 0))
+    n_panels = len(ranges)
+    total_size = fig_size
+    if n_panels > 1:
+        total_size = (fig_size[0], fig_size[1] * n_panels)
+    font_size = FONT_SIZE + (2 if n_panels > 1 else 0)
+    fig, axes = plt.subplots(
+        n_panels,
+        1,
+        figsize=total_size,
+        sharey=True,
+        squeeze=False,
+        constrained_layout=True,
+        gridspec_kw={"hspace": DEFAULT_PANEL_GAP},
+    )
+    flat_axes = list(axes[:, 0])
 
-    boundary_pos = [p for lbl, p in zip(labels, positions) if lbl not in HELPER_LABELS]
-    gap_pos = [p for lbl, p in zip(labels, positions) if lbl in GAP_LABELS]
-    tick_labels = [_format_tick_label(lbl) for lbl in labels]
+    for ax, xlim in zip(flat_axes, ranges):
+        ax.set_xlim(xlim)
+        ax.set_ylim(elim)
+        ax.set_xticks([p for p in positions if xlim[0] <= p <= xlim[1]])
+    fig.canvas.draw()
+    if gap_width_inches is None:
+        gap_half = x_total * gap_frac
+    else:
+        axis_width_inches = flat_axes[0].get_window_extent().width / fig.dpi
+        gap_half = 0.5 * gap_width_inches * x_total / axis_width_inches
 
-    fig, ax = plt.subplots(figsize=fig_size, constrained_layout=True)
+    for ax, xlim in zip(flat_axes, ranges):
+        _draw_panel(
+            ax,
+            labels=labels,
+            positions=positions,
+            tick_labels=tick_labels,
+            kpath=kpath,
+            bands_up=bands_up,
+            bands_dw=bands_dw,
+            elim=elim,
+            xlim=xlim,
+            gap_half=gap_half,
+            font_size=font_size,
+            rotate_xtick_labels=rotate_xtick_labels,
+            xtick_rotation=xtick_rotation,
+        )
 
-    # grey shading for HPKOT path intervals (skip helper-label boundaries)
-    for i in range(len(positions) - 1):
-        if labels[i] in HELPER_LABELS or labels[i + 1] in HELPER_LABELS:
-            continue
-        ax.axvspan(positions[i], positions[i + 1], color=GREY_COLOR, lw=0, zorder=0)
-
-    # spin-down (red) below spin-up (black)
-    for ib in range(bands_dw.shape[1]):
-        ax.plot(kpath, bands_dw[:, ib], color=BAND_DOWN_COLOR, lw=BAND_LW, zorder=2)
-    for ib in range(bands_up.shape[1]):
-        ax.plot(kpath, bands_up[:, ib], color=BAND_UP_COLOR, lw=BAND_LW, zorder=3)
-
-    # white gap strip for k|k' discontinuities
-    for pos in gap_pos:
-        ax.axvspan(pos - gap_half, pos + gap_half, color="white", zorder=4, lw=0)
-
-    # vertical lines at high-sym points
-    for pos in boundary_pos:
-        ax.axvline(x=pos, color=VLINE_COLOR, lw=VLINE_LW, zorder=5)
-
-    # double vertical lines at gap edges
-    for pos in gap_pos:
-        ax.axvline(x=pos - gap_half, color="black", lw=0.8, zorder=5)
-        ax.axvline(x=pos + gap_half, color="black", lw=0.8, zorder=5)
-
-    ax.axhline(y=0, color=FERMI_COLOR, lw=FERMI_LW, ls="--", zorder=1)
-
-    visible = [(p, t) for p, t in zip(positions, tick_labels) if kpath[0] <= p <= kpath[-1]]
-    ax.set_xticks([p for p, _ in visible])
-    ax.set_xticklabels([t for _, t in visible], fontsize=FONT_SIZE)
-    ax.tick_params(axis="x", length=0)
-    ax.tick_params(axis="y", labelsize=FONT_SIZE)
-    ax.set_xlim(kpath[0], kpath[-1])
-    ax.set_ylim(elim)
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
-    ax.set_ylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=FONT_SIZE + 1)
-
+    fig.supylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=font_size + 1)
     fig.savefig(output_path, dpi=800, bbox_inches="tight")
     plt.close(fig)
     return output_path
@@ -325,6 +446,8 @@ def main(argv: list[str] | None = None) -> None:
     fig_width = float(config.get("fig_width", DEFAULT_FIG_SIZE[0]))
     fig_height = float(config.get("fig_height", DEFAULT_FIG_SIZE[1]))
     out_path = args.output or config.get("output", "alterband_qe.png")
+    gap_width_config = config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
+    gap_width_inches = None if gap_width_config is None else float(gap_width_config)
 
     output = plot_alterband_qe(
         band_up=config.get("band_up", "band_up.gnu"),
@@ -334,6 +457,11 @@ def main(argv: list[str] | None = None) -> None:
         fermi_ev=float(config.get("fermi_ev", 0.0)),
         elim=(emin, emax),
         fig_size=(fig_width, fig_height),
+        gap_frac=float(config.get("gap_frac", DEFAULT_GAP_FRAC)),
+        gap_width_inches=gap_width_inches,
+        split_panels=int(config.get("split_panels", 0) or 0),
+        rotate_xtick_labels=bool(config.get("rotate_xtick_labels", False)),
+        xtick_rotation=float(config.get("xtick_rotation", 45.0)),
     )
     print(f"Band plot written to: {output}")
 
