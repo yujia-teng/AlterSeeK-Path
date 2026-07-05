@@ -17,7 +17,6 @@ from .symmetry import (
     _classify_spinflip_op,
     _doubled_ibz_extra_flags,
     _format_miller,
-    _is_doubled_ibz_extra_label,
     _mirror_plane_bz_polygon,
     _perp_unit,
     _reduce_int_vector,
@@ -1037,6 +1036,15 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     up_labeled = False
     down_labeled = False
 
+    # Ordinary HPKOT labels ending in "_2" (e.g. mP1's B_2/D_2, hR-family
+    # points) are real hull vertices, not project-doubled-IBZ copies; only
+    # treat a hull as "doubled" if it also contains a genuine "_A" copied
+    # label (see _doubled_ibz_extra_flags).
+    extra_flags = (
+        _doubled_ibz_extra_flags(hull_labels) if hull_labels is not None
+        else None
+    )
+
     if mapped_spin_hulls is not None:
         cells_to_draw = mapped_spin_hulls
     else:
@@ -1049,10 +1057,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         if poly is None:
             continue
 
-        has_extra = (
-            hull_labels is not None
-            and any(_is_doubled_ibz_extra_label(lbl) for lbl in hull_labels)
-        )
+        has_extra = extra_flags is not None and any(extra_flags)
         if is_down:
             color = '#1f4e9e'
             extra_color = IBZ_FACE_COLORS["down_extra"]
@@ -1069,8 +1074,8 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
             ax.fill(poly[:, 0], poly[:, 1], facecolor=extra_color, alpha=0.46,
                     edgecolor='none', label=label)
             original_pts = np.array([
-                point for point, lbl in zip(cell_pts, hull_labels)
-                if not _is_doubled_ibz_extra_label(lbl)
+                point for point, is_extra in zip(cell_pts, extra_flags)
+                if not is_extra
             ])
             if len(original_pts) >= 4:
                 try:
@@ -1092,7 +1097,12 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         closed = np.vstack([outline, outline[0]])
         ax.plot(closed[:, 0], closed[:, 1], color='black', lw=2.0, label='BZ boundary')
 
-    if show_projected_axes:
+    if show_projected_axes and abs(z0) < 1e-8:
+        # The b1/b2/b3 arrows are drawn from a hardcoded (0, 0) origin, i.e.
+        # Gamma's own projection, so they are only meaningful when the cut
+        # plane actually passes through Gamma (z0 = 0). At any other cut
+        # height the true BZ cross-section is centered elsewhere and the
+        # arrows would point at a location no longer inside it.
         draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=z0)
 
     ax.set_aspect('equal', adjustable='box')

@@ -713,17 +713,43 @@ class KPointsModifier:
                     hull_labels=centroid_result.get('hull_labels'),
                     **flip_kwargs,
                 )
+                top_view_z0 = 0.0
+                # b_matrix[2, 2] (the z-component of the standardized
+                # reciprocal frame's 3rd vector) is not a reliable cut
+                # height: depending on how seekpath orients the primitive
+                # cell, no single reciprocal vector may point along
+                # Cartesian z at all, making that element exactly zero
+                # (silently defeating any 0.5 * b_mat[2, 2] cut) even
+                # though the actual 3D BZ solid still spans real Cartesian
+                # kz range. Use the true kz half-extent of the BZ
+                # boundary itself instead, which is robust to orientation.
+                if (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')) \
+                        and 'bz_loops' in centroid_result:
+                    # Rhombohedral (hR1/hR2) and cubic AM point groups
+                    # (432/-43m/m-3m) reaching this branch have no vertical
+                    # mirror, so a kz=0 (Gamma-centered) cut sits on a
+                    # degenerate/low-symmetry height and shows a spurious
+                    # or collapsed domain split instead of the true bulk
+                    # pattern. Cut away from kz=0 instead: 0.5 of the BZ's
+                    # kz extent for hR1/hR2, 0.25 for cubic (cubic's kz=0.5
+                    # cut can coincide with a boundary/high-symmetry plane
+                    # that makes the pattern look identical to the
+                    # tetragonal case; 0.25 avoids that).
+                    bz_pts = np.vstack(centroid_result['bz_loops'])
+                    z_max = float(np.abs(bz_pts[:, 2]).max())
+                    z_frac = 0.5 if sc_type in ('hR1', 'hR2') else 0.25
+                    top_view_z0 = z_frac * z_max
                 if plot_spin_bz_figure is not None:
                     figure_specs.append((
                         plot_spin_bz_figure, 'spin-BZ',
                         f'{basename}_spinbz_{sc_type}.png',
-                        dict(**spin_bz_kwargs, **view_kwargs),
+                        dict(z0=top_view_z0, **spin_bz_kwargs, **view_kwargs),
                     ))
                 if plot_spin_bz_top_view_figure is not None:
                     figure_specs.append((
                         plot_spin_bz_top_view_figure, 'spin-BZ top-view',
                         f'{basename}_spinbz_top_{sc_type}.png',
-                        dict(z0=0.0, **spin_bz_kwargs),
+                        dict(z0=top_view_z0, **spin_bz_kwargs),
                     ))
             for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
                 try:
