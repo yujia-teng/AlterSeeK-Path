@@ -429,12 +429,21 @@ def plot_alterband(
         ax.set_xlim(xlim)
         ax.set_ylim(elim)
         ax.set_xticks([p for p in positions if xlim[0] <= p <= xlim[1]])
-    fig.canvas.draw()
-    if gap_width_inches is None:
-        gap_half = x_total * gap_frac
-    else:
-        axis_width_inches = flat_axes[0].get_window_extent().width / fig.dpi
-        gap_half = 0.5 * gap_width_inches * x_total / axis_width_inches
+
+    # Every panel is rendered at the same physical figure width regardless of
+    # how much k-path range it covers, so a gap sized relative to the GLOBAL
+    # x_total looks wrong on any panel that only shows a slice of it (a
+    # narrower panel is effectively "zoomed in", so the same absolute gap
+    # covers more of its visible width). Size each panel's gap relative to
+    # its own local range instead, so the physical/printed gap width is the
+    # same across all panels and panel counts.
+    axis_width_inches = total_size[0]
+
+    def _gap_half_for(xlim: tuple[float, float]) -> float:
+        panel_span = xlim[1] - xlim[0]
+        if gap_width_inches is None:
+            return panel_span * gap_frac
+        return 0.5 * gap_width_inches * panel_span / axis_width_inches
 
     for ax, xlim in zip(flat_axes, ranges):
         _draw_panel(
@@ -447,7 +456,7 @@ def plot_alterband(
             bands_dw=bands_dw,
             elim=elim,
             xlim=xlim,
-            gap_half=gap_half,
+            gap_half=_gap_half_for(xlim),
             font_size=font_size,
             rotate_xtick_labels=rotate_xtick_labels,
             xtick_rotation=xtick_rotation,
