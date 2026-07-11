@@ -78,9 +78,10 @@ def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
 
 VASPKIT_TRUNCATED_LABEL_FIXES = {
     # VASPKIT can drop the trailing zero in combined labels such as
-    # LAMBDA_0'|G_.  Repair only the affected HPKOT oI labels.
+    # LAMBDA_0'|G_.  Repair only the affected HPKOT labels.
     "oI2": {"G_": "G_2"},
     "oI3": {"G_": "G_0"},
+    "oF2": {"Q_": "Q_0"},
 }
 
 

@@ -4,9 +4,6 @@ AlterSeeK-Path generates k-point paths for altermagnet band-structure calculatio
 
 ![AlterSeeK-Path example](./example/HEX.png)
 
-For a longer user guide, see
-[yujia-teng.github.io/AlterSeeK-Path](https://yujia-teng.github.io/AlterSeeK-Path/).
-
 ---
 
 ## Installation
@@ -19,6 +16,13 @@ cd AlterSeeK-Path
 pip install -r requirements.txt
 pip install -e .
 ```
+
+---
+
+## Documentation
+
+For a longer user guide, see
+[yujia-teng.github.io/AlterSeeK-Path](https://yujia-teng.github.io/AlterSeeK-Path/).
 
 ---
 

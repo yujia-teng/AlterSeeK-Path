@@ -955,6 +955,10 @@ class KPointsModifier:
         print("=== Altermagnetic K-Path Generator ===")
 
         input_config = _read_input_config()
+        view_elev = float(input_config['view_elev']) if 'view_elev' in input_config else None
+        view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
+        if str(input_config.get('save_pdf', '')).strip().lower() in ('1', 'true', 'yes'):
+            os.environ['ALTERSEEK_BZ_EXTRA_FORMATS'] = 'pdf'
 
         def _ask(prompt_text, key):
             print(prompt_text, end='', flush=True)
@@ -1052,6 +1056,7 @@ class KPointsModifier:
                             seekpath_type_numbers=centroid_seekpath_type_numbers,
                             mode_2d=self.mode_2d,
                             input_vacuum_axis=self.input_vacuum_axis,
+                            view_elev=view_elev, view_azim=view_azim,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
@@ -1148,6 +1153,7 @@ class KPointsModifier:
                         seekpath_type_numbers=centroid_seekpath_type_numbers,
                         mode_2d=self.mode_2d,
                         input_vacuum_axis=self.input_vacuum_axis,
+                        view_elev=view_elev, view_azim=view_azim,
                     )
                     display_figures.extend(centroid_result.get('display_figures', []))
                     print(

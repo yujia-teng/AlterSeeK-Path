@@ -410,6 +410,10 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         # measured about the drawn (upper-hemisphere) axis. None for order 2.
         sense = _rotation_sense(R_cart, axis)
         sgn = '' if (order < 3 or sense == 0) else ('+' if sense > 0 else '-')
+        # The arc sweeps in increasing theta = CCW about +axis (u,v,axis is
+        # right-handed). For an n^- operation that's backwards, so reverse the
+        # sweep direction to match the label.
+        dir_sign = -1 if sense < 0 else 1
         idx = _reduce_int_vector(np.asarray(axis) @ np.linalg.inv(np.asarray(b_matrix)))
         axis_sub = "".join(rf"\bar{{{abs(i)}}}" if i < 0 else f"{i}" for i in idx)
         digit = rf"\bar{{{display_order}}}" if improper else f"{display_order}"
@@ -433,7 +437,10 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         phi_front = np.arctan2(cv, cu) if (abs(cu) + abs(cv)) > 1e-9 else 0.0
 
         # Centre the 300° arc on the front, so the 60° gap lands at the back.
-        theta = np.linspace(phi_front - span / 2, phi_front + span / 2, 121)
+        # Sweep direction follows dir_sign so the arrowhead shows the true
+        # rotation sense (n^+ vs n^-), not just the label text.
+        theta = np.linspace(phi_front - dir_sign * span / 2,
+                             phi_front + dir_sign * span / 2, 121)
         arc_pts = (arc_center[None, :]
                    + r_arc * (np.cos(theta)[:, None] * u + np.sin(theta)[:, None] * v))
         arc_head_start = -10
@@ -484,7 +491,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
                 np.arctan2(cv_now, cu_now)
                 if (abs(cu_now) + abs(cv_now)) > 1e-9 else 0.0
             )
-            theta_now = np.linspace(phi_now - span / 2, phi_now + span / 2, 121)
+            theta_now = np.linspace(phi_now - dir_sign * span / 2,
+                                     phi_now + dir_sign * span / 2, 121)
             arc_pts_now = (
                 arc_center[None, :]
                 + r_arc * (
@@ -766,6 +774,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig, ax=ax):
+            print(f"[View] elev={ax.elev:.2f}, azim={ax.azim:.2f}")
             fig_save, ax_save = setup_3d_ax("Spin-flip path connections",
                                             bz_loops, b_matrix, bz_center, bz_span,
                                             elev=ax.elev, azim=ax.azim,

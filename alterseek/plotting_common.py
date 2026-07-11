@@ -113,10 +113,15 @@ def _get_bz_path_style(lattice_type, k1, k2):
 
 
 def _figure_output_paths(output_path):
-    """Return the requested figure output paths, preserving PNG as the default."""
+    """Return the requested figure output paths, preserving the requested
+    extension as the default. Set ALTERSEEK_BZ_FORMATS (e.g. "png,pdf") to
+    override the format list entirely, or ALTERSEEK_BZ_EXTRA_FORMATS (e.g.
+    "pdf") to add formats on top of the default -- the latter is what the
+    toml `save_pdf` option sets."""
     root, ext = os.path.splitext(output_path)
     default_fmt = ext[1:] if ext else 'png'
     raw_formats = os.environ.get('ALTERSEEK_BZ_FORMATS', default_fmt)
+    raw_formats += ',' + os.environ.get('ALTERSEEK_BZ_EXTRA_FORMATS', '')
     formats = []
     for item in raw_formats.replace(';', ',').split(','):
         fmt = item.strip().lower().lstrip('.')
@@ -163,5 +168,10 @@ def _math_label(label):
             "SIGMA": r"\Sigma",
         }
         symbol = greek.get(base.upper(), base)
-    prime_part = "\u2032" if prime else ""
-    return rf"$\mathbf{{{symbol}}}$" + prime_part
+    if prime:
+        # Attach the prime as a real mathtext superscript (inside the same
+        # braces as any subscript) so it stacks tightly next to the base
+        # symbol, matching e.g. 6_{001}^{+}, instead of floating off as a
+        # trailing plain-text character.
+        symbol = rf"{symbol}^{{\prime}}"
+    return rf"$\mathbf{{{symbol}}}$"

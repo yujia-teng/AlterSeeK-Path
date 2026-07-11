@@ -431,7 +431,11 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
                  else rf"$\mathbf{{{digit}_{{{axis_sub}}}}}$")
 
         r_arc = 0.14 * span
-        theta = np.radians(np.linspace(30.0, 330.0, 100))  # 300 deg, gap at bottom
+        # Sweep direction follows sense so the arrowhead shows the true
+        # rotation sense (n^+ = CCW, n^- = CW), not just the label text.
+        dir_sign = -1 if sense < 0 else 1
+        theta = np.radians(np.linspace(180.0 - dir_sign * 150.0,
+                                        180.0 + dir_sign * 150.0, 100))  # 300 deg, gap at bottom
         arc = origin + r_arc * np.column_stack([np.cos(theta), np.sin(theta)])
         # Solid shaft stops at the arrow base; only the final segment is the
         # arrowhead (same convention as the 3D rotation-axis arrow), so the

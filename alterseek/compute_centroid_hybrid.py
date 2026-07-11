@@ -190,6 +190,8 @@ def run(
     seekpath_type_numbers=None,
     mode_2d=False,
     input_vacuum_axis=2,
+    view_elev=None,
+    view_azim=None,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -585,13 +587,20 @@ def run(
                   else f"IBZ + BZ: {basename} ({sc_display})")
 
     display_figures = []
-    elev1, azim1 = 14, 20
+    default_elev, default_azim = (
+        (view_elev, view_azim) if view_elev is not None and view_azim is not None
+        else (14, 20)
+    )
+    elev1, azim1 = default_elev, default_azim
     fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_display}.png')
     if show_plot and not mode_2d:
         # Interactive mode: create the figure now. alterseek_path can defer
         # the actual plt.show() call until all prompts and file writes finish.
+        # Opens at (default_elev, default_azim) so a fixed camera angle (e.g.
+        # matched across cases) is used unless the user rotates it manually.
         fig1, ax1 = setup_3d_ax(fig1_title,
-                                bz_loops, b_matrix, bz_center, bz_span)
+                                bz_loops, b_matrix, bz_center, bz_span,
+                                elev=default_elev, azim=default_azim)
         plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
                  hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
                  hull_labels=labels_list)
@@ -614,13 +623,13 @@ def run(
                 _print_saved_paths(saved_paths)
             fig1._alterseek_save_after_show = _save_fig1_after_show
             display_figures.append(fig1)
-            elev1, azim1 = 14, 20
+            elev1, azim1 = default_elev, default_azim
         else:
             plt.show()
             elev1, azim1 = ax1.elev, ax1.azim
     else:
         # Automated mode (called from alterseek_path): use default angles, no window
-        elev1, azim1 = 14, 20
+        elev1, azim1 = default_elev, default_azim
 
     # Render with dashed back-edges and save unless deferred post-show saving is active
     # (skipped in 2D mode: Figures stay 3D-only and are not produced for slabs yet)
