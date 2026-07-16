@@ -43,7 +43,7 @@ def _laue_group_from_point_group(point_group):
 # --- HELPER 1: Write FULL details for human reading ---
 def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info, verbose=True):
     """Writes all spin symmetry operations to a text file."""
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
         f.write("="*40 + "\n")
         f.write("SPIN SYMMETRY LOG\n")
         f.write("="*40 + "\n\n")
@@ -151,7 +151,7 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, spin_axis, verbo
             print("\n[WARNING] No spin-flipping operations found! File not created.")
         return 0
 
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
         f.write(f"# Found {len(flip_ops)} inversion-extended spin-flipping point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(flip_ops):
@@ -176,7 +176,7 @@ def write_preserve_ops_to_file(filename, rotations, spin_rotations, spin_axis, v
     if not preserve_ops:
         return 0
 
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
         f.write(f"# Found {len(preserve_ops)} inversion-extended spin-preserving point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(preserve_ops):

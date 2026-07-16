@@ -1,9 +1,12 @@
-"""VASP POSCAR / MCIF structure I/O and band-plot config writing.
+"""Structure and file I/O: reading input structures (POSCAR/.vasp, .cif,
+.mcif, and any other ASE-readable format), writing helper POSCAR/mcif files,
+lattice geometry utilities, atomic text writes, and band-plot config writing.
 
-Extracted from alterseek_path.py (restructuring phase 4). pymatgen/ase
-imports are function-local (kept lazy).
+Extracted from alterseek_path.py (restructuring phase 4, renamed from
+io_vasp.py). pymatgen/ase imports are function-local (kept lazy).
 """
 import os
+import uuid
 import numpy as np
 
 try:
@@ -11,6 +14,47 @@ try:
 except ImportError:  # pragma: no cover
     parse_cartesian_spin_axis = None
     parse_magmoms = None
+
+
+def _atomic_write_text(path, text):
+    """Write UTF-8 text beside *path*, then atomically replace the target."""
+    target = os.path.abspath(os.fspath(path))
+    parent = os.path.dirname(target)
+    # O_CREAT|O_EXCL with mode 0666 (instead of tempfile.mkstemp) lets the
+    # kernel apply the process umask itself, so a brand-new target gets the
+    # same mode a plain open() would create — without mkstemp's 0600 or a
+    # process-global os.umask() round-trip that could race other threads.
+    temporary = os.path.join(
+        parent, f".{os.path.basename(target)}.{uuid.uuid4().hex}.tmp"
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(temporary, flags, 0o666)
+    try:
+        handle = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
+    except Exception:
+        # os.fdopen never took ownership, so the raw descriptor is still ours.
+        os.close(fd)
+        try:
+            os.remove(temporary)
+        except OSError:
+            pass
+        raise
+    try:
+        with handle:
+            handle.write(text)
+        # Keep an existing target's mode (e.g. group-readable outputs in
+        # shared cluster directories); a new target keeps the umask default.
+        try:
+            os.chmod(temporary, os.stat(target).st_mode & 0o7777)
+        except OSError:
+            pass
+        os.replace(temporary, target)
+    except Exception:
+        try:
+            os.remove(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def _group_poscar_sites(elements, positions, moment_keys=None):
@@ -30,7 +74,7 @@ def _group_poscar_sites(elements, positions, moment_keys=None):
 
 
 def _write_poscar(path, title, lattice, symbols, counts, positions):
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(f"{title}\n")
         f.write("1.0\n")
         for row in lattice:
@@ -128,7 +172,7 @@ def _write_magnetic_mcif(path, title, lattice, elements, positions, moments_cart
     moments_crystal = np.array(moments_cart, dtype=float) @ np.linalg.inv(unit_axes)
     label_counts = {}
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(f"data_{title.replace(' ', '_')}\n")
         f.write("_symmetry_space_group_name_H-M 'P 1'\n")
         f.write("_space_group_IT_number 1\n")
@@ -209,7 +253,7 @@ def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
     line = f'lattice_type = "{lattice_type}"\n'
     try:
         if os.path.exists(filename):
-            with open(filename, "r") as f:
+            with open(filename, "r", encoding="utf-8-sig") as f:
                 lines = f.readlines()
             updated = False
             new_lines = []
@@ -224,13 +268,15 @@ def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
                 if new_lines and not new_lines[-1].endswith("\n"):
                     new_lines[-1] += "\n"
                 new_lines.append(line)
-            with open(filename, "w") as f:
-                f.writelines(new_lines)
+            _atomic_write_text(filename, "".join(new_lines))
         else:
-            with open(filename, "w") as f:
-                f.write("# AlterSeeK band-plot settings\n")
-                f.write("# Reads: KLABELS, REFORMATTED_BAND_UP.dat, REFORMATTED_BAND_DW.dat\n")
-                f.write(line)
+            _atomic_write_text(
+                filename,
+                "# AlterSeeK band-plot settings\n"
+                "# Reads: KLABELS, REFORMATTED_BAND_UP.dat, "
+                "REFORMATTED_BAND_DW.dat\n"
+                + line,
+            )
         print(f"Band plot config updated: {filename} ({line.strip()})")
     except Exception as exc:
         print(f"[Warning] Could not update band plot config '{filename}': {exc}")
@@ -241,9 +287,11 @@ def write_qe_bandplot_config(filename="alterband_qe.toml"):
     if os.path.exists(filename):
         return
     try:
-        with open(filename, "w") as f:
-            f.write("# AlterSeeK QE band-plot settings\n")
-            f.write("# Reads: band_up.gnu, band_down.gnu, KPOINTS_alter_qe\n")
+        _atomic_write_text(
+            filename,
+            "# AlterSeeK QE band-plot settings\n"
+            "# Reads: band_up.gnu, band_down.gnu, KPOINTS_alter_qe\n",
+        )
         print(f"Band plot config created: {filename}")
     except Exception as exc:
         print(f"[Warning] Could not create band plot config '{filename}': {exc}")

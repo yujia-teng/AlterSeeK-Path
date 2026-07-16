@@ -17,7 +17,7 @@ writing.
 | **2** | Chooses the general k point | Automatic IBZ centroid by default |
 | **3** | Selects the spin-flip operation | Press Enter for default, enter a number, type `list`, or type `manual` |
 | **4** | Builds the altermagnetic path | Automatic |
-| **5** | Saves the output | Output filename |
+| **5** | Saves the output | Output code (`vasp` or `qe`); filenames are fixed |
 
 ## Step 0: Spin Symmetry
 
@@ -36,6 +36,17 @@ Press Enter for the auto-detected SeeK-path, or provide a line-mode
 `KPATH.in`/KPOINTS-style file to start from a custom path. The detected
 lattice type is reported using SeeK-path keys (`hP2`, `oI3`, `mC2`, etc.).
 
+A custom path is interpreted in the reciprocal fractional basis of the
+structure submitted in Step 0. With `--ssg-setting`, the analysis works in
+the magnetic primitive cell instead (e.g. a hexagonal lattice whose moments
+lower it to orthorhombic), so the custom path is interpreted in that magnetic
+primitive cell's reciprocal basis. AlterSeeK-Path converts it to the standardized
+SeeK-path basis for internal processing and converts the final path to the
+calculation cell's reciprocal basis when writing output. Custom files must use
+reciprocal line mode and contain labeled endpoint pairs; one complete segment
+is valid, but a lone point, an odd endpoint count, a missing label, or a
+non-finite coordinate is rejected.
+
 ## Step 2: General K Point
 
 Automatic: the IBZ centroid, chosen because it's always away from special
@@ -51,21 +62,25 @@ transformation.
 
 The selected operation maps k to k'; both are inserted into the path. Path
 construction uses the standardized SeeK-path primitive reciprocal basis
-internally; written `KPOINTS` coordinates are converted to the input
-structure's reciprocal basis at output time.
+internally; written `KPOINTS` coordinates are converted to the calculation
+cell's reciprocal basis at output time.
 
 ## Step 5: Save Outputs
 
-Writes `KPOINTS_alter` (or `KPOINTS_alter_qe`) and updates `alterband.toml`
-with the detected lattice type. See Output Files below for the full list,
-including figures.
+Choose VASP (the default) or Quantum ESPRESSO. The workflow writes the fixed
+filename `KPOINTS_alter` or `KPOINTS_alter_qe`; it does not ask for an output
+filename. It also creates or updates the corresponding plotting configuration,
+`alterband.toml` or `alterband_qe.toml`. See Output Files below for the full
+list, including figures.
 
 ## Output Files
 
 | File | Description |
 |------|-------------|
 | `KPOINTS_alter` | Altermagnetic k-path for VASP line-mode band calculations |
-| `alterband.toml` | Band-plot configuration written by the main workflow |
+| `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
+| `alterband.toml` | VASP band-plot configuration written by the main workflow |
+| `alterband_qe.toml` | QE band-plot configuration written by the main workflow |
 | `spin_operations.txt` | Full spin-symmetry operation log |
 | `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
 | `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
@@ -111,6 +126,11 @@ save_pdf = true
 
 Comment out a key (or delete the line) to make that one step interactive
 again while the rest of the file still drives the run.
+
+The file is validated before the workflow starts. Malformed TOML, unknown
+keys, invalid types, an unsupported `output_code`, or an out-of-range
+`flip_option` stops the run with an error instead of silently falling back to
+interactive input.
 
 ## 2D / Slab Mode
 

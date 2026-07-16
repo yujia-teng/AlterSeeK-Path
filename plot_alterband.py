@@ -44,6 +44,20 @@ FONT_SIZE = 14
 GAP_LABELS = {"k|k'", "k'|k"}
 HELPER_LABELS = {"k", "k'", *GAP_LABELS}
 
+_PLOT_CONFIG_KEYS = {
+    "klabels", "up", "down", "band_up", "band_down", "output",
+    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "gap_width_inches", "lattice_type", "split_panels",
+    "rotate_xtick_labels", "xtick_rotation",
+}
+_STRING_CONFIG_KEYS = {
+    "klabels", "up", "down", "band_up", "band_down", "output", "lattice_type",
+}
+_NUMBER_CONFIG_KEYS = {
+    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "gap_width_inches", "xtick_rotation",
+}
+
 GREEK_LABELS = {
     "GAMMA": r"$\Gamma$",
     "\u0393": r"$\Gamma$",
@@ -60,7 +74,7 @@ GREEK_LABELS = {
 def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
     labels: list[str] = []
     positions: list[float] = []
-    with path.open() as f:
+    with path.open(encoding="utf-8-sig") as f:
         for line in f:
             parts = line.split()
             if len(parts) != 2:
@@ -95,7 +109,7 @@ def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> 
         return labels
     segments: list[list] = []
     buf: list = []
-    with kpoints_path.open() as f:
+    with kpoints_path.open(encoding="utf-8-sig") as f:
         for i, line in enumerate(f):
             if i < 4:
                 continue
@@ -123,37 +137,6 @@ def _fix_klabels_missing_merge(labels: list[str], kpoints_path: Path | None) -> 
     # Replace only where actual is the start-label tail of a buggy expected merge.
     return [exp if (act != exp and exp.endswith(f"|{act}")) else act
             for act, exp in zip(labels, expected)]
-
-
-def _rewrite_klabels(path: Path, old_labels: list[str], new_labels: list[str]) -> None:
-    """Write corrected labels back to KLABELS file, preserving whitespace and positions."""
-    if old_labels == new_labels:
-        return
-    raw = path.read_text()
-    lines = raw.splitlines(keepends=True)
-    label_idx = 0
-    out_lines: list[str] = []
-    for line in lines:
-        parts = line.split()
-        if len(parts) == 2:
-            try:
-                float(parts[1])
-                if label_idx < len(old_labels):
-                    old, new = old_labels[label_idx], new_labels[label_idx]
-                    label_idx += 1
-                    if old != new:
-                        stripped = line.lstrip()
-                        indent = len(line) - len(stripped)
-                        if stripped.startswith(old) and (
-                            len(stripped) == len(old) or stripped[len(old)].isspace()
-                        ):
-                            line = line[:indent] + new + line[indent + len(old):]
-                out_lines.append(line)
-                continue
-            except ValueError:
-                pass
-        out_lines.append(line)
-    path.write_text("".join(out_lines))
 
 
 def _fix_vaspkit_truncated_label(label: str, lattice_type: str | None) -> str:
@@ -203,7 +186,7 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
         return data
 
     config: dict[str, Any] = {}
-    with path.open() as f:
+    with path.open(encoding="utf-8-sig") as f:
         for raw_line in f:
             line = raw_line.split("#", 1)[0].strip()
             if not line or line.startswith("["):
@@ -212,6 +195,30 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
                 raise ValueError(f"Invalid config line in {path}: {raw_line.rstrip()}")
             key, value = line.split("=", 1)
             config[key.strip()] = _parse_simple_toml_value(value)
+    return config
+
+
+# Keep this function's body identical to the copy in plot_alterband_qe.py;
+# only the module-level key sets differ between the two plotters.
+def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
+    unknown = sorted(set(config) - _PLOT_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown setting(s) in {path}: {', '.join(unknown)}")
+    for key in _STRING_CONFIG_KEYS:
+        if key in config and not isinstance(config[key], str):
+            raise ValueError(f"{key} in {path} must be a string")
+    for key in _NUMBER_CONFIG_KEYS:
+        if key in config and (isinstance(config[key], bool) or
+                              not isinstance(config[key], (int, float))):
+            raise ValueError(f"{key} in {path} must be a number")
+    if "split_panels" in config and (
+            isinstance(config["split_panels"], bool) or
+            not isinstance(config["split_panels"], int) or
+            config["split_panels"] not in {1, 2, 3}):
+        raise ValueError(f"split_panels in {path} must be 1, 2, or 3")
+    if ("rotate_xtick_labels" in config and
+            not isinstance(config["rotate_xtick_labels"], bool)):
+        raise ValueError(f"rotate_xtick_labels in {path} must be true or false")
     return config
 
 
@@ -261,10 +268,10 @@ def _is_valid_split_label(label: str) -> bool:
 
 
 def _split_indices(labels: list[str], split_panels: int) -> list[int]:
-    if split_panels in (None, 0, 1):
+    if split_panels in (None, 1):
         return []
     if split_panels not in {2, 3}:
-        raise ValueError("split_panels must be 0, 2, or 3")
+        raise ValueError("split_panels must be 1, 2, or 3")
 
     candidates = [
         i for i in range(1, len(labels) - 1)
@@ -371,7 +378,7 @@ def plot_alterband(
     gap_frac: float = DEFAULT_GAP_FRAC,
     gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
     lattice_type: str | None = None,
-    split_panels: int = 0,
+    split_panels: int = 1,
     rotate_xtick_labels: bool = False,
     xtick_rotation: float = 45.0,
 ) -> Path:
@@ -382,10 +389,19 @@ def plot_alterband(
     output_path = Path(output)
 
     labels, positions = _read_klabels(klabels_path)
-    fixed_labels = _fix_klabels_missing_merge(labels, klabels_path.parent / "KPOINTS")
-    _rewrite_klabels(klabels_path, labels, fixed_labels)
-    labels = fixed_labels
+    original_labels = labels
+    labels = _fix_klabels_missing_merge(labels, klabels_path.parent / "KPOINTS")
     labels = [_fix_vaspkit_truncated_label(label, lattice_type) for label in labels]
+    corrections = [
+        f"{old} -> {new}"
+        for old, new in zip(original_labels, labels)
+        if old != new
+    ]
+    if corrections:
+        print(
+            "[Note] Corrected VASPKIT label(s) for plotting only; KLABELS was "
+            f"not modified: {', '.join(corrections)}"
+        )
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KLABELS positions must increase from first to last entry")
@@ -409,7 +425,8 @@ def plot_alterband(
     bands_up = bands_up[:, in_window]
     bands_dw = bands_dw[:, in_window]
 
-    ranges = _panel_ranges(labels, positions, int(split_panels or 0))
+    ranges = _panel_ranges(labels, positions,
+                           1 if split_panels is None else int(split_panels))
     n_panels = len(ranges)
     total_size = fig_size
     if n_panels > 1:
@@ -487,7 +504,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fig-width", type=float, default=None, help="Figure width in inches.")
     parser.add_argument("--fig-height", type=float, default=None, help="Figure height in inches.")
     parser.add_argument("--lattice-type", default=None, help="HPKOT lattice type such as tI1 or mC2.")
-    parser.add_argument("--split-panels", type=int, default=None, help="Use 0, 2, or 3 stacked panels.")
+    parser.add_argument("--split-panels", type=int, default=None, help="Use 1, 2, or 3 stacked panels.")
     parser.add_argument("--gap-frac", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--gap-width-inches",
@@ -508,34 +525,39 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     config_path = Path(args.config) if args.config else Path("alterband.toml")
-    config = _read_plot_config(config_path) if args.config or config_path.exists() else {}
-
     def option(name: str, default: Any) -> Any:
         arg_value = getattr(args, name)
         if arg_value is not None:
             return arg_value
         return config.get(name, default)
 
-    emin = float(option("emin", DEFAULT_ELIM[0]))
-    emax = float(option("emax", DEFAULT_ELIM[1]))
-    fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
-    fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
-    gap_width_config = option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
-    gap_width_inches = None if gap_width_config is None else float(gap_width_config)
-    output = plot_alterband(
-        klabels=option("klabels", "KLABELS"),
-        band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
-        band_down=option("down", config.get("band_down", "REFORMATTED_BAND_DW.dat")),
-        output=option("output", "alterband.png"),
-        elim=(emin, emax),
-        fig_size=(fig_width, fig_height),
-        gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
-        gap_width_inches=gap_width_inches,
-        lattice_type=option("lattice_type", None),
-        split_panels=int(option("split_panels", 0) or 0),
-        rotate_xtick_labels=bool(option("rotate_xtick_labels", False)),
-        xtick_rotation=float(option("xtick_rotation", 45.0)),
-    )
+    try:
+        config = (
+            _validate_plot_config(_read_plot_config(config_path), config_path)
+            if args.config or config_path.exists() else {}
+        )
+        emin = float(option("emin", DEFAULT_ELIM[0]))
+        emax = float(option("emax", DEFAULT_ELIM[1]))
+        fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
+        fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
+        gap_width_config = option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
+        gap_width_inches = None if gap_width_config is None else float(gap_width_config)
+        output = plot_alterband(
+            klabels=option("klabels", "KLABELS"),
+            band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
+            band_down=option("down", config.get("band_down", "REFORMATTED_BAND_DW.dat")),
+            output=option("output", "alterband.png"),
+            elim=(emin, emax),
+            fig_size=(fig_width, fig_height),
+            gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
+            gap_width_inches=gap_width_inches,
+            lattice_type=option("lattice_type", None),
+            split_panels=int(option("split_panels", 1)),
+            rotate_xtick_labels=bool(option("rotate_xtick_labels", False)),
+            xtick_rotation=float(option("xtick_rotation", 45.0)),
+        )
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"[Error] {exc}") from exc
     print(f"Band plot written to: {output}")
 
 

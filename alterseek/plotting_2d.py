@@ -21,6 +21,8 @@ Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 import os
 import numpy as np
 
+from .plotting_common import _save_figure
+
 try:
     from scipy.spatial import ConvexHull
 except Exception:  # pragma: no cover - scipy is a hard dependency in practice
@@ -583,9 +585,9 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
         ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=12,
                  borderaxespad=0, frameon=True)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    return output_path
+    return saved_paths
 
 
 # ---------------------------------------------------------------------------
@@ -648,9 +650,8 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig1.tight_layout()
     fig1_path = os.path.join(output_dir, f"{basename}_2d_ibz_{sc_type}.png")
-    fig1.savefig(fig1_path, dpi=300, bbox_inches="tight")
+    saved.extend(_save_figure(fig1, fig1_path, dpi=300, bbox_inches="tight"))
     plt.close(fig1)
-    saved.append(fig1_path)
 
     # ----- Figure 2: spin-up IBZ + spin-flip image -----
     mapped_cart_lines = {}
@@ -712,16 +713,15 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig2.tight_layout()
     fig2_path = os.path.join(output_dir, f"{basename}_2d_spinflip_{sc_type}.png")
-    fig2.savefig(fig2_path, dpi=300, bbox_inches="tight")
+    saved.extend(_save_figure(fig2, fig2_path, dpi=300, bbox_inches="tight"))
     plt.close(fig2)
-    saved.append(fig2_path)
 
     # ----- Figure 3: spin-up / spin-down BZ pattern -----
     fig3_path = os.path.join(output_dir, f"{basename}_2d_spinbz_{sc_type}.png")
     fig3_saved = _plot_spin_pattern_top_view_2d(
         centroid_result, R_for_kpts, flip_ops_for_plot, fig3_path)
     if fig3_saved is not None:
-        saved.append(fig3_saved)
+        saved.extend(fig3_saved)
 
     print(f"Saved 2D figures: {', '.join(saved)}")
     return saved

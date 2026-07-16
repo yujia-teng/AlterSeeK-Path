@@ -16,6 +16,7 @@ import pytest
 from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
 from alterseek import symmetry
+from alterseek.plotting_common import _figure_output_paths
 
 
 def _diag(vals):
@@ -173,3 +174,12 @@ def test_compute_centroid_2d_differs_from_3d(tmp_path):
     # 3D keeps the out-of-plane centroid component; 2D zeroes it.
     assert abs(r3["centroid_frac"][2]) > 1e-6
     assert abs(r2["centroid_frac"][2]) < 1e-12
+
+
+def test_save_pdf_adds_pdf_for_2d_figure_outputs(monkeypatch):
+    monkeypatch.delenv("ALTERSEEK_BZ_FORMATS", raising=False)
+    monkeypatch.setenv("ALTERSEEK_BZ_EXTRA_FORMATS", "pdf")
+    assert _figure_output_paths("slab_2d_ibz_tP1.png") == [
+        "slab_2d_ibz_tP1.png",
+        "slab_2d_ibz_tP1.pdf",
+    ]

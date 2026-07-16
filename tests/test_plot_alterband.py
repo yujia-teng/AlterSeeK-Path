@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
-from plot_alterband import _draw_panel
+from plot_alterband import _draw_panel, _validate_plot_config, plot_alterband
+from plot_alterband_qe import _validate_plot_config as _validate_qe_plot_config
 
 
 def test_spin_up_band_is_drawn_above_spin_down_band():
@@ -32,3 +34,89 @@ def test_spin_up_band_is_drawn_above_spin_down_band():
         assert spin_up.get_zorder() > spin_down.get_zorder()
     finally:
         plt.close(fig)
+
+
+def test_vaspkit_label_repair_is_in_memory_and_reported(tmp_path, capsys):
+    klabels = tmp_path / "KLABELS"
+    original = "A 0.0\nC 0.5\nD 1.0\n"
+    klabels.write_text(original, encoding="utf-8")
+    (tmp_path / "KPOINTS").write_text(
+        "Path\n30\nLine-Mode\nReciprocal\n"
+        "0.0 0.0 0.0 A\n0.5 0.0 0.0 B\n\n"
+        "0.5 0.25 0.0 C\n1.0 0.25 0.0 D\n",
+        encoding="utf-8",
+    )
+    band_text = "k band\n0.0 0.0\n0.5 0.1\n1.0 0.0\n"
+    up = tmp_path / "up.dat"
+    down = tmp_path / "down.dat"
+    up.write_text(band_text, encoding="utf-8")
+    down.write_text(band_text, encoding="utf-8")
+
+    plot_alterband(
+        klabels=klabels,
+        band_up=up,
+        band_down=down,
+        output=tmp_path / "bands.png",
+    )
+
+    assert klabels.read_text(encoding="utf-8") == original
+    output = capsys.readouterr().out
+    assert "B|C" in output
+    assert "KLABELS was not modified" in output
+
+
+@pytest.mark.parametrize(
+    "validator, config",
+    [
+        (_validate_plot_config, {"emin_typo": -2}),
+        (_validate_plot_config, {"rotate_xtick_labels": "yes"}),
+        (_validate_qe_plot_config, {"lattice_type": "hP2"}),
+        (_validate_qe_plot_config, {"split_panels": 4}),
+        (_validate_plot_config, {"split_panels": 0}),
+        (_validate_plot_config, {"output": None}),
+        (_validate_qe_plot_config, {"fermi_ev": None}),
+    ],
+)
+def test_plot_config_rejects_unknown_or_invalid_settings(validator, config, tmp_path):
+    with pytest.raises(ValueError):
+        validator(config, tmp_path / "plot.toml")
+
+
+@pytest.mark.parametrize("module_name", ["plot_alterband", "plot_alterband_qe"])
+def test_main_reports_bad_config_without_traceback(module_name, tmp_path):
+    import importlib
+
+    main = importlib.import_module(module_name).main
+    config = tmp_path / "plot.toml"
+    config.write_text("emin_typo = 1\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--config", str(config)])
+    assert "Unknown setting" in str(excinfo.value)
+
+
+def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
+    from plot_alterband import main as vasp_main
+
+    klabels = tmp_path / "KLABELS"
+    klabels.write_text("A 0.0\nB 1.0\n", encoding="utf-8")
+    (tmp_path / "KPOINTS").write_text(
+        "Path\n30\nLine-Mode\nReciprocal\n"
+        "0.0 0.0 0.0 A\n1.0 0.0 0.0 B\n",
+        encoding="utf-8",
+    )
+    band_text = "k band\n0.0 0.0\n0.5 0.1\n1.0 0.0\n"
+    up = tmp_path / "up.dat"
+    down = tmp_path / "down.dat"
+    up.write_text(band_text, encoding="utf-8")
+    down.write_text(band_text, encoding="utf-8")
+    config = tmp_path / "alterband.toml"
+    config.write_text(
+        f'klabels = "{klabels.as_posix()}"\n'
+        f'up = "{up.as_posix()}"\n'
+        f'down = "{down.as_posix()}"\n'
+        "gap_frac = -1\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        vasp_main(["--config", str(config)])
+    assert "gap_frac" in str(excinfo.value)

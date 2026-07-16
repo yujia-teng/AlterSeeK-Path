@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alterseek-path"
 version = "0.1.0"
-description = "Generate altermagnetic k-point paths for VASP workflows."
+description = "Generate altermagnetic k-point paths for VASP and Quantum ESPRESSO workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

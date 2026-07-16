@@ -65,7 +65,9 @@ for the full field reference.
   `MAGMOM`-style scalar moments (e.g. `5*0 2*1.0`); untyped atoms default to
   `0`.
 - K-path: press Enter for the auto-generated path, or give a line-mode
-  `KPATH.in`/KPOINTS-style file.
+  `KPATH.in`/KPOINTS-style file. A custom path is interpreted in the reciprocal
+  fractional basis of the submitted structure and must contain labeled,
+  complete endpoint pairs.
 
 These (plus the Step 3 operation choice and Step 5 output code) can also be
 supplied via `alterseek_input.toml` — see Quick Start above.

@@ -44,6 +44,20 @@ FONT_SIZE = 14
 GAP_LABELS = {"k|k'", "k'|k"}
 HELPER_LABELS = {"k", "k'", *GAP_LABELS}
 
+_PLOT_CONFIG_KEYS = {
+    "band_up", "band_down", "kpoints_qe", "output", "fermi_ev",
+    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "gap_width_inches", "split_panels", "rotate_xtick_labels",
+    "xtick_rotation",
+}
+_STRING_CONFIG_KEYS = {
+    "band_up", "band_down", "kpoints_qe", "output",
+}
+_NUMBER_CONFIG_KEYS = {
+    "fermi_ev", "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "gap_width_inches", "xtick_rotation",
+}
+
 GREEK_LABELS = {
     "GAMMA": r"$\Gamma$",
     "Γ": r"$\Gamma$",
@@ -87,7 +101,7 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
             raise ValueError(f"Config file must contain key-value settings: {path}")
         return data
     config: dict[str, Any] = {}
-    with path.open() as f:
+    with path.open(encoding="utf-8-sig") as f:
         for raw_line in f:
             line = raw_line.split("#", 1)[0].strip()
             if not line or line.startswith("["):
@@ -99,6 +113,30 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
     return config
 
 
+# Keep this function's body identical to the copy in plot_alterband.py;
+# only the module-level key sets differ between the two plotters.
+def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
+    unknown = sorted(set(config) - _PLOT_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown setting(s) in {path}: {', '.join(unknown)}")
+    for key in _STRING_CONFIG_KEYS:
+        if key in config and not isinstance(config[key], str):
+            raise ValueError(f"{key} in {path} must be a string")
+    for key in _NUMBER_CONFIG_KEYS:
+        if key in config and (isinstance(config[key], bool) or
+                              not isinstance(config[key], (int, float))):
+            raise ValueError(f"{key} in {path} must be a number")
+    if "split_panels" in config and (
+            isinstance(config["split_panels"], bool) or
+            not isinstance(config["split_panels"], int) or
+            config["split_panels"] not in {1, 2, 3}):
+        raise ValueError(f"split_panels in {path} must be 1, 2, or 3")
+    if ("rotate_xtick_labels" in config and
+            not isinstance(config["rotate_xtick_labels"], bool)):
+        raise ValueError(f"rotate_xtick_labels in {path} must be true or false")
+    return config
+
+
 def _read_gnu_bands(path: Path, fermi_ev: float) -> tuple[np.ndarray, np.ndarray]:
     """Parse QE bands.x .gnu file (band-major, blank-line separated).
 
@@ -106,7 +144,7 @@ def _read_gnu_bands(path: Path, fermi_ev: float) -> tuple[np.ndarray, np.ndarray
     """
     blocks: list[np.ndarray] = []
     current: list[list[float]] = []
-    with path.open() as f:
+    with path.open(encoding="utf-8-sig") as f:
         for line in f:
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
@@ -228,10 +266,10 @@ def _is_valid_split_label(label: str) -> bool:
 
 
 def _split_indices(labels: list[str], split_panels: int) -> list[int]:
-    if split_panels in (None, 0, 1):
+    if split_panels in (None, 1):
         return []
     if split_panels not in {2, 3}:
-        raise ValueError("split_panels must be 0, 2, or 3")
+        raise ValueError("split_panels must be 1, 2, or 3")
 
     candidates = [
         i for i in range(1, len(labels) - 1)
@@ -338,7 +376,7 @@ def plot_alterband_qe(
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
     gap_frac: float = DEFAULT_GAP_FRAC,
     gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
-    split_panels: int = 0,
+    split_panels: int = 1,
     rotate_xtick_labels: bool = False,
     xtick_rotation: float = 45.0,
 ) -> Path:
@@ -375,7 +413,8 @@ def plot_alterband_qe(
     bands_up = bands_up[:, in_window]
     bands_dw = bands_dw[:, in_window]
 
-    ranges = _panel_ranges(labels, positions, int(split_panels or 0))
+    ranges = _panel_ranges(labels, positions,
+                           1 if split_panels is None else int(split_panels))
     n_panels = len(ranges)
     total_size = fig_size
     if n_panels > 1:
@@ -448,30 +487,34 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config_path = Path(args.config) if args.config else Path("alterband_qe.toml")
-    config = _read_plot_config(config_path) if args.config or config_path.exists() else {}
-
-    emin = float(config.get("emin", DEFAULT_ELIM[0]))
-    emax = float(config.get("emax", DEFAULT_ELIM[1]))
-    fig_width = float(config.get("fig_width", DEFAULT_FIG_SIZE[0]))
-    fig_height = float(config.get("fig_height", DEFAULT_FIG_SIZE[1]))
-    out_path = args.output or config.get("output", "alterband_qe.png")
-    gap_width_config = config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
-    gap_width_inches = None if gap_width_config is None else float(gap_width_config)
-
-    output = plot_alterband_qe(
-        band_up=config.get("band_up", "band_up.gnu"),
-        band_down=config.get("band_down", "band_down.gnu"),
-        kpoints_qe=config.get("kpoints_qe", "KPOINTS_alter_qe"),
-        output=out_path,
-        fermi_ev=float(config.get("fermi_ev", 0.0)),
-        elim=(emin, emax),
-        fig_size=(fig_width, fig_height),
-        gap_frac=float(config.get("gap_frac", DEFAULT_GAP_FRAC)),
-        gap_width_inches=gap_width_inches,
-        split_panels=int(config.get("split_panels", 0) or 0),
-        rotate_xtick_labels=bool(config.get("rotate_xtick_labels", False)),
-        xtick_rotation=float(config.get("xtick_rotation", 45.0)),
-    )
+    try:
+        config = (
+            _validate_plot_config(_read_plot_config(config_path), config_path)
+            if args.config or config_path.exists() else {}
+        )
+        emin = float(config.get("emin", DEFAULT_ELIM[0]))
+        emax = float(config.get("emax", DEFAULT_ELIM[1]))
+        fig_width = float(config.get("fig_width", DEFAULT_FIG_SIZE[0]))
+        fig_height = float(config.get("fig_height", DEFAULT_FIG_SIZE[1]))
+        out_path = args.output or config.get("output", "alterband_qe.png")
+        gap_width_config = config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
+        gap_width_inches = None if gap_width_config is None else float(gap_width_config)
+        output = plot_alterband_qe(
+            band_up=config.get("band_up", "band_up.gnu"),
+            band_down=config.get("band_down", "band_down.gnu"),
+            kpoints_qe=config.get("kpoints_qe", "KPOINTS_alter_qe"),
+            output=out_path,
+            fermi_ev=float(config.get("fermi_ev", 0.0)),
+            elim=(emin, emax),
+            fig_size=(fig_width, fig_height),
+            gap_frac=float(config.get("gap_frac", DEFAULT_GAP_FRAC)),
+            gap_width_inches=gap_width_inches,
+            split_panels=int(config.get("split_panels", 1)),
+            rotate_xtick_labels=bool(config.get("rotate_xtick_labels", False)),
+            xtick_rotation=float(config.get("xtick_rotation", 45.0)),
+        )
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"[Error] {exc}") from exc
     print(f"Band plot written to: {output}")
 
 

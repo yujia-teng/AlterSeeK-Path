@@ -4,7 +4,7 @@
 # 01/12/2026 - Automatically reads the spin-flip operation based on outputs of find_sf_operations.py
 # 03/2026    - Integrated find_sf_operations and compute_centroid_hybrid into one workflow
 # 07/2026    - Restructured into focused modules; this file is now just the CLI entry point.
-#              The workflow lives in kpoints.KPointsModifier (see io_vasp / ssg_setting /
+#              The workflow lives in kpoints.KPointsModifier (see io / ssg_setting /
 #              compute_centroid_hybrid / plotting_* / symmetry / geometry).
 import sys
 
@@ -20,7 +20,7 @@ def main():
     if argv and argv[0].lower() in {"bandplot", "plot-band", "plot"}:
         from plot_alterband import main as plot_alterband_main
         plot_alterband_main(argv[1:])
-        return
+        return 0
 
     parser = argparse.ArgumentParser(
         prog="alterseek-path",
@@ -63,8 +63,8 @@ def main():
         mode_2d=args.mode_2d,
         input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],
     )
-    modifier.interactive_modify()
+    return 0 if modifier.interactive_modify() else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

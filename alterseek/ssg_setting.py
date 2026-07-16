@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
     find_spin_group_acc_primitive_from_data = None
     FIND_SG_MAGNETIC_SETTING_AVAILABLE = False
 
-from .io_vasp import (
+from .io import (
     _group_poscar_sites, _write_poscar, _write_without_species,
     _reciprocal_from_poscar, _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
@@ -102,7 +102,7 @@ def _collect_point_ops_from_payload(operations, indices, include_inversion=True)
 
 
 def _write_operation_file(filename, rotations, source_indices, label):
-    with open(filename, "w") as f:
+    with open(filename, "w", encoding="utf-8", newline="\n") as f:
         f.write(f"# Found {len(rotations)} inversion-extended spin-{label} point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rotation in enumerate(rotations):
@@ -207,7 +207,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         grouped_positions,
         ordered_moments,
     )
-    with open(magmom_path, "w") as f:
+    with open(magmom_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("# Magnetic primitive POSCAR atom order matches:\n")
         f.write(f"# {real_path}\n")
         f.write("# Vector moments from FindSpinGroup acc_primitive_cell_detail:\n")

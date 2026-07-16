@@ -56,7 +56,7 @@ emax = 2
 fig_width = 12
 fig_height = 5
 gap_width_inches = 0.05
-split_panels = 0
+split_panels = 1
 output = "alterband.png"
 ```
 
@@ -66,8 +66,13 @@ output = "alterband.png"
 | `emin`, `emax` | Energy window in eV | `--emin`, `--emax` |
 | `fig_width`, `fig_height` | Figure size in inches | -- |
 | `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths | `--gap-width-inches` |
-| `split_panels` | `0` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) | `--split-panels` |
+| `split_panels` | `1` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) | `--split-panels` |
 | `output` | Output image filename (`.png` or `.pdf`) | `-o` |
+
+The plotter repairs known VASPKIT boundary-label and truncation errors in
+memory and reports any correction it uses. It does not rewrite `KLABELS`.
+Both VASP and QE plotting configurations are validated; malformed TOML,
+unknown settings, and invalid value types stop with an error.
 
 Command-line flags override the TOML file, e.g.:
 
@@ -104,7 +109,7 @@ emax = 2
 fig_width = 12
 fig_height = 5
 gap_width_inches = 0.05
-split_panels = 0
+split_panels = 1
 output = "alterband_qe.png"
 ```
 
@@ -116,7 +121,7 @@ output = "alterband_qe.png"
 | `emin`, `emax` | Energy window in eV |
 | `fig_width`, `fig_height` | Figure size in inches |
 | `gap_frac`, `gap_width_inches` | Same meaning as the VASP plotter's settings |
-| `split_panels` | `0` for one panel, `2`/`3` for stacked panels |
+| `split_panels` | `1` for one panel, `2`/`3` for stacked panels |
 | `rotate_xtick_labels`, `xtick_rotation` | Rotate x-axis tick labels |
 | `output` | Output image filename (`.png` or `.pdf`) |
 

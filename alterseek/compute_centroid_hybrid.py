@@ -22,8 +22,6 @@ Requires:
 import sys
 import os
 import warnings
-import threading
-import atexit
 warnings.filterwarnings("ignore", message="We strongly encourage explicit.*encoding")
 warnings.filterwarnings("ignore", message="dict interface is deprecated")
 warnings.filterwarnings(
@@ -31,51 +29,6 @@ warnings.filterwarnings(
     category=DeprecationWarning,
     module=r"seekpath\.hpkot(\..*)-",
 )
-
-
-def _suppress_stderr_lines(tokens):
-    """Filter selected stderr lines (including native C-level writes)."""
-    try:
-        orig_fd = os.dup(2)
-        r_fd, w_fd = os.pipe()
-        os.dup2(w_fd, 2)
-    except Exception:
-        return
-
-    running = {"on": True}
-
-    def _pump():
-        buf = ""
-        while running["on"]:
-            try:
-                chunk = os.read(r_fd, 4096)
-                if not chunk:
-                    break
-                buf += chunk.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    if not any(tok in line for tok in tokens):
-                        os.write(orig_fd, (line + "\n").encode("utf-8", errors="replace"))
-            except Exception:
-                break
-
-    def _stop():
-        running["on"] = False
-        try:
-            os.dup2(orig_fd, 2)
-        except Exception:
-            pass
-        for fd in (w_fd, r_fd, orig_fd):
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-
-    threading.Thread(target=_pump, daemon=True).start()
-    atexit.register(_stop)
-
-
-_suppress_stderr_lines(("libpng warning: iCCP: known incorrect sRGB profile",))
 
 
 import numpy as np
@@ -118,7 +71,7 @@ def _write_seekpath_standard_poscar(lattice, positions, types, output_path, sour
             frac = np.mod(pos, 1.0)
             lines.append("   " + " ".join(f"{x:22.16f}" for x in frac) + f" {symbol}")
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -149,7 +102,7 @@ def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matr
         _fmt_matrix(rotation_matrix),
         "",
     ]
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
 
 
@@ -450,7 +403,7 @@ def run(
                         for i, ax_name in enumerate(['k1', 'k2', 'k3'])
                     )
                     try:
-                        with open("spin_operations.txt", "a") as f:
+                        with open("spin_operations.txt", "a", encoding="utf-8", newline="\n") as f:
                             f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
                     except Exception:
                         pass

@@ -61,3 +61,36 @@ def test_rejects_mesh_kpoints(tmp_path):
 def test_missing_file_returns_false(tmp_path):
     modifier = KPointsModifier()
     assert not modifier.read_kpoints_file(str(tmp_path / "no_such_KPOINTS"))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "0.0 0.0 0.0 A\n",
+        "0.0 0.0 0.0 A\n0.5 0.0 0.0 B\n0.5 0.5 0.0 C\n",
+        "0.0 0.0 0.0\n0.5 0.0 0.0 B\n",
+        "nan 0.0 0.0 A\n0.5 0.0 0.0 B\n",
+    ],
+    ids=["single-point", "odd-endpoints", "missing-label", "nonfinite"],
+)
+def test_rejects_unpaired_unlabeled_or_nonfinite_custom_paths(tmp_path, body):
+    path = tmp_path / "KPATH.in"
+    path.write_text(
+        "Custom path\n30\nLine-Mode\nReciprocal\n" + body,
+        encoding="utf-8",
+    )
+    modifier = KPointsModifier()
+    assert not modifier.read_kpoints_file(str(path))
+    assert modifier.kpoints_data == []
+
+
+def test_accepts_one_complete_segment(tmp_path):
+    path = tmp_path / "KPATH.in"
+    path.write_text(
+        "Custom path\n30\nLine-Mode\nReciprocal\n"
+        "0.0 0.0 0.0 A\n0.5 0.0 0.0 B\n",
+        encoding="utf-8",
+    )
+    modifier = KPointsModifier()
+    assert modifier.read_kpoints_file(str(path))
+    assert [point[3] for point in modifier.kpoints_data] == ["A", "B"]
