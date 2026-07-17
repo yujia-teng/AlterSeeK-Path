@@ -359,6 +359,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         # Stand-out color so the rotation axis is easy to spot against the
         # red/navy IBZ and black BZ frame. Override with ALTERSEEK_OP_AXIS_COLOR.
         AXIS_COLOR = os.environ.get('ALTERSEEK_OP_AXIS_COLOR', '#00c853')
+        OP_ZORDER = 200
 
         # Axis exits BZ at bz_exit along +axis and bz_exit_neg along -axis.
         # Extend beyond the BZ so the arrow is always visibly longer than the BZ
@@ -373,7 +374,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         # through Γ without overpowering the figure.
         ax.plot(
             [base[0], 0.0], [base[1], 0.0], [base[2], 0.0],
-            color=AXIS_COLOR, lw=1.6, ls='--', alpha=0.55, zorder=6,
+            color=AXIS_COLOR, lw=1.6, ls='--', alpha=0.55,
+            zorder=OP_ZORDER,
         )
         # Solid arrowhead at the tip (like the c_n axis arrow in the reference).
         head_len = bz_radius * 0.18
@@ -381,14 +383,21 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         # Upper shaft stops at the arrow base; the final segment is the arrow.
         ax.plot(
             [0.0, shaft_pt[0]], [0.0, shaft_pt[1]], [0.0, shaft_pt[2]],
-            color=AXIS_COLOR, lw=2.8, ls='-', alpha=0.95, zorder=6,
+            color=AXIS_COLOR, lw=2.8, ls='-', alpha=0.95,
+            zorder=OP_ZORDER,
         )
-        axis_arrow = _Arrow3D(
-            [shaft_pt[0], tip[0]], [shaft_pt[1], tip[1]], [shaft_pt[2], tip[2]],
-            arrowstyle='-|>', mutation_scale=26,
-            color=AXIS_COLOR, lw=2.8, shrinkA=0, shrinkB=0, zorder=8,
+        axis_arrow = ax.annotate(
+            '', xy=_screen_xy(ax, tip), xytext=_screen_xy(ax, shaft_pt),
+            xycoords=ax.transData, textcoords=ax.transData,
+            arrowprops=dict(
+                arrowstyle='-|>', mutation_scale=26,
+                color=AXIS_COLOR, lw=2.8, shrinkA=0, shrinkB=0,
+            ),
+            zorder=OP_ZORDER + 1, annotation_clip=False,
         )
-        ax.add_artist(axis_arrow)
+        axis_arrow.set_clip_on(False)
+        if axis_arrow.arrow_patch is not None:
+            axis_arrow.arrow_patch.set_clip_on(False)
 
         # Curved rotation arrow: a 3D ring in the plane perpendicular to the axis
         # (wraps around it). Drawn once as a plain 3D object, so it rotates WITH the
@@ -447,18 +456,24 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         arc_line = ax.plot(arc_pts[:arc_head_start, 0],
                            arc_pts[:arc_head_start, 1],
                            arc_pts[:arc_head_start, 2],
-                           color=AXIS_COLOR, lw=3.0, alpha=0.95, zorder=9)[0]
+                           color=AXIS_COLOR, lw=3.0, alpha=0.95,
+                           zorder=OP_ZORDER)[0]
 
         # Draw only the final arc segment as an arrow. The plain arc stops at
         # the arrow base, so the stroke does not run through the arrowhead.
-        arc_arrow = _Arrow3D(
-            [arc_pts[arc_head_start, 0], arc_pts[-1, 0]],
-            [arc_pts[arc_head_start, 1], arc_pts[-1, 1]],
-            [arc_pts[arc_head_start, 2], arc_pts[-1, 2]],
-            arrowstyle='->', mutation_scale=22,
-            color=AXIS_COLOR, lw=3.0, shrinkA=0, shrinkB=0, zorder=9,
+        arc_arrow = ax.annotate(
+            '', xy=_screen_xy(ax, arc_pts[-1]),
+            xytext=_screen_xy(ax, arc_pts[arc_head_start]),
+            xycoords=ax.transData, textcoords=ax.transData,
+            arrowprops=dict(
+                arrowstyle='->', mutation_scale=22,
+                color=AXIS_COLOR, lw=3.0, shrinkA=0, shrinkB=0,
+            ),
+            zorder=OP_ZORDER + 1, annotation_clip=False,
         )
-        ax.add_artist(arc_arrow)
+        arc_arrow.set_clip_on(False)
+        if arc_arrow.arrow_patch is not None:
+            arc_arrow.arrow_patch.set_clip_on(False)
 
         # Bold label, kept general for any axis orientation:
         #  - vertical axes (C6/S3/C2∥c): push the label straight up past the tip.
@@ -475,7 +490,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         label_x, label_y, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
         label_artist = ax.text2D(
             label_x, label_y, order_str, transform=ax.transData,
-            fontsize=17, fontweight='bold', color=AXIS_COLOR, zorder=120,
+            fontsize=24, fontweight='bold', color=AXIS_COLOR,
+            zorder=OP_ZORDER + 2,
             ha='center', va='center',
         )
 
@@ -505,11 +521,10 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
                 arc_pts_now[:arc_head_start, 1],
                 arc_pts_now[:arc_head_start, 2],
             )
-            arc_arrow._verts3d = (
-                [arc_pts_now[arc_head_start, 0], arc_pts_now[-1, 0]],
-                [arc_pts_now[arc_head_start, 1], arc_pts_now[-1, 1]],
-                [arc_pts_now[arc_head_start, 2], arc_pts_now[-1, 2]],
-            )
+            axis_arrow.xy = _screen_xy(ax, tip)
+            axis_arrow.set_position(_screen_xy(ax, shaft_pt))
+            arc_arrow.xy = _screen_xy(ax, arc_pts_now[-1])
+            arc_arrow.set_position(_screen_xy(ax, arc_pts_now[arc_head_start]))
             label_x_now, label_y_now, _ = proj3d.proj_transform(
                 *label_pt, ax.get_proj()
             )
@@ -727,7 +742,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         # push all labels far from their points.
         _orig_pts = np.array(list(ibz_orig.values())) if ibz_orig else _all_pts
         _lbl_span = max(np.max(np.ptp(_orig_pts, axis=0)), 1e-8) if len(_orig_pts) else 1.0
-        _off_sc = _lbl_span * 0.10
+        _off_sc = _lbl_span * 0.1
 
         def _label_pts(pts_dict, color, edgecolor):
             for lbl, hpt in pts_dict.items():
