@@ -678,6 +678,20 @@ class KPointsModifier:
             i += 1
         return pairs
 
+    def _general_kpoint_output_basis(self, general_kpoint) -> Optional[List[float]]:
+        """Return the general point k in the output (input-cell) basis, or
+        None when the conversion is unavailable. When the standardized and
+        input bases coincide the returned value equals the input."""
+        if general_kpoint is None:
+            return None
+        if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
+            return None
+        try:
+            out = self._kpoint_for_output_basis([*general_kpoint[:3], "k"])
+        except Exception:
+            return None
+        return [float(out[0]), float(out[1]), float(out[2])]
+
     def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
                            transformation_matrix: Optional[np.ndarray] = None,
                            transformation_label: Optional[str] = None):
@@ -937,9 +951,8 @@ class KPointsModifier:
                                 and centroid_result is not None
                                 and 'b_matrix' in centroid_result)
             if _names_available:
-                print("  Note: matrices are in the input-cell fractional basis; "
-                      "the operation name")
-                print("  is in fractional basis.")
+                print("  Note: matrices are in the input-cell fractional basis.")
+                print("  Operation axis/plane indices are in the reciprocal (b1,b2,b3) basis.")
             print("Default R: Option 1")
             _preset_pending = preset_choice is not None
             while R is None:
@@ -1477,7 +1490,7 @@ class KPointsModifier:
             try:
                 c = centroid_result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]
-                print(f"IBZ centroid: [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
+                print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
             except Exception as e:
                 print(f"[Warning] Centroid retrieval failed: {e}")
         elif struct_file and CENTROID_AVAILABLE:
@@ -1490,16 +1503,22 @@ class KPointsModifier:
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]
-                print(f"IBZ centroid: [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
+                print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
             except Exception as e:
                 print(f"[Warning] Centroid computation failed: {e}")
 
         # Append centroid to spin_operations.txt for reference
         if general_kpoint is not None:
+            out_k = self._general_kpoint_output_basis(general_kpoint)
+            if out_k is not None:
+                print(f"IBZ centroid (input-cell basis): [{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]")
             try:
                 with open("spin_operations.txt", "a", encoding="utf-8", newline="\n") as f:
-                    f.write(f"\nGeneral k-point (IBZ centroid, fractional): "
+                    f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
                             f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
+                    if out_k is not None:
+                        f.write(f"General k-point (IBZ centroid, input-cell basis): "
+                                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
             except Exception:
                 pass
 
