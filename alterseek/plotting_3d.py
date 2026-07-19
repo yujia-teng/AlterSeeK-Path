@@ -612,11 +612,12 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 ibz_orig[lbl] = row[0] * b1 + row[1] * b2 + row[2] * b3
 
     # Spin-down IBZ high-sym points: apply R^{-T} to each original point.
-    # ibz_mapped      : for labels only --skip points that coincide with an
-    #                   original high-sym point (e.g. 闁剧粯娲熼崺?- to avoid stacked labels.
-    # ibz_mapped_lines: for dashed-line drawing --include ALL mapped points so
-    #                   that the k'闂?-line (and any other self-mapped point) is
-    #                   still drawn even when it carries no new label.
+    # ibz_mapped      : for labels only -- skip mapped high-symmetry points
+    #                   that coincide with original points (e.g. Gamma-prime
+    #                   coinciding with Gamma), avoiding stacked labels.
+    # ibz_mapped_lines: for dashed-line drawing -- retain every mapped point so
+    #                   connections from k-prime to self-mapped high-symmetry
+    #                   points are still drawn without a separate prime label.
     ibz_mapped       = {}
     ibz_mapped_lines = {}
     for lbl, frac in ibz_kpoints_frac.items():
@@ -697,7 +698,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
 
         def _is_gamma_label(label):
             base = str(label).rstrip("'")
-            return base in ('Γ', 'GAMMA', 'ŚŁ')
+            return base in ('Γ', 'GAMMA')
 
         if path_sequence is not None:
             for i in range(len(path_sequence) - 1):
@@ -764,7 +765,8 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                         c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40)
 
         # k' --spin-down high-sym points (dashed blue)
-        # Use ibz_mapped_lines (includes self-mapped 闁? so k'闂?-is always drawn.
+        # Use ibz_mapped_lines so connections from k-prime to self-mapped
+        # high-symmetry points are retained.
         for hpt in ibz_mapped_lines.values():
             if np.linalg.norm(hpt - kp_cart) > threshold:
                 ax.plot([hpt[0], kp_cart[0]], [hpt[1], kp_cart[1]], [hpt[2], kp_cart[2]],

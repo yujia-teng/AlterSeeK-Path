@@ -1131,7 +1131,6 @@ class KPointsModifier:
 
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
-        _flip_file = 'spin_flip_operations.txt'
         standard_path_reason = None
         standard_path_reason_reported = False
         centroid_result = None
@@ -1215,21 +1214,19 @@ class KPointsModifier:
                 _step0_wrote_flip_file = False
                 print(f"{BOLD}[Note] {standard_path_reason}{RESET} Ordinary structural path will be written.")
             else:
-                # Record mtime before so we know if find_sf_run wrote a fresh file
-                _mtime_before = os.path.getmtime(_flip_file) if os.path.exists(_flip_file) else None
-                sf_result = find_sf_run(
-                    struct_file,
-                    moments_str,
-                    verbose=False,
-                    spin_axis_cart=spin_axis_cart,
-                )
+                try:
+                    sf_result = find_sf_run(
+                        struct_file,
+                        moments_str,
+                        verbose=False,
+                        spin_axis_cart=spin_axis_cart,
+                    )
+                except Exception as e:
+                    print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
+                    return False
                 if not isinstance(sf_result, dict):
                     print("[Error] Spin-symmetry analysis failed. Aborting.")
                     return False
-                _mtime_after = os.path.getmtime(_flip_file) if os.path.exists(_flip_file) else None
-                _step0_wrote_flip_file = (
-                    _mtime_after is not None and _mtime_after != _mtime_before
-                )
             if isinstance(sf_result, dict):
                 magnetic_setting_counts = None
                 magnetic_setting_outputs = None
@@ -1499,7 +1496,8 @@ class KPointsModifier:
                                           defer_show=True, verbose=False,
                                           seekpath_type_numbers=centroid_seekpath_type_numbers,
                                           mode_2d=self.mode_2d,
-                                          input_vacuum_axis=self.input_vacuum_axis)
+                                          input_vacuum_axis=self.input_vacuum_axis,
+                                          view_elev=view_elev, view_azim=view_azim)
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]

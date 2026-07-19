@@ -283,7 +283,7 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices, hull_labels=None):
     """Return only the non-coplanar edges of the IBZ hull as (pt1, pt2) pairs.
 
     Filters out internal triangulation diagonals within flat faces by checking
-    whether adjacent face normals are nearly parallel (|cos 闁煎啿鍓?--0.99).
+    whether adjacent face normals are nearly parallel (|cos(angle)| > 0.97).
     """
     from collections import defaultdict
     hull_pts = np.array(hull_pts)

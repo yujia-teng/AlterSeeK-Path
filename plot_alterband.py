@@ -412,8 +412,8 @@ def plot_alterband(
 
     tick_labels = [_format_tick_label(label) for label in labels]
 
-    up = np.loadtxt(band_up_path, skiprows=1)
-    dw = np.loadtxt(band_down_path, skiprows=1)
+    up = np.loadtxt(band_up_path, skiprows=1, ndmin=2)
+    dw = np.loadtxt(band_down_path, skiprows=1, ndmin=2)
     kpath = up[:, 0]
     bands_up = up[:, 1:]
     bands_dw = dw[:, 1:]

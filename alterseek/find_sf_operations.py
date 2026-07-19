@@ -403,8 +403,8 @@ def format_msg_without_soc(msg_type):
 def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
     """
     Run spin-flip operations analysis.
-    Called by auto-generate-general-kpath.py or used standalone.
-    Returns True on success, False on failure.
+    Called by the interactive workflow (alterseek/kpoints.py) or used standalone.
+    Returns a results dict on success, False on failure.
     """
     # 1. Structure Loading
     if verbose:

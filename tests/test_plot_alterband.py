@@ -120,3 +120,69 @@ def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         vasp_main(["--config", str(config)])
     assert "gap_frac" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "first, second, merged",
+    [("k", "k'", "k|k'"), ("k'", "k", "k'|k")],
+)
+def test_qe_build_tick_data_merges_gap_pairs_in_either_order(first, second, merged):
+    from plot_alterband_qe import _build_tick_data
+
+    kpath = np.array([0.0, 1.0, 3.0, 4.0])
+    waypoints = [("GAMMA", 30, 0), (first, 30, 1), (second, 1, 2), ("M", 30, 3)]
+
+    labels, positions = _build_tick_data(waypoints, kpath)
+
+    assert labels == ["GAMMA", merged, "M"]
+    assert positions == [0.0, 2.0, 4.0]
+
+
+def test_qe_build_tick_data_keeps_unpaired_helper_labels():
+    from plot_alterband_qe import _build_tick_data
+
+    kpath = np.array([0.0, 1.0, 2.0])
+    waypoints = [("k", 1, 0), ("M", 30, 1), ("k'", 30, 2)]
+
+    labels, positions = _build_tick_data(waypoints, kpath)
+
+    assert labels == ["k", "M", "k'"]
+    assert positions == [0.0, 1.0, 2.0]
+
+
+def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
+    from plot_alterband_qe import _parse_kpoints_qe
+
+    bad = tmp_path / "KPOINTS_alter_qe"
+    bad.write_text("K_POINTS crystal_b\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="truncated"):
+        _parse_kpoints_qe(bad)
+
+
+def test_qe_parse_kpoints_rejects_missing_waypoint_rows(tmp_path):
+    from plot_alterband_qe import _parse_kpoints_qe
+
+    bad = tmp_path / "KPOINTS_alter_qe"
+    bad.write_text(
+        "K_POINTS crystal_b\n"
+        "2\n"
+        "0.0 0.0 0.0 30 ! GAMMA\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="declares 2 waypoints but contains only 1",
+    ):
+        _parse_kpoints_qe(bad)
+
+
+def test_qe_parse_kpoints_malformed_waypoint_raises_value_error(tmp_path):
+    from plot_alterband_qe import _parse_kpoints_qe
+
+    bad = tmp_path / "KPOINTS_alter_qe"
+    bad.write_text(
+        "K_POINTS crystal_b\n2\n0.0 0.0 0.0 30 !GAMMA\n0.5 0.5 !X\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Malformed waypoint line"):
+        _parse_kpoints_qe(bad)

@@ -18,7 +18,7 @@ pytest.importorskip("findspingroup")
 pytest.importorskip("ase")
 
 REPO = Path(__file__).resolve().parents[1]
-POSCAR = REPO / "data" / "case_12_t-P4mmm-2121" / "POSCAR"
+POSCAR = REPO / "data" / "case_12_tP1-2121" / "POSCAR"
 REFERENCE = Path(__file__).parent / "references" / "case12_golden_kpoints.txt"
 
 

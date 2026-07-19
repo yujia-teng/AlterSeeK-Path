@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore", message="dict interface is deprecated")
 warnings.filterwarnings(
     "ignore",
     category=DeprecationWarning,
-    module=r"seekpath\.hpkot(\..*)-",
+    module=r"seekpath\.hpkot(\..*)?",
 )
 
 
@@ -218,7 +218,7 @@ def run(
     # are written in this basis by find_sf_operations.py.
     b_matrix_input = 2 * np.pi * np.linalg.inv(np.array(a_matrix)).T
 
-    # Conventional-cell reciprocal lattice (no 2闁?needed --cancels in formula).
+    # Conventional-cell reciprocal lattice (no 2pi needed -- cancels in formula).
     # Used to correctly convert seed flip ops that were written using the
     # conventional cell (input-cell POSCAR and spin_flip_operations.txt).
     _conv_lat = np.array(sp_result.get('conv_lattice', sp_result['primitive_lattice']))

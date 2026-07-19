@@ -61,7 +61,7 @@ _NUMBER_CONFIG_KEYS = {
 GREEK_LABELS = {
     "GAMMA": r"$\Gamma$",
     "Γ": r"$\Gamma$",
-    "螕": r"$\Gamma$",
+    "\u8795": r"$\Gamma$",  # Legacy mis-encoded Gamma.
     "DELTA": r"$\Delta$",
     "Δ": r"$\Delta$",
     "LAMBDA": r"$\Lambda$",
@@ -179,6 +179,10 @@ def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
             break
     if start == -1:
         raise ValueError(f"K_POINTS card not found in {path}")
+    if start + 1 >= len(all_lines):
+        raise ValueError(f"{path} is truncated right after the K_POINTS card")
+    if not all_lines[start + 1].split():
+        raise ValueError(f"{path}: missing waypoint-count line after the K_POINTS card")
 
     n_waypoints = int(all_lines[start + 1].strip().split()[0])
 
@@ -191,9 +195,21 @@ def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
             continue
         # format: x y z  ni  ! LABEL
         parts = stripped.split("!", 1)
-        ni = int(parts[0].split()[3])
+        fields = parts[0].split()
+        if len(fields) < 4:
+            raise ValueError(
+                f"Malformed waypoint line in {path}: '{stripped}' "
+                "(expected 'x y z ni  ! LABEL')"
+            )
+        ni = int(fields[3])
         label = parts[1].strip() if len(parts) > 1 else ""
         waypoints_raw.append((label, ni))
+
+    if len(waypoints_raw) != n_waypoints:
+        raise ValueError(
+            f"{path} declares {n_waypoints} waypoints but contains only "
+            f"{len(waypoints_raw)}"
+        )
 
     # cumulative k-indices: waypoint i starts at sum of preceding ninterps
     result: list[tuple[str, int, int]] = []
@@ -232,7 +248,8 @@ def _build_tick_data(
 ) -> tuple[list[str], list[float]]:
     """Convert waypoints to tick labels and x-positions.
 
-    Adjacent k / k' pairs are merged into a single k|k' tick at their midpoint.
+    Adjacent k / k' pairs (in either order) are merged into a single k|k' or
+    k'|k gap tick at their midpoint.
     """
     labels: list[str] = []
     positions: list[float] = []
@@ -240,14 +257,15 @@ def _build_tick_data(
     while i < len(waypoints):
         label, _ni, k_idx = waypoints[i]
         if (
-            label == "k"
+            label in ("k", "k'")
             and i + 1 < len(waypoints)
-            and waypoints[i + 1][0] == "k'"
+            and waypoints[i + 1][0] in ("k", "k'")
+            and waypoints[i + 1][0] != label
         ):
-            x_k = kpath[waypoints[i][2]]
-            x_kp = kpath[waypoints[i + 1][2]]
-            labels.append("k|k'")
-            positions.append((x_k + x_kp) / 2.0)
+            x_first = kpath[waypoints[i][2]]
+            x_second = kpath[waypoints[i + 1][2]]
+            labels.append(f"{label}|{waypoints[i + 1][0]}")
+            positions.append((x_first + x_second) / 2.0)
             i += 2
             continue
         if k_idx >= len(kpath):
