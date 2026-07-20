@@ -1,0 +1,6 @@
+&bands
+   prefix='GdAuGe',
+   outdir='./tmp/',
+   spin_component = 2,
+   filband = 'band-down.dat'
+/

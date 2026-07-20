@@ -28,7 +28,6 @@ from matplotlib.ticker import MaxNLocator
 
 
 DEFAULT_ELIM = (-2.0, 2.0)
-DEFAULT_GAP_FRAC = 0.002
 DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_FIG_SIZE = (12.0, 5.0)
 DEFAULT_PANEL_GAP = 0.08
@@ -46,15 +45,15 @@ HELPER_LABELS = {"k", "k'", *GAP_LABELS}
 
 _PLOT_CONFIG_KEYS = {
     "klabels", "up", "down", "band_up", "band_down", "output",
-    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "emin", "emax", "fig_width", "fig_height",
     "gap_width_inches", "lattice_type", "split_panels",
-    "rotate_xtick_labels", "xtick_rotation",
+    "rotate_xtick_labels", "xtick_rotation", "save_pdf",
 }
 _STRING_CONFIG_KEYS = {
     "klabels", "up", "down", "band_up", "band_down", "output", "lattice_type",
 }
 _NUMBER_CONFIG_KEYS = {
-    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "emin", "emax", "fig_width", "fig_height",
     "gap_width_inches", "xtick_rotation",
 }
 
@@ -219,6 +218,8 @@ def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
     if ("rotate_xtick_labels" in config and
             not isinstance(config["rotate_xtick_labels"], bool)):
         raise ValueError(f"rotate_xtick_labels in {path} must be true or false")
+    if "save_pdf" in config and not isinstance(config["save_pdf"], bool):
+        raise ValueError(f"save_pdf in {path} must be true or false")
     return config
 
 
@@ -375,12 +376,12 @@ def plot_alterband(
     output: str | Path = "alterband.png",
     elim: tuple[float, float] = DEFAULT_ELIM,
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
-    gap_frac: float = DEFAULT_GAP_FRAC,
-    gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
+    gap_width_inches: float = DEFAULT_GAP_WIDTH_INCHES,
     lattice_type: str | None = None,
     split_panels: int = 1,
     rotate_xtick_labels: bool = False,
     xtick_rotation: float = 45.0,
+    save_pdf: bool = False,
 ) -> Path:
     """Create the spin-resolved band plot and return the output path."""
     klabels_path = Path(klabels)
@@ -405,9 +406,7 @@ def plot_alterband(
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KLABELS positions must increase from first to last entry")
-    if gap_frac < 0:
-        raise ValueError("gap_frac must be non-negative")
-    if gap_width_inches is not None and gap_width_inches < 0:
+    if gap_width_inches < 0:
         raise ValueError("gap_width_inches must be non-negative")
 
     tick_labels = [_format_tick_label(label) for label in labels]
@@ -459,8 +458,6 @@ def plot_alterband(
 
     def _gap_half_for(xlim: tuple[float, float]) -> float:
         panel_span = xlim[1] - xlim[0]
-        if gap_width_inches is None:
-            return panel_span * gap_frac
         return 0.5 * gap_width_inches * panel_span / axis_width_inches
 
     for ax, xlim in zip(flat_axes, ranges):
@@ -482,6 +479,8 @@ def plot_alterband(
 
     fig.supylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=font_size + 1)
     fig.savefig(output_path, dpi=800, bbox_inches="tight")
+    if save_pdf and output_path.suffix.lower() != ".pdf":
+        fig.savefig(output_path.with_suffix(".pdf"), dpi=800, bbox_inches="tight")
     plt.close(fig)
     return output_path
 
@@ -505,7 +504,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fig-height", type=float, default=None, help="Figure height in inches.")
     parser.add_argument("--lattice-type", default=None, help="HPKOT lattice type such as tI1 or mC2.")
     parser.add_argument("--split-panels", type=int, default=None, help="Use 1, 2, or 3 stacked panels.")
-    parser.add_argument("--gap-frac", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--gap-width-inches",
         type=float,
@@ -519,6 +517,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rotate x-axis tick labels.",
     )
     parser.add_argument("--xtick-rotation", type=float, default=None, help="X tick rotation angle.")
+    parser.add_argument(
+        "--save-pdf",
+        action="store_true",
+        default=None,
+        help="Also save a PDF copy alongside the primary output.",
+    )
     return parser
 
 
@@ -540,8 +544,6 @@ def main(argv: list[str] | None = None) -> None:
         emax = float(option("emax", DEFAULT_ELIM[1]))
         fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
         fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
-        gap_width_config = option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
-        gap_width_inches = None if gap_width_config is None else float(gap_width_config)
         output = plot_alterband(
             klabels=option("klabels", "KLABELS"),
             band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
@@ -549,12 +551,12 @@ def main(argv: list[str] | None = None) -> None:
             output=option("output", "alterband.png"),
             elim=(emin, emax),
             fig_size=(fig_width, fig_height),
-            gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
-            gap_width_inches=gap_width_inches,
+            gap_width_inches=float(option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)),
             lattice_type=option("lattice_type", None),
             split_panels=int(option("split_panels", 1)),
             rotate_xtick_labels=bool(option("rotate_xtick_labels", False)),
             xtick_rotation=float(option("xtick_rotation", 45.0)),
+            save_pdf=bool(option("save_pdf", False)),
         )
     except (ValueError, OSError) as exc:
         raise SystemExit(f"[Error] {exc}") from exc

@@ -29,7 +29,6 @@ from matplotlib.ticker import MaxNLocator
 
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_FIG_SIZE = (12.0, 5.0)
-DEFAULT_GAP_FRAC = 0.003
 DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_PANEL_GAP = 0.08
 GREY_COLOR = "0.65"
@@ -46,15 +45,15 @@ HELPER_LABELS = {"k", "k'", *GAP_LABELS}
 
 _PLOT_CONFIG_KEYS = {
     "band_up", "band_down", "kpoints_qe", "output", "fermi_ev",
-    "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "emin", "emax", "fig_width", "fig_height",
     "gap_width_inches", "split_panels", "rotate_xtick_labels",
-    "xtick_rotation",
+    "xtick_rotation", "save_pdf",
 }
 _STRING_CONFIG_KEYS = {
     "band_up", "band_down", "kpoints_qe", "output",
 }
 _NUMBER_CONFIG_KEYS = {
-    "fermi_ev", "emin", "emax", "fig_width", "fig_height", "gap_frac",
+    "fermi_ev", "emin", "emax", "fig_width", "fig_height",
     "gap_width_inches", "xtick_rotation",
 }
 
@@ -134,6 +133,8 @@ def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
     if ("rotate_xtick_labels" in config and
             not isinstance(config["rotate_xtick_labels"], bool)):
         raise ValueError(f"rotate_xtick_labels in {path} must be true or false")
+    if "save_pdf" in config and not isinstance(config["save_pdf"], bool):
+        raise ValueError(f"save_pdf in {path} must be true or false")
     return config
 
 
@@ -243,13 +244,23 @@ def _format_tick_label(label: str) -> str:
     return label
 
 
+_COINCIDENT_POSITION_TOL = 1e-4
+
+
 def _build_tick_data(
     waypoints: list[tuple[str, int, int]], kpath: np.ndarray
 ) -> tuple[list[str], list[float]]:
     """Convert waypoints to tick labels and x-positions.
 
     Adjacent k / k' pairs (in either order) are merged into a single k|k' or
-    k'|k gap tick at their midpoint.
+    k'|k gap tick at their midpoint. Any other pair of adjacent waypoints
+    that land at the same k-path position (the segment revisits a point
+    that is physically identical up to a reciprocal lattice vector, e.g.
+    a path landing back on a zone-boundary point under a different label)
+    is merged into a single "A|B" tick -- otherwise matplotlib silently
+    drops one of the two same-position labels (mirrors
+    _fix_klabels_missing_merge in plot_alterband.py, which handles the
+    same coincident-point case for VASP/VASPKIT-derived KLABELS).
     """
     labels: list[str] = []
     positions: list[float] = []
@@ -273,8 +284,23 @@ def _build_tick_data(
                 f"Waypoint '{label}' has k-index {k_idx} but .gnu file has only "
                 f"{len(kpath)} k-points — KPOINTS_alter_qe and .gnu file mismatch"
             )
+        x_pos = float(kpath[k_idx])
+        next_label, _next_ni, next_k_idx = (
+            waypoints[i + 1] if i + 1 < len(waypoints) else (None, None, None)
+        )
+        if (
+            next_label is not None
+            and label not in ("k", "k'")
+            and next_label not in ("k", "k'")
+            and next_k_idx < len(kpath)
+            and abs(float(kpath[next_k_idx]) - x_pos) < _COINCIDENT_POSITION_TOL
+        ):
+            labels.append(label if next_label == label else f"{label}|{next_label}")
+            positions.append(x_pos)
+            i += 2
+            continue
         labels.append(label)
-        positions.append(float(kpath[k_idx]))
+        positions.append(x_pos)
         i += 1
     return labels, positions
 
@@ -392,11 +418,11 @@ def plot_alterband_qe(
     fermi_ev: float = 0.0,
     elim: tuple[float, float] = DEFAULT_ELIM,
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
-    gap_frac: float = DEFAULT_GAP_FRAC,
-    gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
+    gap_width_inches: float = DEFAULT_GAP_WIDTH_INCHES,
     split_panels: int = 1,
     rotate_xtick_labels: bool = False,
     xtick_rotation: float = 45.0,
+    save_pdf: bool = False,
 ) -> Path:
     """Create the QE spin-resolved band plot and return the output path."""
     band_up_path = Path(band_up)
@@ -417,9 +443,7 @@ def plot_alterband_qe(
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KPOINTS_alter_qe positions must increase from first to last entry")
-    if gap_frac < 0:
-        raise ValueError("gap_frac must be non-negative")
-    if gap_width_inches is not None and gap_width_inches < 0:
+    if gap_width_inches < 0:
         raise ValueError("gap_width_inches must be non-negative")
 
     tick_labels = [_format_tick_label(lbl) for lbl in labels]
@@ -465,8 +489,6 @@ def plot_alterband_qe(
 
     def _gap_half_for(xlim: tuple[float, float]) -> float:
         panel_span = xlim[1] - xlim[0]
-        if gap_width_inches is None:
-            return panel_span * gap_frac
         return 0.5 * gap_width_inches * panel_span / axis_width_inches
 
     for ax, xlim in zip(flat_axes, ranges):
@@ -488,6 +510,8 @@ def plot_alterband_qe(
 
     fig.supylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=font_size + 1)
     fig.savefig(output_path, dpi=800, bbox_inches="tight")
+    if save_pdf and output_path.suffix.lower() != ".pdf":
+        fig.savefig(output_path.with_suffix(".pdf"), dpi=800, bbox_inches="tight")
     plt.close(fig)
     return output_path
 
@@ -515,8 +539,6 @@ def main(argv: list[str] | None = None) -> None:
         fig_width = float(config.get("fig_width", DEFAULT_FIG_SIZE[0]))
         fig_height = float(config.get("fig_height", DEFAULT_FIG_SIZE[1]))
         out_path = args.output or config.get("output", "alterband_qe.png")
-        gap_width_config = config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
-        gap_width_inches = None if gap_width_config is None else float(gap_width_config)
         output = plot_alterband_qe(
             band_up=config.get("band_up", "band_up.gnu"),
             band_down=config.get("band_down", "band_down.gnu"),
@@ -525,11 +547,11 @@ def main(argv: list[str] | None = None) -> None:
             fermi_ev=float(config.get("fermi_ev", 0.0)),
             elim=(emin, emax),
             fig_size=(fig_width, fig_height),
-            gap_frac=float(config.get("gap_frac", DEFAULT_GAP_FRAC)),
-            gap_width_inches=gap_width_inches,
+            gap_width_inches=float(config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)),
             split_panels=int(config.get("split_panels", 1)),
             rotate_xtick_labels=bool(config.get("rotate_xtick_labels", False)),
             xtick_rotation=float(config.get("xtick_rotation", 45.0)),
+            save_pdf=bool(config.get("save_pdf", False)),
         )
     except (ValueError, OSError) as exc:
         raise SystemExit(f"[Error] {exc}") from exc

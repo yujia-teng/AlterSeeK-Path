@@ -65,11 +65,35 @@ def test_vaspkit_label_repair_is_in_memory_and_reported(tmp_path, capsys):
     assert "KLABELS was not modified" in output
 
 
+def test_save_pdf_writes_alongside_primary_output(tmp_path):
+    klabels = tmp_path / "KLABELS"
+    klabels.write_text("A 0.0\nB 1.0\n", encoding="utf-8")
+    band_text = "k band\n0.0 0.0\n0.5 0.1\n1.0 0.0\n"
+    up = tmp_path / "up.dat"
+    down = tmp_path / "down.dat"
+    up.write_text(band_text, encoding="utf-8")
+    down.write_text(band_text, encoding="utf-8")
+    png_path = tmp_path / "bands.png"
+
+    plot_alterband(
+        klabels=klabels,
+        band_up=up,
+        band_down=down,
+        output=png_path,
+        save_pdf=True,
+    )
+
+    assert png_path.exists()
+    assert png_path.with_suffix(".pdf").exists()
+
+
 @pytest.mark.parametrize(
     "validator, config",
     [
         (_validate_plot_config, {"emin_typo": -2}),
         (_validate_plot_config, {"rotate_xtick_labels": "yes"}),
+        (_validate_plot_config, {"save_pdf": "yes"}),
+        (_validate_qe_plot_config, {"save_pdf": "yes"}),
         (_validate_qe_plot_config, {"lattice_type": "hP2"}),
         (_validate_qe_plot_config, {"split_panels": 4}),
         (_validate_plot_config, {"split_panels": 0}),
@@ -114,12 +138,12 @@ def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
         f'klabels = "{klabels.as_posix()}"\n'
         f'up = "{up.as_posix()}"\n'
         f'down = "{down.as_posix()}"\n'
-        "gap_frac = -1\n",
+        "gap_width_inches = -1\n",
         encoding="utf-8",
     )
     with pytest.raises(SystemExit) as excinfo:
         vasp_main(["--config", str(config)])
-    assert "gap_frac" in str(excinfo.value)
+    assert "gap_width_inches" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(

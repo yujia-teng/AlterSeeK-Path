@@ -1,16 +1,16 @@
- SYSTEM=SrVO3
+ SYSTEM=GdAuGe
 
  Startparameter for this Run:
    ISTART =      0                 job   : 0-new  1-cont  2-samecut
    ISPIN  =      2                 spin polarized calculation?
- MAGMOM =  8 -8 4*0                
+ MAGMOM =  8 -8 4*0
  LDAU =.TRUE.
  LDAUTYPE = 2
  LDAUL =  3 -1 -1
  LDAUU =  6.00 0.00 0.00
  LDAUJ =  0.00 0.00 0.00
  LDAUPRINT = 2
-ICHARG = 11
+# ICHARG =11
   LORBIT=11                             for band structure, set to 12
   LWAVE  = .FALSE.                write wavefunctions to file
  LMAXMIX = 6
@@ -20,11 +20,11 @@ ICHARG = 11
 
  Parallelization setup: (for usual Linux cluster)
   NPAR   = 4                      number of bands in parallel treatment
-NBANDS = 96
+# NBANDS = 48 
  DOS related values:
   ENCUT = 500
 
-ISMEAR = 0
+  ISMEAR = 0 ;   SIGMA =  0.2  broadening in eV -4-tet -1-fermi 0-gaus
   NEDOS  = 2000
   EMIN   = -15;   EMAX  = 15      DOS plot range
  

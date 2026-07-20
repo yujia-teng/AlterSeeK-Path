@@ -1,0 +1,13 @@
+# AlterSeeK band-plot settings
+lattice_type = "hP2"
+klabels = "KLABELS"
+band_up = "REFORMATTED_BAND_UP.dat"
+band_down = "REFORMATTED_BAND_DW.dat"
+emin = -2
+emax = 2
+fig_width = 12
+fig_height = 5
+gap_width_inches = 0.05
+split_panels = 1
+output = "alterband.png"
+save_pdf = false

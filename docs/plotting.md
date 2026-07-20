@@ -58,6 +58,7 @@ fig_height = 5
 gap_width_inches = 0.05
 split_panels = 1
 output = "alterband.png"
+save_pdf = false
 ```
 
 | Setting | Meaning | Equivalent CLI flag |
@@ -68,6 +69,7 @@ output = "alterband.png"
 | `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths | `--gap-width-inches` |
 | `split_panels` | `1` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) | `--split-panels` |
 | `output` | Output image filename (`.png` or `.pdf`) | `-o` |
+| `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` | `--save-pdf` |
 
 The plotter repairs known VASPKIT boundary-label and truncation errors in
 memory and reports any correction it uses. It does not rewrite `KLABELS`.
@@ -111,6 +113,7 @@ fig_height = 5
 gap_width_inches = 0.05
 split_panels = 1
 output = "alterband_qe.png"
+save_pdf = false
 ```
 
 | Setting | Meaning |
@@ -120,10 +123,10 @@ output = "alterband_qe.png"
 | `fermi_ev` | Energy shift applied before plotting (QE `.gnu` output is not pre-shifted to E_F, unlike VASPKIT's reformatted files) |
 | `emin`, `emax` | Energy window in eV |
 | `fig_width`, `fig_height` | Figure size in inches |
-| `gap_frac`, `gap_width_inches` | Same meaning as the VASP plotter's settings |
+| `gap_width_inches` | Same meaning as the VASP plotter's setting |
 | `split_panels` | `1` for one panel, `2`/`3` for stacked panels |
-| `rotate_xtick_labels`, `xtick_rotation` | Rotate x-axis tick labels |
 | `output` | Output image filename (`.png` or `.pdf`) |
+| `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` |
 
 There is no `lattice_type` setting for QE plotting — it exists on the VASP
 side only to repair VASPKIT's truncated labels, which doesn't apply here

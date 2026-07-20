@@ -1,0 +1,39 @@
+&CONTROL
+  prefix='GdAuGe', 
+  calculation='scf', pseudo_dir='./', outdir='./tmp', verbosity='high',
+  tprnfor=.true., tstress=.true., 
+/
+&SYSTEM
+  ibrav= 4, nat= 6, ntyp= 4, celldm(1)=8.367688, celldm(3)=1.675162, 
+  occupations = 'smearing', smearing = 'gauss', degauss = 1.0d-2,
+  ecutwfc = 45, ecutrho = 200, nbnd = 96,
+  nspin = 2,
+  starting_magnetization(1)= 0.4,
+  starting_magnetization(2)=-0.4,
+/
+&ELECTRONS
+  conv_thr = 1.0d-8
+  mixing_beta = 0.3
+/
+&IONS
+/
+&CELL
+  press_conv_thr=0.1
+/
+ATOMIC_SPECIES
+  Gd1 157.25 Gd.paw.z_18.atompaw.wentzcovitch.v1.2.upf
+  Gd2 157.25 Gd.paw.z_18.atompaw.wentzcovitch.v1.2.upf
+  Au 196.96655 Au.pbe-n-kjpaw_psl.1.0.0.UPF
+  Ge 72.61 Ge.pbe-n-kjpaw_psl.1.0.0.UPF
+ATOMIC_POSITIONS (crystal)
+  Gd1  0.0000000000  0.0000000000  0.0000000000
+  Gd2  0.0000000000  0.0000000000  0.5000000000
+  Au  0.3333330000  0.6666670000  0.2796800000
+  Au  0.6666670000  0.3333330000  0.7796800000
+  Ge  0.6666670000  0.3333330000  0.2114000000
+  Ge  0.3333330000  0.6666670000  0.7114000000
+K_POINTS {automatic}
+  9 9 3 0 0 0
+HUBBARD (ortho-atomic)
+U Gd1-4f 6.0
+U Gd2-4f 6.0
