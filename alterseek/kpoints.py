@@ -946,13 +946,13 @@ class KPointsModifier:
         R = None
         selected_transformation_label = None
         if flip_ops:
-            print(f"Found {len(flip_ops)} spin-flip operations.")
+            print(f"Found {len(flip_ops)} spin-flip operations R.")
             _names_available = (describe_spinflip_op is not None
                                 and centroid_result is not None
                                 and 'b_matrix' in centroid_result)
             if _names_available:
-                print("  Note: matrices are in the input-cell fractional basis.")
-                print("  Operation axis/plane indices are in the reciprocal (b1,b2,b3) basis.")
+                print("  Note: R is in the input-cell fractional basis;")
+                print("  rotation axis/mirror plane indices are in the reciprocal (b1,b2,b3) basis.")
             print("Default R: Option 1")
             _preset_pending = preset_choice is not None
             while R is None:
@@ -1082,10 +1082,17 @@ class KPointsModifier:
                 preserve_ops_for_plot,
                 "spin-preserving",
             )
-            print("[Basis] Converted R from input-cell basis to primitive basis.")
-            print("[Basis] Annotated spin operation files with standardized-basis matrices.")
-            print("Primitive-basis R used for KPOINTS:")
-            print(self._format_matrix(R_for_kpts))
+            # R_for_kpts (the selected operation in the standardized primitive
+            # basis) is intentionally not printed: both bases are always saved to
+            # spin_flip_operations.txt for reference (left = input, right =
+            # standardized). To echo it on screen -- it differs from the Step-3
+            # input-basis matrix only for centered cells (BCT/RHL/base-centered) --
+            # re-enable:
+            #     if not np.allclose(np.asarray(R, dtype=float), R_for_kpts, atol=1e-6):
+            #         print("[Basis] Spin-flip operation R in the standardized "
+            #               "primitive basis (converted from the input-cell basis; "
+            #               "used for KPOINTS and figures):")
+            #         print(self._format_matrix(R_for_kpts))
         else:
             R_for_kpts = R
         return R_for_kpts, R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot

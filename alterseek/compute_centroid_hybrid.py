@@ -560,7 +560,6 @@ def run(
         plt.tight_layout()
         if defer_show:
             def _save_fig1_after_show(fig=fig1, ax=ax1):
-                print(f"[View] elev={ax.elev:.2f}, azim={ax.azim:.2f}")
                 fig1s, ax1s = setup_3d_ax(fig1_title,
                                           bz_loops, b_matrix, bz_center, bz_span,
                                           elev=ax.elev, azim=ax.azim,

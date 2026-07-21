@@ -791,7 +791,6 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig, ax=ax):
-            print(f"[View] elev={ax.elev:.2f}, azim={ax.azim:.2f}")
             fig_save, ax_save = setup_3d_ax("Spin-flip path connections",
                                             bz_loops, b_matrix, bz_center, bz_span,
                                             elev=ax.elev, azim=ax.azim,

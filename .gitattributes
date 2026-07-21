@@ -1,0 +1,6 @@
+# Example inputs/outputs (QE .gnu band data, pseudopotentials, rendered
+# figures, reformatted band data) are sample material, not project source.
+# Exclude them from GitHub's language statistics so the repo is reported as
+# the Python project it is, rather than "Gnuplot" (the .gnu band files are
+# ~1.3 MB each and otherwise dominate the language bar).
+example/** linguist-vendored=true

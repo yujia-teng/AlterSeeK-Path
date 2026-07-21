@@ -442,11 +442,6 @@ def plot_alterband(
     )
     flat_axes = list(axes[:, 0])
 
-    for ax, xlim in zip(flat_axes, ranges):
-        ax.set_xlim(xlim)
-        ax.set_ylim(elim)
-        ax.set_xticks([p for p in positions if xlim[0] <= p <= xlim[1]])
-
     # Every panel is rendered at the same physical figure width regardless of
     # how much k-path range it covers, so a gap sized relative to the GLOBAL
     # x_total looks wrong on any panel that only shows a slice of it (a

@@ -146,6 +146,13 @@ def _print_saved_paths(saved_paths, verbose=True):
         print(f"Saved: {path}")
 
 
+_GREEK_MATH = {
+    "DELTA": r"\Delta",
+    "LAMBDA": r"\Lambda",
+    "SIGMA": r"\Sigma",
+}
+
+
 def _math_label(label):
     """Return a bold mathtext label for high-symmetry point names."""
     label = str(label)
@@ -155,19 +162,9 @@ def _math_label(label):
         symbol = r"\Gamma"
     elif '_' in base:
         head, sub = base.split('_', 1)
-        greek = {
-            "DELTA": r"\Delta",
-            "LAMBDA": r"\Lambda",
-            "SIGMA": r"\Sigma",
-        }
-        symbol = rf"{greek.get(head.upper(), head)}_{{{sub}}}"
+        symbol = rf"{_GREEK_MATH.get(head.upper(), head)}_{{{sub}}}"
     else:
-        greek = {
-            "DELTA": r"\Delta",
-            "LAMBDA": r"\Lambda",
-            "SIGMA": r"\Sigma",
-        }
-        symbol = greek.get(base.upper(), base)
+        symbol = _GREEK_MATH.get(base.upper(), base)
     if prime:
         # Attach the prime as a real mathtext superscript (inside the same
         # braces as any subscript) so it stacks tightly next to the base
