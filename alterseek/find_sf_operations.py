@@ -118,6 +118,59 @@ def _laue_group_from_point_group(point_group):
     return mapping.get(pg)
 
 
+def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif):
+    """Return the structural (moment-free) space/point/Laue group of a cell."""
+    symprec = (
+        _select_mcif_symprec_for_non_magnetic_label(structure_file, lattice, positions, numbers)
+        if is_mcif else _DEFAULT_SYMPREC
+    )
+    dataset = spglib.get_symmetry_dataset((lattice, positions, numbers), symprec=symprec)
+    if not dataset:
+        return {
+            'non_mag_label': "Unknown",
+            'point_group': "Unknown",
+            'laue_group': "Unknown",
+            'spacegroup_number': None,
+        }
+    point_group = dataset.pointgroup
+    return {
+        'non_mag_label': f"{dataset.international} ({dataset.number})",
+        'point_group': point_group,
+        'laue_group': _laue_group_from_point_group(point_group) or "Unknown",
+        'spacegroup_number': int(dataset.number),
+    }
+
+
+def non_magnetic_symmetry_of_file(structure_file):
+    """Read a structure file and report its moment-free space/point/Laue group.
+
+    Used by the workflow to evaluate the altermagnetism Laue-group gate against
+    the magnetic primitive cell it actually builds the path in, rather than
+    against the cell the user happened to submit. Returns None if the file
+    cannot be read or symmetry detection fails.
+    """
+    is_mcif = str(structure_file).lower().endswith('.mcif')
+    try:
+        if is_mcif:
+            from pymatgen.io.cif import CifParser
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                pmg_struct = CifParser(structure_file).parse_structures(primitive=False)[0]
+            lattice = np.array(pmg_struct.lattice.matrix)
+            positions = np.array([site.frac_coords for site in pmg_struct])
+            numbers = np.array([site.specie.Z for site in pmg_struct])
+        else:
+            structure = read(structure_file)
+            lattice = structure.get_cell()
+            positions = structure.get_scaled_positions()
+            numbers = structure.get_atomic_numbers()
+    except Exception:
+        return None
+    result = _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif)
+    return result if result['laue_group'] != "Unknown" else None
+
+
 # --- HELPER 1: Write FULL details for human reading ---
 def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info, verbose=True):
     """Writes all spin symmetry operations to a text file."""
@@ -532,24 +585,15 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
         print("2. Non-Magnetic Space Group Analysis")
         print("="*40)
 
-    symprec = (
-        _select_mcif_symprec_for_non_magnetic_label(structure_file, lattice, positions, numbers)
-        if is_mcif else _DEFAULT_SYMPREC
-    )
-    cell = (lattice, positions, numbers)
-    dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
-
-    non_mag_label = "Unknown"
-    point_group = "Unknown"
-    laue_group = "Unknown"
-    if dataset:
-        non_mag_label = f"{dataset.international} ({dataset.number})"
-        point_group = dataset.pointgroup
-        laue_group = _laue_group_from_point_group(point_group) or "Unknown"
-        if verbose:
+    non_magnetic = _non_magnetic_symmetry(
+        structure_file, lattice, positions, numbers, is_mcif)
+    non_mag_label = non_magnetic['non_mag_label']
+    point_group = non_magnetic['point_group']
+    laue_group = non_magnetic['laue_group']
+    if verbose:
+        if non_magnetic['spacegroup_number'] is not None:
             print(f"Space Group: {non_mag_label}")
-    else:
-        if verbose:
+        else:
             print("Non-magnetic symmetry detection failed.")
 
     # --- PART 3: Magnetic Configuration ---

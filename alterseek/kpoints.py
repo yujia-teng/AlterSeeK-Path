@@ -9,11 +9,13 @@ import numpy as np
 
 try:
     from .find_sf_operations import run as find_sf_run
+    from .find_sf_operations import non_magnetic_symmetry_of_file
     FIND_SF_AVAILABLE = True
 except ImportError as _exc:
     print(f"[Warning] find_sf_operations unavailable ({_exc}); "
           "Step 0 spin-operation detection is disabled.")
     find_sf_run = None
+    non_magnetic_symmetry_of_file = None
     FIND_SF_AVAILABLE = False
 
 try:
@@ -62,6 +64,31 @@ _INPUT_CONFIG_KEYS = {
     "structure", "spin_axis", "moments", "path", "flip_option",
     "output_code", "view_elev", "view_azim", "save_pdf",
 }
+
+
+_NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
+
+
+def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
+    """Return a reason dict when the working cell's Laue group forbids
+    altermagnetism, or None when it permits it.
+
+    The gate must judge the cell the k-path is actually built in. When a
+    magnetic primitive cell was constructed, that cell -- not the cell the user
+    submitted -- decides, because the two can disagree on the answer: MnSe2
+    (MAGNDATA 1.0.47) is deposited in a cubic Pa-3 parent whose Laue group m-3
+    forbids altermagnetism entirely, while the magnetic primitive cell it
+    resolves to is orthorhombic with Laue group mmm, which permits it.
+    Judging the submitted cell there would wrongly discard a real altermagnet.
+    """
+    symmetry = working_cell_symmetry or sf_result
+    point_group = symmetry.get('point_group')
+    laue_group = symmetry.get('laue_group')
+    if no_altermagnetism_reason is not None:
+        return no_altermagnetism_reason(point_group)
+    if laue_group in _NO_ALTERMAGNETISM_LAUE_GROUPS:
+        return {'laue_group': laue_group, 'reason': 'No altermagnetism'}
+    return None
 
 
 def _validate_input_config(config):
@@ -1237,6 +1264,10 @@ class KPointsModifier:
             if isinstance(sf_result, dict):
                 magnetic_setting_counts = None
                 magnetic_setting_outputs = None
+                # Structural symmetry of the cell the path is actually built in.
+                # Stays None in the ordinary path, where sf_result already
+                # describes the submitted cell.
+                working_cell_symmetry = None
                 if self.magnetic_setting:
                     try:
                         mag_setting = prepare_magnetic_setting_files(
@@ -1248,6 +1279,16 @@ class KPointsModifier:
                         centroid_struct_file = mag_setting["helper_path"]
                         centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
                         magnetic_setting_counts = mag_setting
+                        # The altermagnetism Laue-group gate below must judge the
+                        # magnetic primitive cell, not the submitted one. They can
+                        # differ decisively: MnSe2 (MAGNDATA 1.0.47) is submitted in
+                        # a cubic Pa-3 parent whose Laue group m-3 forbids
+                        # altermagnetism, while its magnetic primitive cell is
+                        # orthorhombic with Laue group mmm, which allows it.
+                        if non_magnetic_symmetry_of_file is not None:
+                            working_cell_symmetry = non_magnetic_symmetry_of_file(
+                                mag_setting["real_poscar_path"]
+                            )
                     except Exception as e:
                         print(f"[Warning] --ssg-setting failed: {e}")
                         print("[Warning] Falling back to structural SeeK-path setting.")
@@ -1288,16 +1329,8 @@ class KPointsModifier:
                     )
                 else:
                     _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
-                laue_no_altermag = None
-                if no_altermagnetism_reason is not None:
-                    laue_no_altermag = no_altermagnetism_reason(
-                        sf_result.get('point_group'),
-                    )
-                elif sf_result.get('laue_group') in {'-1', '-3', 'm-3'}:
-                    laue_no_altermag = {
-                        'laue_group': sf_result.get('laue_group'),
-                        'reason': 'No altermagnetism',
-                    }
+                gate_laue_group = (working_cell_symmetry or sf_result).get('laue_group')
+                laue_no_altermag = _altermagnetism_gate(sf_result, working_cell_symmetry)
                 spin_split_diagnostic = sf_result.get('spin_split_diagnostic', '')
 
                 if centroid_result is not None:
@@ -1319,13 +1352,18 @@ class KPointsModifier:
                 print(f"SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
                       f"Laue {sf_result['laue_group']}")
+                if (working_cell_symmetry is not None
+                        and working_cell_symmetry['laue_group'] != sf_result.get('laue_group')):
+                    print(f"Magnetic primitive cell: SG {working_cell_symmetry['non_mag_label']}, "
+                          f"PG {working_cell_symmetry['point_group']}, "
+                          f"Laue {working_cell_symmetry['laue_group']}")
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")
                 print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
                 print(f"MSG without SOC: {sf_result['magnetic_space_group_without_soc']}")
 
                 if laue_no_altermag:
-                    laue = laue_no_altermag.get('laue_group', sf_result.get('laue_group'))
+                    laue = laue_no_altermag.get('laue_group', gate_laue_group)
                     standard_path_reason = f"Laue group {laue}: no altermagnetism."
                     print(f"{BOLD}[Note] {standard_path_reason}{RESET} Default path will be written.")
                     standard_path_reason_reported = True
