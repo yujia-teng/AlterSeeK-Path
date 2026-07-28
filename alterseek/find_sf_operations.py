@@ -18,6 +18,84 @@ import sympy as sp
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
+_DEFAULT_SYMPREC = 1e-5
+_MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
+
+
+def _cif_scalar(value):
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
+
+
+def _parent_hint_from_cif_block(block):
+    """Return the declared nonmagnetic parent-cell index and SG, if present."""
+    transform = _cif_scalar(block.get("_parent_space_group.child_transform_Pp_abc"))
+    if not transform:
+        return None
+    try:
+        from pymatgen.symmetry.settings import JonesFaithfulTransformation
+
+        parsed = JonesFaithfulTransformation.from_transformation_str(str(transform))
+        index = int(round(abs(float(np.linalg.det(np.asarray(parsed.P, dtype=float))))))
+    except Exception:
+        return None
+    if index <= 1:
+        return None
+
+    parent_number = _cif_scalar(block.get("_parent_space_group.IT_number"))
+    try:
+        parent_number = int(parent_number)
+    except (TypeError, ValueError):
+        parent_number = None
+    return {"index": index, "spacegroup_number": parent_number}
+
+
+def _declared_mcif_parent_hint(filename):
+    if not str(filename).lower().endswith(".mcif"):
+        return None
+    try:
+        from pymatgen.io.cif import CifParser
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            blocks = CifParser(filename).as_dict()
+        if not blocks:
+            return None
+        return _parent_hint_from_cif_block(next(iter(blocks.values())))
+    except Exception:
+        return None
+
+
+def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, numbers):
+    """Use the smallest conservative tolerance that recovers a declared parent.
+
+    MCIF-deposited coordinates are commonly rounded to 5 decimal places. For a
+    general (non-special) Wyckoff parameter, that rounding noise can sit just
+    outside spglib's default symprec, causing the non-magnetic space group used
+    for the altermagnetism Laue-group gate to be spuriously under-detected
+    (e.g. a genuinely cubic parent misread as a lower-symmetry subgroup). This
+    mirrors compute_centroid_hybrid.py's ordinary-mode parent recovery: only
+    accept a loosened tolerance when it reproduces the structure's own declared
+    parent space group, so a genuinely lower-symmetry structure is never
+    over-symmetrized.
+    """
+    hint = _declared_mcif_parent_hint(filename)
+    if hint is None or len(positions) % hint["index"] != 0:
+        return _DEFAULT_SYMPREC
+    expected_sites = len(positions) // hint["index"]
+    structure_cell = (lattice, positions, numbers)
+    for symprec in _MCIF_PARENT_SYMPREC_CANDIDATES:
+        dataset = spglib.get_symmetry_dataset(structure_cell, symprec=symprec)
+        primitive = spglib.find_primitive(structure_cell, symprec=symprec)
+        if dataset is None or primitive is None or len(primitive[1]) != expected_sites:
+            continue
+        parent_number = hint.get("spacegroup_number")
+        if parent_number is not None and int(dataset.number) != parent_number:
+            continue
+        return symprec
+    return _DEFAULT_SYMPREC
+
 
 def _laue_group_from_point_group(point_group):
     pg = str(point_group).strip().replace(' ', '')
@@ -454,8 +532,12 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
         print("2. Non-Magnetic Space Group Analysis")
         print("="*40)
 
+    symprec = (
+        _select_mcif_symprec_for_non_magnetic_label(structure_file, lattice, positions, numbers)
+        if is_mcif else _DEFAULT_SYMPREC
+    )
     cell = (lattice, positions, numbers)
-    dataset = spglib.get_symmetry_dataset(cell)
+    dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
 
     non_mag_label = "Unknown"
     point_group = "Unknown"
