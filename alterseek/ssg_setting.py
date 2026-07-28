@@ -8,12 +8,10 @@ import numpy as np
 
 try:
     from findspingroup import (
-        find_spin_group_acc_primitive,
         find_spin_group_acc_primitive_from_data,
     )
     FIND_SG_MAGNETIC_SETTING_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    find_spin_group_acc_primitive = None
     find_spin_group_acc_primitive_from_data = None
     FIND_SG_MAGNETIC_SETTING_AVAILABLE = False
 
@@ -156,22 +154,23 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
     if not FIND_SG_MAGNETIC_SETTING_AVAILABLE:
         raise RuntimeError("FindSpinGroup accurate primitive API is not available.")
 
-    is_mcif = structure_file.lower().endswith(".mcif")
-    if is_mcif:
-        result = find_spin_group_acc_primitive(structure_file)
-    else:
-        lattice_in, positions_in, elements_in, moments_in, spin_setting = _load_magnetic_input_data(
-            structure_file, moments_str, spin_axis_cart
-        )
-        result = find_spin_group_acc_primitive_from_data(
-            structure_file,
-            lattice_in,
-            positions_in,
-            elements_in,
-            [1.0] * len(elements_in),
-            moments_in,
-            input_spin_setting=spin_setting,
-        )
+    # Use the same pymatgen-backed MCIF loader as the rest of AlterSeeK-Path
+    # before entering FindSpinGroup's public from-data ACC-primitive route.
+    # Pymatgen restores near-special fractional coordinates (for example,
+    # 0.33333 -> 1/3) that a direct MCIF parse can otherwise leave just outside
+    # SeeK-path/spglib's default symmetry tolerance.
+    lattice_in, positions_in, elements_in, moments_in, spin_setting = _load_magnetic_input_data(
+        structure_file, moments_str, spin_axis_cart
+    )
+    result = find_spin_group_acc_primitive_from_data(
+        structure_file,
+        lattice_in,
+        positions_in,
+        elements_in,
+        [1.0] * len(elements_in),
+        moments_in,
+        input_spin_setting=spin_setting,
+    )
     cell = result["acc_primitive_cell_detail"]
     lattice = np.array(cell["lattice"], dtype=float)
     positions = [np.array(pos, dtype=float) for pos in cell["positions"]]

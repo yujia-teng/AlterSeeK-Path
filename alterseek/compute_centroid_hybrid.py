@@ -41,6 +41,88 @@ import spglib
 
 plt.rcParams["mathtext.fontset"] = "stix"
 
+_DEFAULT_SYMPREC = 1e-5
+_MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
+
+
+def _cif_scalar(value):
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
+
+
+def _parent_hint_from_cif_block(block):
+    """Return the declared nonmagnetic parent-cell index and SG, if present."""
+    transform = _cif_scalar(block.get("_parent_space_group.child_transform_Pp_abc"))
+    if not transform:
+        return None
+    try:
+        from pymatgen.symmetry.settings import JonesFaithfulTransformation
+
+        parsed = JonesFaithfulTransformation.from_transformation_str(str(transform))
+        index = int(round(abs(float(np.linalg.det(np.asarray(parsed.P, dtype=float))))))
+    except Exception:
+        return None
+    if index <= 1:
+        return None
+
+    parent_number = _cif_scalar(block.get("_parent_space_group.IT_number"))
+    try:
+        parent_number = int(parent_number)
+    except (TypeError, ValueError):
+        parent_number = None
+    parent_symbol = _cif_scalar(block.get("_parent_space_group.name_H-M_alt"))
+    return {
+        "index": index,
+        "spacegroup_number": parent_number,
+        "spacegroup_symbol": str(parent_symbol) if parent_symbol else None,
+        "transform": str(transform),
+    }
+
+
+def _declared_mcif_parent_hint(filename):
+    if not str(filename).lower().endswith(".mcif"):
+        return None
+    try:
+        from pymatgen.io.cif import CifParser
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            blocks = CifParser(filename).as_dict()
+        if not blocks:
+            return None
+        return _parent_hint_from_cif_block(next(iter(blocks.values())))
+    except Exception:
+        return None
+
+
+def _select_mcif_parent_symprec(filename, cell, positions, numbers):
+    """Use the smallest conservative tolerance that recovers a declared parent."""
+    hint = _declared_mcif_parent_hint(filename)
+    if hint is None or len(positions) % hint["index"] != 0:
+        return _DEFAULT_SYMPREC, None
+
+    expected_sites = len(positions) // hint["index"]
+    structure_cell = (cell, positions, numbers)
+    for symprec in _MCIF_PARENT_SYMPREC_CANDIDATES:
+        dataset = spglib.get_symmetry_dataset(structure_cell, symprec=symprec)
+        primitive = spglib.find_primitive(structure_cell, symprec=symprec)
+        if dataset is None or primitive is None or len(primitive[1]) != expected_sites:
+            continue
+        parent_number = hint.get("spacegroup_number")
+        if parent_number is not None and int(dataset.number) != parent_number:
+            continue
+        recovered = dict(hint)
+        recovered.update({
+            "symprec": symprec,
+            "input_sites": len(positions),
+            "primitive_sites": expected_sites,
+            "detected_spacegroup_number": int(dataset.number),
+            "detected_spacegroup_symbol": str(dataset.international),
+        })
+        return symprec, recovered
+    return _DEFAULT_SYMPREC, None
+
 
 def _write_seekpath_standard_poscar(lattice, positions, types, output_path, source_name):
     """Write the standardized input-cell setting used by SeeK-path."""
@@ -168,6 +250,10 @@ def run(
                 "seekpath_type_numbers length must match the number of structure sites."
             )
 
+    symprec, mcif_parent_recovery = _select_mcif_parent_symprec(
+        filename, cell, positions, numbers
+    )
+
     # ---- seekpath: lattice detection & standardization ----
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -178,9 +264,16 @@ def run(
             "ignore",
             message=r".*dict interface is deprecated.*",
         )
-        sp_result = seekpath.get_path((cell, positions, numbers), with_time_reversal=True)
+        sp_result = seekpath.get_path(
+            (cell, positions, numbers),
+            with_time_reversal=True,
+            symprec=symprec,
+        )
 
-    input_dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
+    input_dataset = spglib.get_symmetry_dataset(
+        (cell, positions, numbers),
+        symprec=symprec,
+    )
     os.makedirs(output_dir, exist_ok=True)
     standardized_structure_path = os.path.join(output_dir, f"{basename}_seekpath_standard.vasp")
     standard_mapping_path = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
@@ -212,7 +305,7 @@ def run(
         np.array(sp_result['primitive_positions']),
         sp_result['primitive_types'],
     )
-    dataset = spglib.get_symmetry_dataset(spg_cell)
+    dataset = spglib.get_symmetry_dataset(spg_cell, symprec=symprec)
     b_matrix = np.array(sp_result['reciprocal_primitive_lattice'])
     # Reciprocal lattice of the user-provided input cell. Step 0 rotations
     # are written in this basis by find_sf_operations.py.
@@ -638,6 +731,8 @@ def run(
         'seekpath_rotation_matrix': np.array(sp_result['rotation_matrix']),
         'standardized_structure_path': standardized_structure_path,
         'standard_mapping_path': standard_mapping_path,
+        'symprec': symprec,
+        'mcif_parent_recovery': mcif_parent_recovery,
         'display_figures': display_figures,
     }
 

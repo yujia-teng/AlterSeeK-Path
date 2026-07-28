@@ -108,8 +108,6 @@ moments = "5 -5"
 path = ""
 flip_option = 1
 output_code = "vasp"
-view_elev = 14
-view_azim = 20
 save_pdf = true
 ```
 
@@ -121,7 +119,6 @@ save_pdf = true
 | `path` | Step 1 path-choice prompt | `""` (or omit) uses the auto-generated path; a filename loads a custom `KPATH.in`/KPOINTS-style path |
 | `flip_option` | Step 3 spin-flip operation prompt | plain integer, picks that numbered option; omit for the interactive numbered menu (`list`/`manual` still available) |
 | `output_code` | Step 5 output-code prompt | `"vasp"` or `"qe"` |
-| `view_elev` / `view_azim` | 3D BZ figure camera angle | both required together; fixes the elevation/azimuth (degrees) used to render the 3D BZ figures instead of the default `(14, 20)` |
 | `save_pdf` | BZ figure output format | `true`/`false` (default `false`); when true, also saves a vector PDF alongside each BZ figure's default PNG output |
 
 Comment out a key (or delete the line) to make that one step interactive

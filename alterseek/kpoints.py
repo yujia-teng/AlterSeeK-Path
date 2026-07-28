@@ -1305,6 +1305,16 @@ class KPointsModifier:
                         "\nLattice type: "
                         f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
                     )
+                    parent_recovery = centroid_result.get("mcif_parent_recovery")
+                    if parent_recovery:
+                        print(
+                            "Nonmagnetic parent recovered: "
+                            f"{parent_recovery['detected_spacegroup_symbol']} "
+                            f"({parent_recovery['detected_spacegroup_number']}), "
+                            f"{parent_recovery['primitive_sites']} atoms "
+                            f"(magnetic-cell index {parent_recovery['index']}, "
+                            f"symprec={parent_recovery['symprec']:g})"
+                        )
                 print(f"Structure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
                 print(f"SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
