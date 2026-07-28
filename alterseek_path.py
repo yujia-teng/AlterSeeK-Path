@@ -31,14 +31,17 @@ def main():
         ),
     )
     parser.add_argument(
-        "--ssg-setting",
+        "--parent-setting",
         action="store_true",
-        help="Generate Figure 1/KPOINTS from FindSpinGroup's SSG setting.",
+        help="Build Figure 1/KPOINTS in the nonmagnetic parent cell instead of "
+             "the magnetic primitive cell. Useful for comparing several magnetic "
+             "orders against one fixed reference path, but that path does not "
+             "respect the symmetry of the magnetic state.",
     )
     parser.add_argument(
         "--output",
         choices=["verbose"],
-        help="verbose: keep SSG-setting intermediate/helper structures for debugging.",
+        help="verbose: keep intermediate/helper structures for debugging.",
     )
     parser.add_argument(
         "--2d",
@@ -58,7 +61,7 @@ def main():
     args = parser.parse_args(argv)
 
     modifier = KPointsModifier(
-        magnetic_setting=args.ssg_setting,
+        magnetic_setting=not args.parent_setting,
         output_verbose=args.output == "verbose",
         mode_2d=args.mode_2d,
         input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],

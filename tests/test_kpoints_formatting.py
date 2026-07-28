@@ -3,7 +3,27 @@
 import numpy as np
 import pytest
 
-from alterseek.kpoints import KPointsModifier
+from alterseek.kpoints import KPointsModifier, _fmt_coord
+
+
+def test_signed_zero_is_normalized():
+    """-0.0 and 0.0 are the same k-point and must render identically.
+
+    Whether a zero component comes out signed depends on the basis conversion,
+    so without this the same path emits different bytes depending on which cell
+    it was built in.
+    """
+    assert _fmt_coord(-0.0) == _fmt_coord(0.0) == "0.0000000000"
+    # A value that merely rounds to zero is also a zero component here.
+    assert _fmt_coord(-1e-15) == "0.0000000000"
+
+
+def test_nonzero_coordinates_keep_their_sign_and_precision():
+    assert _fmt_coord(-0.5) == "-0.5000000000"
+    assert _fmt_coord(0.5) == "0.5000000000"
+    assert _fmt_coord(1.0 / 3.0) == "0.3333333333"
+    # Small but genuinely nonzero at this precision: the sign must survive.
+    assert _fmt_coord(-0.00000000006) == "-0.0000000001"
 
 
 def test_gamma_label_is_vasp_safe():

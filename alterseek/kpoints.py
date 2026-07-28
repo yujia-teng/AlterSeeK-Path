@@ -66,6 +66,18 @@ _INPUT_CONFIG_KEYS = {
 }
 
 
+def _fmt_coord(value):
+    """Format a k-point coordinate, collapsing signed zero to plain zero.
+
+    -0.0 and 0.0 are the same k-point, but they render differently and so make
+    otherwise identical KPOINTS files compare unequal. Which one comes out
+    depends on sign carried through the basis conversion -- that is, on which
+    cell the path was built in -- not on the physics.
+    """
+    text = f"{value:.10f}"
+    return text[1:] if text.startswith("-") and float(text) == 0.0 else text
+
+
 _NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 
 
@@ -143,8 +155,12 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
 
 
 class KPointsModifier:
-    def __init__(self, magnetic_setting: bool = False, output_verbose: bool = False,
+    def __init__(self, magnetic_setting: bool = True, output_verbose: bool = False,
                  mode_2d: bool = False, input_vacuum_axis: int = 2):
+        """magnetic_setting: build the path in the magnetic primitive cell
+        (the default). Set False to work in the nonmagnetic parent cell
+        instead, which the CLI exposes as --parent-setting.
+        """
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
@@ -283,8 +299,9 @@ class KPointsModifier:
         basis into the standardized primitive basis used internally.
 
         Custom path files are defined to use the reciprocal basis of the
-        structure submitted at Step 0. Output may use a different basis under
-        ``--ssg-setting``, so input and output matrices are kept distinct.
+        structure submitted at Step 0. Output uses the magnetic primitive
+        cell's basis, which differs whenever the magnetic order lowers the
+        lattice symmetry, so input and output matrices are kept distinct.
         """
         if not self.kpoints_data:
             raise ValueError("No custom KPOINTS path has been loaded.")
@@ -747,12 +764,12 @@ class KPointsModifier:
                 start_label = self._kpoints_label(start_point_out[3])
                 end_label = self._kpoints_label(end_point_out[3])
                 lines.append(
-                    f"   {start_point_out[0]:.10f}   {start_point_out[1]:.10f}   "
-                    f"{start_point_out[2]:.10f}     {start_label}\n"
+                    f"   {_fmt_coord(start_point_out[0])}   {_fmt_coord(start_point_out[1])}   "
+                    f"{_fmt_coord(start_point_out[2])}     {start_label}\n"
                 )
                 lines.append(
-                    f"   {end_point_out[0]:.10f}   {end_point_out[1]:.10f}   "
-                    f"{end_point_out[2]:.10f}     {end_label}\n"
+                    f"   {_fmt_coord(end_point_out[0])}   {_fmt_coord(end_point_out[1])}   "
+                    f"{_fmt_coord(end_point_out[2])}     {end_label}\n"
                 )
                 if end_raw_label == "k" or i < len(new_kpoints) - 2:
                     lines.append("\n")
@@ -804,8 +821,8 @@ class KPointsModifier:
             for pt_out, ni in waypoints:
                 lbl = self._kpoints_label(pt_out[3])
                 lines.append(
-                    f"  {pt_out[0]:.10f}  {pt_out[1]:.10f}  "
-                    f"{pt_out[2]:.10f}  {ni:3d}  ! {lbl}\n"
+                    f"  {_fmt_coord(pt_out[0])}  {_fmt_coord(pt_out[1])}  "
+                    f"{_fmt_coord(pt_out[2])}  {ni:3d}  ! {lbl}\n"
                 )
             if transformation_matrix is not None:
                 flat = np.array(transformation_matrix).flatten()
@@ -1290,8 +1307,10 @@ class KPointsModifier:
                                 mag_setting["real_poscar_path"]
                             )
                     except Exception as e:
-                        print(f"[Warning] --ssg-setting failed: {e}")
-                        print("[Warning] Falling back to structural SeeK-path setting.")
+                        print(f"[Warning] Magnetic primitive cell construction failed: {e}")
+                        print("[Warning] Falling back to the nonmagnetic parent cell "
+                              "(equivalent to --parent-setting). The path will not "
+                              "reflect the symmetry of the magnetic state.")
                         centroid_struct_file = struct_file
                         centroid_seekpath_type_numbers = None
                 if CENTROID_AVAILABLE:
