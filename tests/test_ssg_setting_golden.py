@@ -1,14 +1,21 @@
-"""Golden regression test for the experimental --ssg-setting workflow.
+"""Golden regression test for magnetic-primitive-cell path construction.
 
---ssg-setting (ssg_setting.py + KPointsModifier(magnetic_setting=True) +
-FindSpinGroup's acc-primitive setting) had no automated coverage. This drives it
-end-to-end on a GdAuGe 2x1x1 supercell (SUPERCELL_211.vasp) with the correct
-AFM magnetic order (moments 1 -1 1 -1 along c, alternating by the a1-doubling
-translation): --ssg-setting recovers the oC1 orthorhombic magnetic primitive
-(MSG P_Cmc2_1, BNS 26.76) and writes its default (non-altermagnetic) path.
+This is the default path-construction route (ssg_setting.py +
+KPointsModifier(magnetic_setting=True) + FindSpinGroup's acc-primitive
+setting); --parent-setting opts out of it. This drives it end-to-end on a
+GdAuGe 2x1x1 supercell (SUPERCELL_211.vasp) with the correct AFM magnetic
+order (moments 1 -1 1 -1 along c, alternating by the a1-doubling
+translation): the magnetic primitive cell is recovered as oC1 orthorhombic
+(MSG P_Cmc2_1, BNS 26.76) and its default (non-altermagnetic) path is
+written.
+
+magnetic_setting=True is passed explicitly even though it is now the
+default, so this test keeps covering the magnetic-primitive route if the
+default is ever changed again.
 
 Guards the shared helpers in ssg_setting.py / find_sf_operations.py (the deferred
-de-duplication) and the SSG branch of interactive_modify against future breakage.
+de-duplication) and the magnetic-cell branch of interactive_modify against
+future breakage.
 """
 import io
 import sys
@@ -17,8 +24,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-# --ssg-setting needs FindSpinGroup (acc-primitive) and ASE; skip cleanly (e.g. CI)
-# when they are not installed.
+# Magnetic-primitive construction needs FindSpinGroup (acc-primitive) and ASE;
+# skip cleanly (e.g. CI) when they are not installed.
 pytest.importorskip("findspingroup")
 pytest.importorskip("ase")
 

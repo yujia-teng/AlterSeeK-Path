@@ -37,10 +37,11 @@ Press Enter for the auto-detected SeeK-path, or provide a line-mode
 lattice type is reported using SeeK-path keys (`hP2`, `oI3`, `mC2`, etc.).
 
 A custom path is interpreted in the reciprocal fractional basis of the
-structure submitted in Step 0. With `--ssg-setting`, the analysis works in
-the magnetic primitive cell instead (e.g. a hexagonal lattice whose moments
-lower it to orthorhombic), so the custom path is interpreted in that magnetic
-primitive cell's reciprocal basis. AlterSeeK-Path converts it to the standardized
+structure submitted in Step 0. By default the analysis works in the magnetic
+primitive cell (e.g. a hexagonal lattice whose moments lower it to
+orthorhombic), so the custom path is interpreted in that magnetic primitive
+cell's reciprocal basis; under `--parent-setting` it is interpreted in the
+nonmagnetic parent cell's basis instead. AlterSeeK-Path converts it to the standardized
 SeeK-path basis for internal processing and converts the final path to the
 calculation cell's reciprocal basis when writing output. Custom files must use
 reciprocal line mode and contain labeled endpoint pairs; one complete segment
@@ -163,21 +164,40 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 | `*_2d_spinflip_*.png` | spin-up IBZ and its spin-flip image with path connections |
 | `*_2d_spinbz_*.png` | spin-colored 2D BZ domain pattern |
 
-## `--ssg-setting`
+## `--parent-setting`
+
+By default, Figure 1/KPOINTS are built in the **magnetic primitive cell** --
+the cell that reflects the symmetry of the magnetic state -- which
+AlterSeeK-Path identifies from the input magnetic structure with
+FindSpinGroup's spin-space-group setting.
+
+That cell coincides with the ordinary nonmagnetic structure when the magnetic
+order does not lower the lattice symmetry. It differs when the order does
+lower it: either a **q = 0** order selects a different magnetic primitive cell
+of the same volume (e.g. a hexagonal structural lattice whose magnetic pattern
+only respects orthorhombic symmetry), or a nonzero propagation vector
+**q != 0** enlarges it (e.g. a magnetic cell containing three parent cells).
+If the construction fails, AlterSeeK-Path falls back to the nonmagnetic parent
+cell with a warning.
 
 ```bash
-alterseek-path --ssg-setting
+alterseek-path --parent-setting
 ```
 
-By default, Figure 1/KPOINTS are built from the original structural cell's
-symmetry. Magnetic order can lower that symmetry -- e.g. a hexagonal
-structural lattice whose magnetic pattern only respects orthorhombic
-symmetry. `--ssg-setting` instead builds Figure 1/KPOINTS from the magnetic
-primitive cell (the lower, magnetically-correct symmetry) via
-FindSpinGroup's spin-space-group setting, rather than the higher-symmetry
-structural cell. Falls back to the structural setting with a warning if this
-fails. Add `--output verbose` to keep the intermediate helper files for
-debugging instead of deleting them.
+builds Figure 1/KPOINTS in the nonmagnetic parent cell instead. Displaying
+bands along a common parent-cell reference path is useful for comparing
+different magnetic orders while keeping the path fixed, but that reference
+path does not respect the symmetry of the magnetic state. Where the parent is
+not altermagnetic at all, it cannot represent the magnetic state, and the path
+built in it will not show the splitting the magnetic structure actually has.
+
+Add `--output verbose` to keep the intermediate helper files for debugging
+instead of deleting them.
+
+The altermagnetism check follows the cell in use: the Laue-group exclusion is
+evaluated on the cell the path is built in, so a structure whose parent
+forbids altermagnetism but whose magnetic primitive cell permits it is
+correctly treated as altermagnetic by default.
 
 ## Next Step
 

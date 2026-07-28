@@ -145,16 +145,23 @@ for the vacuum-axis detection details and output figures.
 
 ---
 
-## `--ssg-setting`
+## `--parent-setting`
+
+By default AlterSeeK-Path builds the path in the **magnetic primitive cell**,
+the cell that reflects the symmetry of the magnetic state. It coincides with
+the ordinary nonmagnetic structure when the magnetic order does not lower the
+lattice symmetry, and differs when it does -- e.g. a hexagonal lattice whose
+magnetism only respects orthorhombic symmetry uses the orthorhombic cell.
 
 ```bash
-alterseek-path --ssg-setting
+alterseek-path --parent-setting
 ```
 
-Uses the magnetic primitive cell instead of the original structural
-symmetry -- e.g. a hexagonal lattice whose magnetism only respects
-orthorhombic symmetry uses the orthorhombic cell. See
-[Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#-ssg-setting)
+builds the path in the nonmagnetic parent cell instead. This is useful for
+comparing several magnetic orders against one fixed reference path, but that
+path does not respect the symmetry of the magnetic state -- and where the
+parent is not altermagnetic at all, it cannot represent that state. See
+[Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#-parent-setting)
 for details and the `--output verbose` flag.
 
 ---
