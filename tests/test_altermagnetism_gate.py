@@ -73,7 +73,8 @@ def test_g0_symmetry_is_read_from_findspingroup_not_from_coordinates():
     """The whole point: no structure file, no tolerance, no spglib call."""
     sf_result = {'g0_symbol': 'Pbca', 'g0_number': 61}
     assert _g0_symmetry(sf_result) == {
-        'label': 'Pbca (61)', 'spacegroup_number': 61, 'laue_group': 'mmm',
+        'label': 'Pbca (61)', 'spacegroup_number': 61,
+        'point_group': 'mmm', 'laue_group': 'mmm', 'sites': None,
     }
     # MnSe2's real FindSpinGroup output must permit altermagnetism.
     assert _altermagnetism_gate(CUBIC_PARENT, _g0_symmetry(sf_result)) is None
@@ -98,6 +99,48 @@ def test_laue_group_covers_every_crystal_class_boundary(number, expected):
 @pytest.mark.parametrize("bad", [0, 231, -1, None, "x", 1.5e300])
 def test_laue_group_rejects_non_spacegroup_numbers(bad):
     assert laue_group_from_spacegroup_number(bad) is None
+
+
+def test_point_group_table_matches_spglib_for_all_230_groups():
+    """The table is a hardcoded range map, so pin it to spglib's own answer."""
+    spglib = pytest.importorskip("spglib")
+    from alterseek.symmetry import point_group_from_spacegroup_number
+
+    truth = {}
+    for hall in range(1, 531):
+        entry = spglib.get_spacegroup_type(hall)
+        truth.setdefault(int(entry.number), entry.pointgroup_international)
+    assert len(truth) == 230
+    mismatches = {n: (point_group_from_spacegroup_number(n), pg)
+                  for n, pg in truth.items()
+                  if point_group_from_spacegroup_number(n) != pg}
+    assert not mismatches
+
+
+@pytest.mark.parametrize("bad", [0, 231, -1, None, "x"])
+def test_point_group_rejects_non_spacegroup_numbers(bad):
+    from alterseek.symmetry import point_group_from_spacegroup_number
+    assert point_group_from_spacegroup_number(bad) is None
+
+
+def test_g0_symmetry_reports_point_group_and_site_count():
+    """Both cell lines carry the same fields so they can be compared directly."""
+    g0 = _g0_symmetry({'g0_symbol': 'Cmc2_1', 'g0_number': 36}, sites=12)
+    assert g0['label'] == 'Cmc2_1 (36)'
+    assert g0['point_group'] == 'mm2'
+    assert g0['laue_group'] == 'mmm'
+    assert g0['sites'] == 12
+
+
+def test_cell_suffix_only_describes_what_is_known():
+    from alterseek.kpoints import _cell_suffix
+
+    assert _cell_suffix(12, 'oC1') == "  [12 atoms, oC1]"
+    assert _cell_suffix(None, 'cP1') == "  [cP1]"
+    assert _cell_suffix(12, None) == "  [12 atoms]"
+    assert _cell_suffix(None, None) == ""
+    # 'unknown' is a placeholder, not a lattice type worth printing.
+    assert _cell_suffix(None, 'unknown') == ""
 
 
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
@@ -134,6 +177,9 @@ def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
     working = seen[0]
     assert working is not None, "the gate judged the submitted cell, not the built one"
     # A G0 description, not a re-detection from coordinates.
-    assert set(working) == {'label', 'spacegroup_number', 'laue_group'}
+    assert set(working) == {'label', 'spacegroup_number', 'point_group',
+                            'laue_group', 'sites'}
     assert laue_group_from_spacegroup_number(working['spacegroup_number']) == \
         working['laue_group']
+    # The site count must come from the constructed cell, not the input cell.
+    assert working['sites'] == 12

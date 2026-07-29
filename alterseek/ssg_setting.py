@@ -252,6 +252,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "temp_dir": temp_dir,
         "basename": basename,
         "seekpath_type_numbers": None,
+        "magnetic_cell_sites": len(elements),
         "spin_flip_operations": flip_count,
         "spin_preserve_operations": preserve_count,
         "summary": {

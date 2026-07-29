@@ -56,6 +56,40 @@ _LAUE_GROUP_BY_SPACEGROUP_RANGE = (
     (206, 'm-3'), (230, 'm-3m'),
 )
 
+# Verified to reproduce spglib's pointgroup_international for all 230 groups.
+_POINT_GROUP_BY_SPACEGROUP_RANGE = (
+    (1, '1'), (2, '-1'), (5, '2'), (9, 'm'), (15, '2/m'), (24, '222'),
+    (46, 'mm2'), (74, 'mmm'), (80, '4'), (82, '-4'), (88, '4/m'), (98, '422'),
+    (110, '4mm'), (122, '-42m'), (142, '4/mmm'), (146, '3'), (148, '-3'),
+    (155, '32'), (161, '3m'), (167, '-3m'), (173, '6'), (174, '-6'),
+    (176, '6/m'), (182, '622'), (186, '6mm'), (190, '-6m2'), (194, '6/mmm'),
+    (199, '23'), (206, 'm-3'), (214, '432'), (220, '-43m'), (230, 'm-3m'),
+)
+
+
+def _by_spacegroup_range(spacegroup_number, table):
+    try:
+        number = int(spacegroup_number)
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= number <= 230:
+        return None
+    for upper, value in table:
+        if number <= upper:
+            return value
+    return None
+
+
+def point_group_from_spacegroup_number(spacegroup_number):
+    """Return the crystallographic point group of a space-group number.
+
+    Companion to laue_group_from_spacegroup_number, used for symmetry known as
+    a group rather than as coordinates (notably the SSG's G0). Printing the
+    point group alongside the Laue group makes the reduction visible -- mm2
+    reduces to mmm -- instead of leaving the reader to supply it.
+    """
+    return _by_spacegroup_range(spacegroup_number, _POINT_GROUP_BY_SPACEGROUP_RANGE)
+
 
 def laue_group_from_spacegroup_number(spacegroup_number):
     """Return the Laue group of an international space-group number.
@@ -66,16 +100,7 @@ def laue_group_from_spacegroup_number(spacegroup_number):
     avoids re-detecting symmetry from atomic positions, where the answer
     depends on a tolerance.
     """
-    try:
-        number = int(spacegroup_number)
-    except (TypeError, ValueError):
-        return None
-    if not 1 <= number <= 230:
-        return None
-    for upper, laue in _LAUE_GROUP_BY_SPACEGROUP_RANGE:
-        if number <= upper:
-            return laue
-    return None
+    return _by_spacegroup_range(spacegroup_number, _LAUE_GROUP_BY_SPACEGROUP_RANGE)
 
 
 def no_altermagnetism_reason(point_group=None, spacegroup=None):

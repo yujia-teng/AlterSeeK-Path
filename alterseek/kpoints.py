@@ -20,6 +20,7 @@ try:
     from .compute_centroid_hybrid import run as compute_centroid
     from .symmetry import (no_altermagnetism_reason,
                           laue_group_from_spacegroup_number,
+                          point_group_from_spacegroup_number,
                           is_valid_2d_spin_flip,
                           is_trivial_2d_spin_flip,
                           describe_spinflip_op)
@@ -36,6 +37,7 @@ except ImportError as _exc:
     compute_centroid = None
     no_altermagnetism_reason = None
     laue_group_from_spacegroup_number = None
+    point_group_from_spacegroup_number = None
     is_valid_2d_spin_flip = None
     is_trivial_2d_spin_flip = None
     plot_spin_flip_figure = None
@@ -80,8 +82,23 @@ def _fmt_coord(value):
 
 _NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 
+# Width of the "Nonmagnetic parent:" / "Magnetic primitive cell (G0):" labels,
+# so the SG/PG/Laue fields line up and a difference between the two cells is
+# visible at a glance rather than read word by word.
+_CELL_LABEL_WIDTH = 30
 
-def _g0_symmetry(sf_result):
+
+def _cell_suffix(sites, lattice_tag):
+    """Trailing size/lattice for the cell the k-path is actually built in."""
+    parts = []
+    if sites:
+        parts.append(f"{sites} atoms")
+    if lattice_tag and lattice_tag != 'unknown':
+        parts.append(lattice_tag)
+    return f"  [{', '.join(parts)}]" if parts else ""
+
+
+def _g0_symmetry(sf_result, sites=None):
     """Describe the magnetic primitive cell by G0, the spatial part of its SSG.
 
     FindSpinGroup reports G0 directly, so this is the symmetry that actually
@@ -99,7 +116,9 @@ def _g0_symmetry(sf_result):
     return {
         'label': f"{sf_result.get('g0_symbol')} ({int(number)})",
         'spacegroup_number': int(number),
+        'point_group': point_group_from_spacegroup_number(number),
         'laue_group': laue_group,
+        'sites': sites,
     }
 
 
@@ -1343,7 +1362,8 @@ class KPointsModifier:
                         # answers it tolerance-dependently. G0, the spatial part
                         # of the spin space group, is the symmetry that actually
                         # holds, and FindSpinGroup reports it directly.
-                        working_cell_symmetry = _g0_symmetry(sf_result)
+                        working_cell_symmetry = _g0_symmetry(
+                            sf_result, sites=mag_setting.get('magnetic_cell_sites'))
                     except Exception as e:
                         print(f"[Warning] Magnetic primitive cell construction failed: {e}")
                         print("[Warning] Falling back to the nonmagnetic parent cell "
@@ -1390,32 +1410,41 @@ class KPointsModifier:
                 laue_no_altermag = _altermagnetism_gate(sf_result, working_cell_symmetry)
                 spin_split_diagnostic = sf_result.get('spin_split_diagnostic', '')
 
+                parent_recovery = None
+                lattice_tag = None
                 if centroid_result is not None:
-                    print(
-                        "\nLattice type: "
-                        f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
-                    )
                     parent_recovery = centroid_result.get("mcif_parent_recovery")
-                    if parent_recovery:
-                        print(
-                            "Nonmagnetic parent recovered: "
-                            f"{parent_recovery['detected_spacegroup_symbol']} "
-                            f"({parent_recovery['detected_spacegroup_number']}), "
-                            f"{parent_recovery['primitive_sites']} atoms "
-                            f"(magnetic-cell index {parent_recovery['index']}, "
-                            f"symprec={parent_recovery['symprec']:g})"
-                        )
-                print(f"Structure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
-                print(f"Nonmagnetic parent: SG {sf_result['space_group']}, "
+                    lattice_tag = centroid_result.get(
+                        'sc_type', centroid_result.get('seekpath_bravais', 'unknown'))
+                # Site count of the parent cell itself, known only when it was
+                # recovered from a larger input cell; otherwise the parent is
+                # the input cell and its count is already on the line above.
+                parent_sites = parent_recovery['primitive_sites'] if parent_recovery else None
+                # The two cells are printed adjacently, in the same field order,
+                # because the point of the block is whether they differ. The
+                # lattice tag and site count ride on whichever cell the k-path
+                # is actually built in.
+                print(f"\nInput structure: {sf_result['structure_file']}, "
+                      f"{sf_result['num_atoms']} atoms")
+                using_magnetic_cell = working_cell_symmetry is not None
+                print(f"{'Nonmagnetic parent:':<{_CELL_LABEL_WIDTH}}"
+                      f"SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
-                      f"Laue {sf_result['laue_group']}")
-                if working_cell_symmetry is not None:
+                      f"Laue {sf_result['laue_group']}"
+                      f"{'' if using_magnetic_cell else _cell_suffix(parent_sites, lattice_tag)}")
+                if parent_recovery:
+                    print(f"{'':<{_CELL_LABEL_WIDTH}}"
+                          f"recovered from the input cell at symprec="
+                          f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
+                if using_magnetic_cell:
                     # Always shown, including when it agrees with the parent:
                     # "the magnetic cell has the same symmetry here" is a
                     # result, and hiding it makes its absence ambiguous.
-                    print(f"Magnetic primitive cell (SSG G0): "
+                    print(f"{'Magnetic primitive cell (G0):':<{_CELL_LABEL_WIDTH}}"
                           f"SG {working_cell_symmetry['label']}, "
-                          f"Laue {working_cell_symmetry['laue_group']}")
+                          f"PG {working_cell_symmetry['point_group']}, "
+                          f"Laue {working_cell_symmetry['laue_group']}"
+                          f"{_cell_suffix(working_cell_symmetry.get('sites'), lattice_tag)}")
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")
                 print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
