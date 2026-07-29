@@ -295,12 +295,23 @@ def finalize_magnetic_setting_outputs(
         if os.path.abspath(helper_source) != os.path.abspath(helper_final):
             shutil.copyfile(helper_source, helper_final)
 
+    # The basis mapping is the only record of how the path's reciprocal basis
+    # relates to the submitted cell, and this route is where that is least
+    # obvious, since the cell being standardized is one the user never supplied.
+    # Keep it under the same name the ordinary route uses.
+    mapping_source = centroid_result.get("standard_mapping_path")
+    mapping_final = None
+    if mapping_source and os.path.exists(mapping_source):
+        mapping_final = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
+        if os.path.abspath(mapping_source) != os.path.abspath(mapping_final):
+            shutil.copyfile(mapping_source, mapping_final)
+
     # Remove or relocate low-level seekpath artifacts for the hidden marker helper.
     # The clean final standardized structure above is the user-facing record.
     temp_dir = mag_setting.get("temp_dir")
     for path in (
         helper_source,
-        centroid_result.get("standard_mapping_path"),
+        mapping_source,
     ):
         if not path or not os.path.exists(path):
             continue
@@ -322,6 +333,8 @@ def finalize_magnetic_setting_outputs(
         "standard_real_path": real_final,
         "b_matrix_output": _reciprocal_from_poscar(real_final),
     }
+    if mapping_final:
+        result["standard_mapping_path"] = mapping_final
     if helper_final:
         result["standard_with_helper_path"] = helper_final
     if verbose_output:

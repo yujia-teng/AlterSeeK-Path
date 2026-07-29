@@ -166,8 +166,15 @@ def _write_seekpath_standard_poscar(lattice, positions, types, output_path, sour
         f.write("\n".join(lines) + "\n")
 
 
-def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matrix, output_path):
-    """Record the input-cell to SeeK-path-standard axis mapping for users."""
+def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matrix,
+                                  output_path, source_name):
+    """Record the input-cell to SeeK-path-standard axis mapping for users.
+
+    ``source_name`` names the cell SeeK-path was actually given. It is not
+    always the submitted structure: when the path is built in the magnetic
+    primitive cell, that cell is what gets standardized, and saying otherwise
+    would misdescribe the lattice recorded below.
+    """
     def _fmt_matrix(mat):
         return "\n".join(
             "  " + " ".join(f"{float(x): .10f}" for x in row)
@@ -179,7 +186,7 @@ def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matr
     rotation_matrix = np.array(rotation_matrix, dtype=float)
     lines = [
         "# SeeK-path standardization mapping",
-        "# input_lattice is the lattice from the submitted structure file.",
+        f"# input_lattice is the lattice of {source_name}, the cell given to SeeK-path.",
         "# seekpath_standard_lattice is the standardized cell written to *_seekpath_standard.vasp.",
         "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
         "",
@@ -307,6 +314,7 @@ def run(
             np.array(input_dataset.std_lattice),
             np.array(sp_result["rotation_matrix"]),
             standard_mapping_path,
+            os.path.basename(filename),
         )
         if verbose:
             print(f"Saved standardized structure: {standardized_structure_path}")
