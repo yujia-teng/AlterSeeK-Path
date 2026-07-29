@@ -158,12 +158,48 @@ def test_nonmagnetic_report_describes_the_primitive_cell_not_the_input():
     assert single['sites'] == supercell['sites'] == 1
 
 
+def test_cell_rows_align_every_field_into_columns(capsys):
+    """Symbols vary in width, so unpadded fields make the reader hunt for the
+    difference between the two cells."""
+    from alterseek.kpoints import _print_cell_rows
+
+    _print_cell_rows([
+        ('Nonmagnetic primitive cell:', 'P6_3mc (186)', '6mm', '6/mmm', '[6 atoms, hP2]'),
+        ('Magnetic primitive cell (G0):', 'Cmc2_1 (36)', 'mm2', 'mmm', '[12 atoms, oC1]'),
+    ])
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    for token in ('SG ', 'PG ', 'Laue ', '['):
+        assert lines[0].index(token) == lines[1].index(token), token
+
+
+def test_cell_rows_place_a_note_under_the_first_row(capsys):
+    from alterseek.kpoints import _print_cell_rows
+
+    _print_cell_rows([('Nonmagnetic primitive cell:', 'Pa-3 (205)', 'm-3', 'm-3', '[12 atoms]')],
+                     note_after_first="recovered from the input cell")
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    # Indented into the field column, not hanging off the label.
+    assert lines[1].startswith(" " * 30)
+    assert lines[1].strip() == "recovered from the input cell"
+
+
+def test_cell_rows_leave_no_trailing_whitespace(capsys):
+    """A row with no suffix must not emit padding to nowhere."""
+    from alterseek.kpoints import _print_cell_rows
+
+    _print_cell_rows([('Nonmagnetic primitive cell:', 'Pa-3 (205)', 'm-3', 'm-3', '')])
+    line = capsys.readouterr().out.splitlines()[0]
+    assert line == line.rstrip()
+
+
 def test_cell_suffix_only_describes_what_is_known():
     from alterseek.kpoints import _cell_suffix
 
-    assert _cell_suffix(12, 'oC1') == "  [12 atoms, oC1]"
-    assert _cell_suffix(None, 'cP1') == "  [cP1]"
-    assert _cell_suffix(12, None) == "  [12 atoms]"
+    assert _cell_suffix(12, "oC1") == "[12 atoms, oC1]"
+    assert _cell_suffix(None, "cP1") == "[cP1]"
+    assert _cell_suffix(12, None) == "[12 atoms]"
     assert _cell_suffix(None, None) == ""
     # 'unknown' is a placeholder, not a lattice type worth printing.
     assert _cell_suffix(None, 'unknown') == ""

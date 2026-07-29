@@ -89,13 +89,32 @@ _CELL_LABEL_WIDTH = 30
 
 
 def _cell_suffix(sites, lattice_tag):
-    """Trailing size/lattice for the cell the k-path is actually built in."""
+    """Trailing size/lattice tag describing the cell on that line."""
     parts = []
     if sites:
         parts.append(f"{sites} atoms")
     if lattice_tag and lattice_tag != 'unknown':
         parts.append(lattice_tag)
-    return f"  [{', '.join(parts)}]" if parts else ""
+    return f"[{', '.join(parts)}]" if parts else ""
+
+
+def _print_cell_rows(rows, note_after_first=None):
+    """Print the cell comparison with every field in its own column.
+
+    Space-group symbols and numbers vary in width (``P6_3mc (186)`` against
+    ``Cmc2_1 (36)``), so without padding the fields ragged and the reader has
+    to hunt for what differs between the two cells -- which is the one thing
+    the block exists to show. Widths are taken from the rows actually printed.
+    """
+    sg_w = max(len(row[1]) for row in rows)
+    pg_w = max(len(row[2]) for row in rows)
+    laue_w = max(len(row[3]) for row in rows)
+    for index, (label, sg, pg, laue, suffix) in enumerate(rows):
+        line = (f"{label:<{_CELL_LABEL_WIDTH}}"
+                f"SG {sg:<{sg_w}}  PG {pg:<{pg_w}}  Laue {laue:<{laue_w}}  {suffix}")
+        print(line.rstrip())
+        if index == 0 and note_after_first:
+            print(f"{'':<{_CELL_LABEL_WIDTH}}{note_after_first}")
 
 
 def _g0_symmetry(sf_result, sites=None):
@@ -1422,25 +1441,32 @@ class KPointsModifier:
                 # is actually built in.
                 print(f"\nInput structure: {sf_result['structure_file']}, "
                       f"{sf_result['num_atoms']} atoms")
-                using_magnetic_cell = working_cell_symmetry is not None
-                print(f"{'Nonmagnetic primitive cell:':<{_CELL_LABEL_WIDTH}}"
-                      f"SG {sf_result['space_group']}, "
-                      f"PG {sf_result['point_group']}, "
-                      f"Laue {sf_result['laue_group']}"
-                      f"{_cell_suffix(sf_result.get('nonmagnetic_sites'), sf_result.get('nonmagnetic_lattice'))}")
+                cell_rows = [(
+                    'Nonmagnetic primitive cell:',
+                    sf_result['space_group'],
+                    sf_result['point_group'],
+                    sf_result['laue_group'],
+                    _cell_suffix(sf_result.get('nonmagnetic_sites'),
+                                 sf_result.get('nonmagnetic_lattice')),
+                )]
+                if working_cell_symmetry is not None:
+                    # Always shown, including when it agrees with the
+                    # nonmagnetic cell: "the magnetic cell has the same
+                    # symmetry here" is a result, and hiding it makes its
+                    # absence ambiguous.
+                    cell_rows.append((
+                        'Magnetic primitive cell (G0):',
+                        working_cell_symmetry['label'],
+                        working_cell_symmetry['point_group'],
+                        working_cell_symmetry['laue_group'],
+                        _cell_suffix(working_cell_symmetry.get('sites'), lattice_tag),
+                    ))
+                recovery_note = None
                 if parent_recovery:
-                    print(f"{'':<{_CELL_LABEL_WIDTH}}"
-                          f"recovered from the input cell at symprec="
-                          f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
-                if using_magnetic_cell:
-                    # Always shown, including when it agrees with the parent:
-                    # "the magnetic cell has the same symmetry here" is a
-                    # result, and hiding it makes its absence ambiguous.
-                    print(f"{'Magnetic primitive cell (G0):':<{_CELL_LABEL_WIDTH}}"
-                          f"SG {working_cell_symmetry['label']}, "
-                          f"PG {working_cell_symmetry['point_group']}, "
-                          f"Laue {working_cell_symmetry['laue_group']}"
-                          f"{_cell_suffix(working_cell_symmetry.get('sites'), lattice_tag)}")
+                    recovery_note = (
+                        "recovered from the input cell at symprec="
+                        f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
+                _print_cell_rows(cell_rows, note_after_first=recovery_note)
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")
                 print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
