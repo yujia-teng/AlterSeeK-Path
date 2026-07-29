@@ -1400,8 +1400,10 @@ class KPointsModifier:
                 print(f"Nonmagnetic parent: SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
                       f"Laue {sf_result['laue_group']}")
-                if (working_cell_symmetry is not None
-                        and working_cell_symmetry['laue_group'] != sf_result.get('laue_group')):
+                if working_cell_symmetry is not None:
+                    # Always shown, including when it agrees with the parent:
+                    # "the magnetic cell has the same symmetry here" is a
+                    # result, and hiding it makes its absence ambiguous.
                     print(f"Magnetic primitive cell (SSG G0): "
                           f"SG {working_cell_symmetry['label']}, "
                           f"Laue {working_cell_symmetry['laue_group']}")
