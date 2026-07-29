@@ -121,6 +121,28 @@ save_pdf = true
 | `flip_option` | Step 3 spin-flip operation prompt | plain integer, picks that numbered option; omit for the interactive numbered menu (`list`/`manual` still available) |
 | `output_code` | Step 5 output-code prompt | `"vasp"` or `"qe"` |
 | `save_pdf` | BZ figure output format | `true`/`false` (default `false`); when true, also saves a vector PDF alongside each BZ figure's default PNG output |
+| `symprec` | symmetry-detection tolerance | positive number in angstrom (default `1e-3`); applies to every input format |
+
+### `symprec`
+
+The default is `1e-3` A rather than spglib's own `1e-5`. Deposited structures
+routinely carry coordinates rounded to five decimals, and at `1e-5` that
+rounding noise hides symmetry that is really present -- MnSe2's genuinely cubic
+`Pa-3` parent reads as orthorhombic `Pbca`, which then decides whether the
+structure is treated as altermagnetic at all. `1e-3` A stays far below any
+deliberate distortion (a 0.5% strain on a 4 A lattice is 0.02 A, twenty times
+larger) and changes none of the reference cases.
+
+Lower it if you are studying a structure with a real distortion smaller than
+`1e-3` A and need that distortion resolved rather than averaged away.
+
+The setting applies to every input format. For `.mcif` input that declares a
+parent space group, AlterSeeK-Path additionally tries the tighter sequence
+`1e-5`, `1e-4`, `1e-3` and accepts the tightest one that reproduces the
+declared parent; `symprec` is the fallback when there is no declaration to
+validate against. Note that this affects only the nonmagnetic parent. The
+altermagnetism check in the default (magnetic primitive cell) route reads G0
+from the spin space group and uses no tolerance at all.
 
 Comment out a key (or delete the line) to make that one step interactive
 again while the rest of the file still drives the run.

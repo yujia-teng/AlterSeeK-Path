@@ -18,7 +18,13 @@ import sympy as sp
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
-_DEFAULT_SYMPREC = 1e-5
+# 1e-3 A, not spglib's own 1e-5 default. Deposited structures routinely carry
+# coordinates rounded to 5 decimals, which at 1e-5 hides symmetry that is
+# really there (MnSe2's cubic Pa-3 parent reads as orthorhombic Pbca). 1e-3 A
+# stays far below any deliberate distortion -- a 0.5% strain on a 4 A lattice
+# is 0.02 A, twenty times larger -- and changes none of the 54 reference cases.
+# Override per run with `symprec` in alterseek_input.toml.
+_DEFAULT_SYMPREC = 1e-3
 _MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
 
 
@@ -67,7 +73,8 @@ def _declared_mcif_parent_hint(filename):
         return None
 
 
-def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, numbers):
+def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, numbers,
+                                                fallback=None):
     """Use the smallest conservative tolerance that recovers a declared parent.
 
     MCIF-deposited coordinates are commonly rounded to 5 decimal places. For a
@@ -79,10 +86,17 @@ def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, nu
     accept a loosened tolerance when it reproduces the structure's own declared
     parent space group, so a genuinely lower-symmetry structure is never
     over-symmetrized.
+
+    This validated route is preferred whenever the file declares a parent,
+    because it is checked against the structure's own ground truth. `fallback`
+    (the configured symprec) is used when there is no declaration to check
+    against, or when no candidate reproduces it.
     """
+    if fallback is None:
+        fallback = _DEFAULT_SYMPREC
     hint = _declared_mcif_parent_hint(filename)
     if hint is None or len(positions) % hint["index"] != 0:
-        return _DEFAULT_SYMPREC
+        return fallback
     expected_sites = len(positions) // hint["index"]
     structure_cell = (lattice, positions, numbers)
     for symprec in _MCIF_PARENT_SYMPREC_CANDIDATES:
@@ -94,7 +108,7 @@ def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, nu
         if parent_number is not None and int(dataset.number) != parent_number:
             continue
         return symprec
-    return _DEFAULT_SYMPREC
+    return fallback
 
 
 def _laue_group_from_point_group(point_group):
@@ -118,11 +132,20 @@ def _laue_group_from_point_group(point_group):
     return mapping.get(pg)
 
 
-def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif):
-    """Return the structural (moment-free) space/point/Laue group of a cell."""
+def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
+                           symprec=None):
+    """Return the structural (moment-free) space/point/Laue group of a cell.
+
+    The configured tolerance applies to every input format. Only the *extra*
+    validated recovery is mcif-specific, because only an mcif declares a parent
+    to validate against -- gating the tolerance itself on the file extension
+    made the same structure report different symmetry as .mcif and as POSCAR.
+    """
+    requested = _DEFAULT_SYMPREC if symprec is None else float(symprec)
     symprec = (
-        _select_mcif_symprec_for_non_magnetic_label(structure_file, lattice, positions, numbers)
-        if is_mcif else _DEFAULT_SYMPREC
+        _select_mcif_symprec_for_non_magnetic_label(
+            structure_file, lattice, positions, numbers, fallback=requested)
+        if is_mcif else requested
     )
     dataset = spglib.get_symmetry_dataset((lattice, positions, numbers), symprec=symprec)
     if not dataset:
@@ -501,7 +524,7 @@ def format_msg_without_soc(msg_type):
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
-def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
+def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=None):
     """
     Run spin-flip operations analysis.
     Called by the interactive workflow (alterseek/kpoints.py) or used standalone.
@@ -556,7 +579,7 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None):
         print("="*40)
 
     non_magnetic = _non_magnetic_symmetry(
-        structure_file, lattice, positions, numbers, is_mcif)
+        structure_file, lattice, positions, numbers, is_mcif, symprec=symprec)
     non_mag_label = non_magnetic['non_mag_label']
     point_group = non_magnetic['point_group']
     laue_group = non_magnetic['laue_group']

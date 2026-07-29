@@ -62,7 +62,7 @@ INPUT_CONFIG_FILE = "alterseek_input.toml"
 
 _INPUT_CONFIG_KEYS = {
     "structure", "spin_axis", "moments", "path", "flip_option",
-    "output_code", "view_elev", "view_azim", "save_pdf",
+    "output_code", "view_elev", "view_azim", "save_pdf", "symprec",
 }
 
 
@@ -161,6 +161,13 @@ def _validate_input_config(config):
 
     if "save_pdf" in config and not isinstance(config["save_pdf"], bool):
         raise ValueError("save_pdf must be true or false")
+
+    if "symprec" in config:
+        value = config["symprec"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("symprec must be a number")
+        if not value > 0:
+            raise ValueError("symprec must be positive")
     return config
 
 
@@ -1180,6 +1187,7 @@ class KPointsModifier:
             return False
         view_elev = float(input_config['view_elev']) if 'view_elev' in input_config else None
         view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
+        symprec = float(input_config['symprec']) if 'symprec' in input_config else None
         if input_config.get('save_pdf', False):
             os.environ['ALTERSEEK_BZ_EXTRA_FORMATS'] = 'pdf'
 
@@ -1297,6 +1305,7 @@ class KPointsModifier:
                         moments_str,
                         verbose=False,
                         spin_axis_cart=spin_axis_cart,
+                        symprec=symprec,
                     )
                 except Exception as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
@@ -1350,7 +1359,7 @@ class KPointsModifier:
                             seekpath_type_numbers=centroid_seekpath_type_numbers,
                             mode_2d=self.mode_2d,
                             input_vacuum_axis=self.input_vacuum_axis,
-                            view_elev=view_elev, view_azim=view_azim,
+                            view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
@@ -1456,7 +1465,7 @@ class KPointsModifier:
                         seekpath_type_numbers=centroid_seekpath_type_numbers,
                         mode_2d=self.mode_2d,
                         input_vacuum_axis=self.input_vacuum_axis,
-                        view_elev=view_elev, view_azim=view_azim,
+                        view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                     )
                     display_figures.extend(centroid_result.get('display_figures', []))
                     print(
@@ -1602,7 +1611,8 @@ class KPointsModifier:
                                           seekpath_type_numbers=centroid_seekpath_type_numbers,
                                           mode_2d=self.mode_2d,
                                           input_vacuum_axis=self.input_vacuum_axis,
-                                          view_elev=view_elev, view_azim=view_azim)
+                                          view_elev=view_elev, view_azim=view_azim,
+                                          symprec=symprec)
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]

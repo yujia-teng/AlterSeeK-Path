@@ -41,7 +41,9 @@ import spglib
 
 plt.rcParams["mathtext.fontset"] = "stix"
 
-_DEFAULT_SYMPREC = 1e-5
+# See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 rather than spglib's
+# 1e-5. Override per run with `symprec` in alterseek_input.toml.
+_DEFAULT_SYMPREC = 1e-3
 _MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
 
 
@@ -96,11 +98,18 @@ def _declared_mcif_parent_hint(filename):
         return None
 
 
-def _select_mcif_parent_symprec(filename, cell, positions, numbers):
-    """Use the smallest conservative tolerance that recovers a declared parent."""
+def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
+    """Use the smallest conservative tolerance that recovers a declared parent.
+
+    Preferred whenever the file declares a parent, since it is validated
+    against the structure's own ground truth. `fallback` (the configured
+    symprec) applies when there is nothing to validate against.
+    """
+    if fallback is None:
+        fallback = _DEFAULT_SYMPREC
     hint = _declared_mcif_parent_hint(filename)
     if hint is None or len(positions) % hint["index"] != 0:
-        return _DEFAULT_SYMPREC, None
+        return fallback, None
 
     expected_sites = len(positions) // hint["index"]
     structure_cell = (cell, positions, numbers)
@@ -121,7 +130,7 @@ def _select_mcif_parent_symprec(filename, cell, positions, numbers):
             "detected_spacegroup_symbol": str(dataset.international),
         })
         return symprec, recovered
-    return _DEFAULT_SYMPREC, None
+    return fallback, None
 
 
 def _write_seekpath_standard_poscar(lattice, positions, types, output_path, source_name):
@@ -227,6 +236,7 @@ def run(
     input_vacuum_axis=2,
     view_elev=None,
     view_azim=None,
+    symprec=None,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -250,8 +260,9 @@ def run(
                 "seekpath_type_numbers length must match the number of structure sites."
             )
 
+    requested_symprec = _DEFAULT_SYMPREC if symprec is None else float(symprec)
     symprec, mcif_parent_recovery = _select_mcif_parent_symprec(
-        filename, cell, positions, numbers
+        filename, cell, positions, numbers, fallback=requested_symprec
     )
 
     # ---- seekpath: lattice detection & standardization ----
