@@ -84,9 +84,9 @@ Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): POSCAR
 Spin axis in Cartesian coordinates (default: 0 0 1): 0 0 1
 Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 -8 4*0
 
-Lattice type: hP2
-Structure: POSCAR, atoms: 6
-SG P6_3mc (186), PG 6mm, Laue 6/mmm
+Input structure: POSCAR, 6 atoms
+Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
+Magnetic primitive cell (G0): SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L
 SSG Symbol (Chen-Liu): P -1|6_{3} 1|m -1|c infinity_{001}m|1
