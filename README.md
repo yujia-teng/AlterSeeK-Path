@@ -122,10 +122,10 @@ Band plot config updated: alterband.toml (lattice_type = "hP2")
 
 Done.
 Displaying generated figure(s)...
-Saved: .\POSCAR_ibz_hP2.png
-Saved: POSCAR_spinflip_hP2.png
-Saved: POSCAR_spinbz_hP2.png
-Saved: POSCAR_spinbz_top_hP2.png
+Saved: alterseek_output\POSCAR_ibz_hP2.png
+Saved: alterseek_output\POSCAR_spinflip_hP2.png
+Saved: alterseek_output\POSCAR_spinbz_hP2.png
+Saved: alterseek_output\POSCAR_spinbz_top_hP2.png
 ```
 
 ---

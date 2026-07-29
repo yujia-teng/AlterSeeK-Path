@@ -551,7 +551,8 @@ def format_msg_without_soc(msg_type):
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
-def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=None):
+def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=None,
+        output_dir='.'):
     """
     Run spin-flip operations analysis.
     Called by the interactive workflow (alterseek/kpoints.py) or used standalone.
@@ -782,11 +783,14 @@ MSG with SOC: {msg_label}
 MSG without SOC: {msg_without_soc_label}"""
 
     # 1. Write the full readable log with LABELS
-    write_operations_to_file("spin_operations.txt", rotations, translations, spin_rotations, label_info_str, verbose=verbose)
+    os.makedirs(output_dir, exist_ok=True)
+    write_operations_to_file(os.path.join(output_dir, "spin_operations.txt"),
+                             rotations, translations, spin_rotations, label_info_str,
+                             verbose=verbose)
 
     # 2. Write the automation file
-    flip_filename = "spin_flip_operations.txt"
-    preserve_filename = "spin_preserve_operations.txt"
+    flip_filename = os.path.join(output_dir, "spin_flip_operations.txt")
+    preserve_filename = os.path.join(output_dir, "spin_preserve_operations.txt")
     flip_count = write_flip_ops_to_file(flip_filename, rotations, spin_rotations, spin_axis, verbose=verbose)
     preserve_count = write_preserve_ops_to_file(preserve_filename, rotations, spin_rotations, spin_axis, verbose=verbose)
     return {
@@ -828,7 +832,7 @@ MSG without SOC: {msg_without_soc_label}"""
         'spin_flip_operations': flip_count,
         'spin_preserve_operations': preserve_count,
         'saved_files': [
-            'spin_operations.txt',
+            os.path.join(output_dir, 'spin_operations.txt'),
             flip_filename,
             preserve_filename,
         ],

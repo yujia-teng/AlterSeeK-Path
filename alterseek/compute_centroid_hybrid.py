@@ -521,7 +521,8 @@ def run(
                         for i, ax_name in enumerate(['k1', 'k2', 'k3'])
                     )
                     try:
-                        with open("spin_operations.txt", "a", encoding="utf-8", newline="\n") as f:
+                        with open(os.path.join(output_dir, "spin_operations.txt"),
+                                  "a", encoding="utf-8", newline="\n") as f:
                             f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
                     except Exception:
                         pass

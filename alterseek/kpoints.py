@@ -87,6 +87,12 @@ _NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 # visible at a glance rather than read word by word.
 _CELL_LABEL_WIDTH = 30
 
+# Everything AlterSeeK-Path generates goes here except the two files with a
+# downstream consumer: KPOINTS_alter (feeds the band calculation) and
+# alterband.toml (read from the working directory by the band plotter).
+OUTPUT_DIR = "alterseek_output"
+
+
 
 def _figure_basename(struct_file):
     """Name figures after the submitted structure, not an internal cell.
@@ -443,16 +449,19 @@ class KPointsModifier:
             k_out[self.input_vacuum_axis] = 0.0
         return [k_out[0], k_out[1], k_out[2], point[3]]
 
-    def load_flip_operations(self, filename: str = "spin_flip_operations.txt") -> List[np.ndarray]:
+    def load_flip_operations(self, filename: str = None) -> List[np.ndarray]:
         """Reads pre-calculated rotation matrices from file"""
+        if filename is None:
+            filename = os.path.join(OUTPUT_DIR, "spin_flip_operations.txt")
         matrices = []
         unique = []
         current_matrix = []
         if not os.path.exists(filename):
-            legacy = (
+            legacy = os.path.join(
+                os.path.dirname(filename),
                 "preserve_spin_operations.txt"
-                if filename == "spin_preserve_operations.txt"
-                else "flip_spin_operations.txt"
+                if os.path.basename(filename) == "spin_preserve_operations.txt"
+                else "flip_spin_operations.txt",
             )
             if filename != legacy and os.path.exists(legacy):
                 filename = legacy
@@ -481,8 +490,10 @@ class KPointsModifier:
         except FileNotFoundError:
             return []
 
-    def load_preserve_operations(self, filename: str = "spin_preserve_operations.txt") -> List[np.ndarray]:
+    def load_preserve_operations(self, filename: str = None) -> List[np.ndarray]:
         """Reads pre-calculated spin-preserve rotation matrices from file."""
+        if filename is None:
+            filename = os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt")
         return self.load_flip_operations(filename)
 
     def transform_kpoint(self, kpoint: List[float], transformation_matrix: np.ndarray) -> List[float]:
@@ -940,7 +951,7 @@ class KPointsModifier:
                 try:
                     plot_2d_figures(
                         centroid_result, general_kpoint, R_for_kpts,
-                        basename, output_dir='.',
+                        basename, output_dir=OUTPUT_DIR,
                         flip_ops_for_plot=(flip_ops_for_plot
                                            if flip_ops_for_plot else None))
                 except Exception as _e:
@@ -963,7 +974,7 @@ class KPointsModifier:
             if plot_spin_flip_figure is not None and 'b_matrix' in centroid_result:
                 figure_specs.append((
                     plot_spin_flip_figure, 'spin-flip',
-                    f'{basename}_spinflip_{sc_type}.png',
+                    os.path.join(OUTPUT_DIR, f'{basename}_spinflip_{sc_type}.png'),
                     dict(
                         kpoints_data=self.kpoints_data,
                         ibz_kpoints_frac=centroid_result.get('ibz_kpoints_frac', {}),
@@ -1011,13 +1022,13 @@ class KPointsModifier:
                 if plot_spin_bz_figure is not None:
                     figure_specs.append((
                         plot_spin_bz_figure, 'spin-BZ',
-                        f'{basename}_spinbz_{sc_type}.png',
+                        os.path.join(OUTPUT_DIR, f'{basename}_spinbz_{sc_type}.png'),
                         dict(z0=top_view_z0, **spin_bz_kwargs, **view_kwargs),
                     ))
                 if plot_spin_bz_top_view_figure is not None:
                     figure_specs.append((
                         plot_spin_bz_top_view_figure, 'spin-BZ top-view',
-                        f'{basename}_spinbz_top_{sc_type}.png',
+                        os.path.join(OUTPUT_DIR, f'{basename}_spinbz_top_{sc_type}.png'),
                         dict(z0=top_view_z0, **spin_bz_kwargs),
                     ))
             for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
@@ -1198,13 +1209,13 @@ class KPointsModifier:
                     print(f"[Warning] Could not write {filename}: {exc}")
 
             _annotate_ops_with_standardized_basis(
-                "spin_flip_operations.txt",
+                os.path.join(OUTPUT_DIR, "spin_flip_operations.txt"),
                 flip_ops,
                 flip_ops_for_plot,
                 "spin-flipping",
             )
             _annotate_ops_with_standardized_basis(
-                "spin_preserve_operations.txt",
+                os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt"),
                 preserve_ops,
                 preserve_ops_for_plot,
                 "spin-preserving",
@@ -1356,6 +1367,7 @@ class KPointsModifier:
                         verbose=False,
                         spin_axis_cart=spin_axis_cart,
                         symprec=symprec,
+                        output_dir=OUTPUT_DIR,
                     )
                 except Exception as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
@@ -1376,7 +1388,7 @@ class KPointsModifier:
                             struct_file,
                             moments_str=moments_str,
                             spin_axis_cart=spin_axis_cart,
-                            output_dir='.',
+                            output_dir=OUTPUT_DIR,
                         )
                         centroid_struct_file = mag_setting["helper_path"]
                         centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
@@ -1405,7 +1417,7 @@ class KPointsModifier:
                 if CENTROID_AVAILABLE:
                     try:
                         centroid_result = compute_centroid(
-                            centroid_struct_file, output_dir='.', show_plot=True,
+                            centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
                             defer_show=True, verbose=False,
                             seekpath_type_numbers=centroid_seekpath_type_numbers,
                             mode_2d=self.mode_2d,
@@ -1417,7 +1429,7 @@ class KPointsModifier:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
                                 magnetic_setting_counts,
                                 centroid_result,
-                                output_dir='.',
+                                output_dir=OUTPUT_DIR,
                                 verbose_output=self.output_verbose,
                             )
                             if magnetic_setting_outputs:
@@ -1524,7 +1536,7 @@ class KPointsModifier:
                     if centroid_error is not None:
                         raise centroid_error
                     centroid_result = compute_centroid(
-                        centroid_struct_file, output_dir='.', show_plot=True,
+                        centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
                         defer_show=True, verbose=False,
                         seekpath_type_numbers=centroid_seekpath_type_numbers,
                         mode_2d=self.mode_2d,
@@ -1671,7 +1683,7 @@ class KPointsModifier:
                 print(f"[Warning] Centroid retrieval failed: {e}")
         elif struct_file and CENTROID_AVAILABLE:
             try:
-                result = compute_centroid(centroid_struct_file, output_dir='.', show_plot=True,
+                result = compute_centroid(centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
                                           defer_show=True, verbose=False,
                                           seekpath_type_numbers=centroid_seekpath_type_numbers,
                                           mode_2d=self.mode_2d,
@@ -1692,7 +1704,8 @@ class KPointsModifier:
             if out_k is not None:
                 print(f"IBZ centroid (input-cell basis): [{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]")
             try:
-                with open("spin_operations.txt", "a", encoding="utf-8", newline="\n") as f:
+                with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
+                          "a", encoding="utf-8", newline="\n") as f:
                     f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
                             f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
                     if out_k is not None:

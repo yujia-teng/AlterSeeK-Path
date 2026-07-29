@@ -76,19 +76,33 @@ list, including figures.
 
 ## Output Files
 
+Only the two files with a downstream consumer are written to the working
+directory; everything else goes into `alterseek_output/`.
+
+**Working directory**
+
 | File | Description |
 |------|-------------|
 | `KPOINTS_alter` | Altermagnetic k-path for VASP line-mode band calculations |
 | `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
-| `alterband.toml` | VASP band-plot configuration written by the main workflow |
-| `alterband_qe.toml` | QE band-plot configuration written by the main workflow |
-| `spin_operations.txt` | Full spin-symmetry operation log |
-| `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
-| `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
+| `alterband.toml` | VASP band-plot configuration; the band plotter reads it from here |
+| `alterband_qe.toml` | QE band-plot configuration; likewise |
+
+**`alterseek_output/`**
+
+| File | Description |
+|------|-------------|
 | `*_ibz_*.png` | IBZ/BZ figure with the selected general k point |
 | `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
+| `spin_operations.txt` | Full spin-symmetry operation log |
+| `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
+| `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
+| `*_ssgprim.mcif` | Magnetic primitive cell with its moments (default route) |
+| `*_ssgstd.vasp` | The same cell standardized, as the k-path basis is defined in it |
+| `*_seekpath_standard.vasp` | Standardized cell (`--parent-setting` route) |
+| `*_seekpath_basis_mapping.txt` | Input-to-standardized lattice mapping and rotation |
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
 The workflow prints a note and writes the ordinary default path. The same

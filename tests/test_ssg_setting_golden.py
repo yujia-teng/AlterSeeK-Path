@@ -37,7 +37,7 @@ GOLDEN = REF_DIR / "ssg_supercell211_golden_kpoints.txt"
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
 def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     try:
-        from alterseek.kpoints import KPointsModifier
+        from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
         from alterseek import ssg_setting
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"kpoints/ssg_setting unavailable: {exc}")
@@ -61,13 +61,20 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     # relates to the submitted cell, and this route is where it matters most:
     # the standardized cell is one the user never supplied. It used to be
     # deleted here while the ordinary route kept it.
-    mapping = tmp_path / f"{POSCAR.stem}_seekpath_basis_mapping.txt"
+    out = tmp_path / OUTPUT_DIR
+    mapping = out / f"{POSCAR.stem}_seekpath_basis_mapping.txt"
     assert mapping.exists(), "magnetic route discarded the SeeK-path basis mapping"
     header = mapping.read_text(encoding="utf-8").splitlines()[1]
     # It must name the cell actually standardized, not the submitted file.
     assert "_ssgstd.vasp" in header, header
-    assert (tmp_path / f"{POSCAR.stem}_ssgstd.vasp").exists(), (
+    assert (out / f"{POSCAR.stem}_ssgstd.vasp").exists(), (
         "the mapping header names a file the run does not leave behind")
+
+    # Only the two files with a downstream consumer stay at the top level:
+    # KPOINTS_alter feeds the band calculation, alterband.toml is read from the
+    # working directory by the band plotter.
+    top_level = {p.name for p in tmp_path.iterdir()}
+    assert top_level == {"KPOINTS_alter", "alterband.toml", OUTPUT_DIR}, top_level
 
 
 def test_prepare_mcif_uses_refined_from_data_route(tmp_path, monkeypatch):
