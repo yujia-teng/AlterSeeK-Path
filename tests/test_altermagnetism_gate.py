@@ -24,6 +24,7 @@ import io
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from alterseek.kpoints import _altermagnetism_gate, _g0_symmetry
@@ -130,6 +131,31 @@ def test_g0_symmetry_reports_point_group_and_site_count():
     assert g0['point_group'] == 'mm2'
     assert g0['laue_group'] == 'mmm'
     assert g0['sites'] == 12
+
+
+def test_nonmagnetic_report_describes_the_primitive_cell_not_the_input():
+    """The reported space group belongs to the primitive cell.
+
+    A magnetic supercell input still reports its parent's space group, so the
+    site count printed beside it must be the primitive cell's, not the
+    submitted cell's -- otherwise the line misstates what the group describes.
+    """
+    pytest.importorskip("spglib")
+    from alterseek.find_sf_operations import _non_magnetic_symmetry
+
+    # Simple cubic, then the same crystal given as a 3x1x1 supercell.
+    lattice = np.eye(3) * 4.0
+    single = _non_magnetic_symmetry(
+        "POSCAR", lattice, np.array([[0.0, 0.0, 0.0]]), np.array([84]), False)
+    supercell = _non_magnetic_symmetry(
+        "POSCAR", np.diag([12.0, 4.0, 4.0]),
+        np.array([[0.0, 0.0, 0.0], [1 / 3, 0.0, 0.0], [2 / 3, 0.0, 0.0]]),
+        np.array([84, 84, 84]), False)
+
+    # Same crystal -> same space group and same primitive site count, even
+    # though one input had three times as many atoms.
+    assert single['spacegroup_number'] == supercell['spacegroup_number']
+    assert single['sites'] == supercell['sites'] == 1
 
 
 def test_cell_suffix_only_describes_what_is_known():

@@ -1416,10 +1416,6 @@ class KPointsModifier:
                     parent_recovery = centroid_result.get("mcif_parent_recovery")
                     lattice_tag = centroid_result.get(
                         'sc_type', centroid_result.get('seekpath_bravais', 'unknown'))
-                # Site count of the parent cell itself, known only when it was
-                # recovered from a larger input cell; otherwise the parent is
-                # the input cell and its count is already on the line above.
-                parent_sites = parent_recovery['primitive_sites'] if parent_recovery else None
                 # The two cells are printed adjacently, in the same field order,
                 # because the point of the block is whether they differ. The
                 # lattice tag and site count ride on whichever cell the k-path
@@ -1427,11 +1423,11 @@ class KPointsModifier:
                 print(f"\nInput structure: {sf_result['structure_file']}, "
                       f"{sf_result['num_atoms']} atoms")
                 using_magnetic_cell = working_cell_symmetry is not None
-                print(f"{'Nonmagnetic parent:':<{_CELL_LABEL_WIDTH}}"
+                print(f"{'Nonmagnetic primitive cell:':<{_CELL_LABEL_WIDTH}}"
                       f"SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
                       f"Laue {sf_result['laue_group']}"
-                      f"{'' if using_magnetic_cell else _cell_suffix(parent_sites, lattice_tag)}")
+                      f"{_cell_suffix(sf_result.get('nonmagnetic_sites'), sf_result.get('nonmagnetic_lattice'))}")
                 if parent_recovery:
                     print(f"{'':<{_CELL_LABEL_WIDTH}}"
                           f"recovered from the input cell at symprec="

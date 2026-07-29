@@ -132,6 +132,23 @@ def _laue_group_from_point_group(point_group):
     return mapping.get(pg)
 
 
+def _seekpath_lattice_tag(lattice, positions, numbers, symprec):
+    """HPKOT/SeeK-path key (hP2, cP1, ...) of the moment-free cell, or None."""
+    try:
+        import seekpath
+
+        result = seekpath.get_path(
+            (np.asarray(lattice, dtype=float).tolist(),
+             np.asarray(positions, dtype=float).tolist(),
+             [int(n) for n in numbers]),
+            with_time_reversal=False,
+            symprec=symprec,
+        )
+        return result.get('bravais_lattice_extended')
+    except Exception:
+        return None
+
+
 def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
                            symprec=None):
     """Return the structural (moment-free) space/point/Laue group of a cell.
@@ -147,20 +164,30 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
             structure_file, lattice, positions, numbers, fallback=requested)
         if is_mcif else requested
     )
-    dataset = spglib.get_symmetry_dataset((lattice, positions, numbers), symprec=symprec)
+    cell = (lattice, positions, numbers)
+    dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
     if not dataset:
         return {
             'non_mag_label': "Unknown",
             'point_group': "Unknown",
             'laue_group': "Unknown",
             'spacegroup_number': None,
+            'sites': None,
+            'lattice': None,
         }
+    # The reported space group belongs to the primitive cell, not to whatever
+    # cell was submitted: a magnetic supercell input still reports its parent's
+    # space group, so quoting the input's site count next to it would misstate
+    # what the group describes.
+    primitive = spglib.find_primitive(cell, symprec=symprec)
     point_group = dataset.pointgroup
     return {
         'non_mag_label': f"{dataset.international} ({dataset.number})",
         'point_group': point_group,
         'laue_group': _laue_group_from_point_group(point_group) or "Unknown",
         'spacegroup_number': int(dataset.number),
+        'sites': len(primitive[1]) if primitive is not None else None,
+        'lattice': _seekpath_lattice_tag(lattice, positions, numbers, symprec),
     }
 
 
@@ -769,6 +796,8 @@ MSG without SOC: {msg_without_soc_label}"""
         'space_group': non_mag_label,
         'point_group': point_group,
         'laue_group': laue_group,
+        'nonmagnetic_sites': non_magnetic['sites'],
+        'nonmagnetic_lattice': non_magnetic['lattice'],
         'magnetic_space_group': msg_label,
         'magnetic_space_group_without_soc': msg_without_soc_label,
         'msg_without_soc_bns_number': getattr(msg_without_soc, 'bns_number', None),
