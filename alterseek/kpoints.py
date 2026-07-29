@@ -88,6 +88,18 @@ _NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 _CELL_LABEL_WIDTH = 30
 
 
+def _figure_basename(struct_file):
+    """Name figures after the submitted structure, not an internal cell.
+
+    The magnetic route computes the centroid from a helper structure written
+    under a derived name, so without this Figure 1 alone picks up an extra
+    filename token that Figures 2-4 do not carry.
+    """
+    if not struct_file:
+        return None
+    return os.path.splitext(os.path.basename(struct_file))[0]
+
+
 def _cell_suffix(sites, lattice_tag):
     """Trailing size/lattice tag describing the cell on that line."""
     parts = []
@@ -1399,6 +1411,7 @@ class KPointsModifier:
                             mode_2d=self.mode_2d,
                             input_vacuum_axis=self.input_vacuum_axis,
                             view_elev=view_elev, view_azim=view_azim, symprec=symprec,
+                            figure_basename=_figure_basename(struct_file),
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
@@ -1517,6 +1530,7 @@ class KPointsModifier:
                         mode_2d=self.mode_2d,
                         input_vacuum_axis=self.input_vacuum_axis,
                         view_elev=view_elev, view_azim=view_azim, symprec=symprec,
+                            figure_basename=_figure_basename(struct_file),
                     )
                     display_figures.extend(centroid_result.get('display_figures', []))
                     print(
@@ -1663,7 +1677,8 @@ class KPointsModifier:
                                           mode_2d=self.mode_2d,
                                           input_vacuum_axis=self.input_vacuum_axis,
                                           view_elev=view_elev, view_azim=view_azim,
-                                          symprec=symprec)
+                                          symprec=symprec,
+                                          figure_basename=_figure_basename(struct_file))
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]

@@ -237,10 +237,16 @@ def run(
     view_elev=None,
     view_azim=None,
     symprec=None,
+    figure_basename=None,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
+    # Figures are named for the structure the user submitted, not for whatever
+    # intermediate cell they were computed from. Without this the magnetic
+    # route names Figure 1 after its internal helper file, so it alone carries
+    # an extra token that Figures 2-4 do not.
+    fig_basename = figure_basename or basename
 
     if verbose:
         print("=" * 60)
@@ -640,8 +646,8 @@ def run(
             kpoints_frac_for_output[label] = kpoints_frac_centroid[label]
 
     # ---- Plotting ----
-    fig1_title = (f"BZ: {basename} ({sc_display})" if sg in (1, 2)
-                  else f"IBZ + BZ: {basename} ({sc_display})")
+    fig1_title = (f"BZ: {fig_basename} ({sc_display})" if sg in (1, 2)
+                  else f"IBZ + BZ: {fig_basename} ({sc_display})")
 
     display_figures = []
     default_elev, default_azim = (
@@ -649,7 +655,7 @@ def run(
         else (14, 20)
     )
     elev1, azim1 = default_elev, default_azim
-    fig1_path = os.path.join(output_dir, f'{basename}_ibz_{sc_display}.png')
+    fig1_path = os.path.join(output_dir, f'{fig_basename}_ibz_{sc_display}.png')
     if show_plot and not mode_2d:
         # Interactive mode: create the figure now. alterseek_path can defer
         # the actual plt.show() call until all prompts and file writes finish.

@@ -245,3 +245,18 @@ def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
         working['laue_group']
     # The site count must come from the constructed cell, not the input cell.
     assert working['sites'] == 12
+
+
+def test_figure_basename_comes_from_the_submitted_structure():
+    """Figure 1 must not be named after the internal helper cell.
+
+    The magnetic route computes the centroid from a helper structure written
+    under a derived name, which used to leak into Figure 1's filename and
+    title while Figures 2-4 used the submitted name.
+    """
+    from alterseek.kpoints import _figure_basename
+
+    assert _figure_basename("POSCAR") == "POSCAR"
+    assert _figure_basename("1.0.47_MnSe2.mcif") == "1.0.47_MnSe2"
+    assert _figure_basename("/tmp/case/SUPERCELL_211.vasp") == "SUPERCELL_211"
+    assert _figure_basename(None) is None
