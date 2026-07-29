@@ -141,36 +141,6 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif)
     }
 
 
-def non_magnetic_symmetry_of_file(structure_file):
-    """Read a structure file and report its moment-free space/point/Laue group.
-
-    Used by the workflow to evaluate the altermagnetism Laue-group gate against
-    the magnetic primitive cell it actually builds the path in, rather than
-    against the cell the user happened to submit. Returns None if the file
-    cannot be read or symmetry detection fails.
-    """
-    is_mcif = str(structure_file).lower().endswith('.mcif')
-    try:
-        if is_mcif:
-            from pymatgen.io.cif import CifParser
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                pmg_struct = CifParser(structure_file).parse_structures(primitive=False)[0]
-            lattice = np.array(pmg_struct.lattice.matrix)
-            positions = np.array([site.frac_coords for site in pmg_struct])
-            numbers = np.array([site.specie.Z for site in pmg_struct])
-        else:
-            structure = read(structure_file)
-            lattice = structure.get_cell()
-            positions = structure.get_scaled_positions()
-            numbers = structure.get_atomic_numbers()
-    except Exception:
-        return None
-    result = _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif)
-    return result if result['laue_group'] != "Unknown" else None
-
-
 # --- HELPER 1: Write FULL details for human reading ---
 def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info, verbose=True):
     """Writes all spin symmetry operations to a text file."""

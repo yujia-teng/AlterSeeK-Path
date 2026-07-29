@@ -9,18 +9,17 @@ import numpy as np
 
 try:
     from .find_sf_operations import run as find_sf_run
-    from .find_sf_operations import non_magnetic_symmetry_of_file
     FIND_SF_AVAILABLE = True
 except ImportError as _exc:
     print(f"[Warning] find_sf_operations unavailable ({_exc}); "
           "Step 0 spin-operation detection is disabled.")
     find_sf_run = None
-    non_magnetic_symmetry_of_file = None
     FIND_SF_AVAILABLE = False
 
 try:
     from .compute_centroid_hybrid import run as compute_centroid
     from .symmetry import (no_altermagnetism_reason,
+                          laue_group_from_spacegroup_number,
                           is_valid_2d_spin_flip,
                           is_trivial_2d_spin_flip,
                           describe_spinflip_op)
@@ -36,6 +35,7 @@ except ImportError as _exc:
     CENTROID_AVAILABLE = False
     compute_centroid = None
     no_altermagnetism_reason = None
+    laue_group_from_spacegroup_number = None
     is_valid_2d_spin_flip = None
     is_trivial_2d_spin_flip = None
     plot_spin_flip_figure = None
@@ -81,21 +81,47 @@ def _fmt_coord(value):
 _NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 
 
+def _g0_symmetry(sf_result):
+    """Describe the magnetic primitive cell by G0, the spatial part of its SSG.
+
+    FindSpinGroup reports G0 directly, so this is the symmetry that actually
+    holds once the magnetic order is accounted for, and reading it off the
+    reported group needs no tolerance. Re-detecting symmetry from the magnetic
+    cell's own coordinates would instead describe the moment-stripped crystal,
+    which for a supercell altermagnet is still the higher-symmetry parent.
+    """
+    if laue_group_from_spacegroup_number is None:
+        return None
+    number = sf_result.get('g0_number')
+    laue_group = laue_group_from_spacegroup_number(number)
+    if laue_group is None:
+        return None
+    return {
+        'label': f"{sf_result.get('g0_symbol')} ({int(number)})",
+        'spacegroup_number': int(number),
+        'laue_group': laue_group,
+    }
+
+
 def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
     """Return a reason dict when the working cell's Laue group forbids
     altermagnetism, or None when it permits it.
 
-    The gate must judge the cell the k-path is actually built in. When a
-    magnetic primitive cell was constructed, that cell -- not the cell the user
-    submitted -- decides, because the two can disagree on the answer: MnSe2
-    (MAGNDATA 1.0.47) is deposited in a cubic Pa-3 parent whose Laue group m-3
-    forbids altermagnetism entirely, while the magnetic primitive cell it
-    resolves to is orthorhombic with Laue group mmm, which permits it.
-    Judging the submitted cell there would wrongly discard a real altermagnet.
+    The gate must judge the cell the k-path is actually built in, by the
+    symmetry that cell actually has. Both halves matter for MnSe2 (MAGNDATA
+    1.0.47). It is deposited in a cubic Pa-3 parent whose Laue group m-3
+    forbids altermagnetism, so judging the submitted cell discards a real
+    altermagnet -- but the magnetic cell replacing it is still the cubic Pa-3
+    *crystal* once its moments are stripped, so judging that cell's bare
+    coordinates discards it too (and does so tolerance-dependently). G0, the
+    spatial part of the spin space group, is orthorhombic here (Pbca 61, Laue
+    mmm), and that is the symmetry which permits altermagnetism.
     """
-    symmetry = working_cell_symmetry or sf_result
-    point_group = symmetry.get('point_group')
-    laue_group = symmetry.get('laue_group')
+    if working_cell_symmetry is not None:
+        return no_altermagnetism_reason(
+            spacegroup=working_cell_symmetry['spacegroup_number'])
+    point_group = sf_result.get('point_group')
+    laue_group = sf_result.get('laue_group')
     if no_altermagnetism_reason is not None:
         return no_altermagnetism_reason(point_group)
     if laue_group in _NO_ALTERMAGNETISM_LAUE_GROUPS:
@@ -1281,9 +1307,9 @@ class KPointsModifier:
             if isinstance(sf_result, dict):
                 magnetic_setting_counts = None
                 magnetic_setting_outputs = None
-                # Structural symmetry of the cell the path is actually built in.
-                # Stays None in the ordinary path, where sf_result already
-                # describes the submitted cell.
+                # Symmetry of the cell the path is actually built in. Stays None
+                # in the ordinary path, where sf_result already describes the
+                # submitted cell.
                 working_cell_symmetry = None
                 if self.magnetic_setting:
                     try:
@@ -1296,16 +1322,19 @@ class KPointsModifier:
                         centroid_struct_file = mag_setting["helper_path"]
                         centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
                         magnetic_setting_counts = mag_setting
-                        # The altermagnetism Laue-group gate below must judge the
-                        # magnetic primitive cell, not the submitted one. They can
-                        # differ decisively: MnSe2 (MAGNDATA 1.0.47) is submitted in
-                        # a cubic Pa-3 parent whose Laue group m-3 forbids
-                        # altermagnetism, while its magnetic primitive cell is
-                        # orthorhombic with Laue group mmm, which allows it.
-                        if non_magnetic_symmetry_of_file is not None:
-                            working_cell_symmetry = non_magnetic_symmetry_of_file(
-                                mag_setting["real_poscar_path"]
-                            )
+                        # The altermagnetism gate below must judge the cell the
+                        # path is built in, and must judge it by its *magnetic*
+                        # symmetry. Both matter for MnSe2 (MAGNDATA 1.0.47): it
+                        # is submitted in a cubic Pa-3 parent whose Laue group
+                        # m-3 forbids altermagnetism, and the magnetic cell that
+                        # replaces it is still the cubic Pa-3 *crystal* once the
+                        # moments are stripped -- it is orthorhombic only because
+                        # the moments make it so. Re-detecting symmetry from its
+                        # coordinates therefore answers the wrong question, and
+                        # answers it tolerance-dependently. G0, the spatial part
+                        # of the spin space group, is the symmetry that actually
+                        # holds, and FindSpinGroup reports it directly.
+                        working_cell_symmetry = _g0_symmetry(sf_result)
                     except Exception as e:
                         print(f"[Warning] Magnetic primitive cell construction failed: {e}")
                         print("[Warning] Falling back to the nonmagnetic parent cell "
@@ -1368,13 +1397,13 @@ class KPointsModifier:
                             f"symprec={parent_recovery['symprec']:g})"
                         )
                 print(f"Structure: {sf_result['structure_file']}, atoms: {sf_result['num_atoms']}")
-                print(f"SG {sf_result['space_group']}, "
+                print(f"Nonmagnetic parent: SG {sf_result['space_group']}, "
                       f"PG {sf_result['point_group']}, "
                       f"Laue {sf_result['laue_group']}")
                 if (working_cell_symmetry is not None
                         and working_cell_symmetry['laue_group'] != sf_result.get('laue_group')):
-                    print(f"Magnetic primitive cell: SG {working_cell_symmetry['non_mag_label']}, "
-                          f"PG {working_cell_symmetry['point_group']}, "
+                    print(f"Magnetic primitive cell (SSG G0): "
+                          f"SG {working_cell_symmetry['label']}, "
                           f"Laue {working_cell_symmetry['laue_group']}")
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")

@@ -50,6 +50,34 @@ def laue_group_from_point_group(point_group):
     return mapping.get(pg)
 
 
+_LAUE_GROUP_BY_SPACEGROUP_RANGE = (
+    (2, '-1'), (15, '2/m'), (74, 'mmm'), (88, '4/m'), (142, '4/mmm'),
+    (148, '-3'), (167, '-3m'), (176, '6/m'), (194, '6/mmm'),
+    (206, 'm-3'), (230, 'm-3m'),
+)
+
+
+def laue_group_from_spacegroup_number(spacegroup_number):
+    """Return the Laue group of an international space-group number.
+
+    Used for symmetry already known as a space group rather than as a set of
+    coordinates -- notably the spatial part G0 of a spin space group, which
+    FindSpinGroup reports directly. Reading the Laue group off the group itself
+    avoids re-detecting symmetry from atomic positions, where the answer
+    depends on a tolerance.
+    """
+    try:
+        number = int(spacegroup_number)
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= number <= 230:
+        return None
+    for upper, laue in _LAUE_GROUP_BY_SPACEGROUP_RANGE:
+        if number <= upper:
+            return laue
+    return None
+
+
 def no_altermagnetism_reason(point_group=None, spacegroup=None):
     """Return a reason dict when the Laue group cannot support altermagnetism."""
     laue_group = laue_group_from_point_group(point_group) if point_group else None

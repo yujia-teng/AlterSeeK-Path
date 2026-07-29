@@ -2,107 +2,110 @@
 
 The gate decides whether a structure can host altermagnetic splitting at all;
 when it fires, the ordinary structural path is written and no butterfly path is
-built. It must judge the cell the path is actually constructed in.
+built. Getting it right needs two things that MnSe2 (MAGNDATA 1.0.47) shows are
+independent:
 
-MnSe2 (MAGNDATA 1.0.47) is the case that exposed the difference. It is
-deposited in a cubic Pa-3 (No. 205) parent whose Laue group m-3 forbids
-altermagnetism outright, but its magnetic primitive cell -- the cell
-AlterSeeK-Path builds the path in -- is orthorhombic with Laue group mmm, which
-permits it. Reading the submitted cell there discards a genuine altermagnet.
+1. It must judge the cell the path is built in. MnSe2 is deposited in a cubic
+   Pa-3 (205) parent whose Laue group m-3 forbids altermagnetism outright, so
+   judging the submitted cell discards a genuine altermagnet.
+
+2. It must judge that cell by its *magnetic* symmetry. MnSe2's magnetic
+   primitive cell is a 3x1x1 supercell of the same cubic crystal -- strip the
+   moments and spglib still finds the 12-atom cubic primitive. Re-detecting
+   symmetry from its coordinates therefore reproduces the forbidding m-3, and
+   does so tolerance-dependently: at spglib's default symprec the mcif's
+   5-decimal rounding hides the 3-fold axis and it looks orthorhombic, which
+   is an accident, not a result.
+
+G0, the spatial part of the spin space group (Pbca 61 -> Laue mmm here), is the
+symmetry that actually holds, and FindSpinGroup reports it directly.
 """
 import io
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from alterseek.kpoints import _altermagnetism_gate
+from alterseek.kpoints import _altermagnetism_gate, _g0_symmetry
+from alterseek.symmetry import laue_group_from_spacegroup_number
 
 REF_DIR = Path(__file__).parent / "references"
 POSCAR = REF_DIR / "SUPERCELL_211.vasp"
 
-
 CUBIC_PARENT = {'point_group': 'm-3', 'laue_group': 'm-3'}
-ORTHORHOMBIC_MAGNETIC_CELL = {'point_group': 'mmm', 'laue_group': 'mmm'}
+# MnSe2's G0: orthorhombic Pbca, the symmetry left once the moments are counted.
+ORTHORHOMBIC_G0 = {'label': 'Pbca (61)', 'spacegroup_number': 61, 'laue_group': 'mmm'}
+CUBIC_G0 = {'label': 'Pa-3 (205)', 'spacegroup_number': 205, 'laue_group': 'm-3'}
 
 
-def test_submitted_cell_decides_when_no_conversion_happened():
-    """Without a magnetic primitive cell, the submitted cell is the only cell."""
+def test_submitted_cell_decides_when_no_magnetic_cell_was_built():
+    """Under --parent-setting the submitted cell is the only cell."""
     assert _altermagnetism_gate(CUBIC_PARENT) is not None
-    assert _altermagnetism_gate(ORTHORHOMBIC_MAGNETIC_CELL) is None
+    assert _altermagnetism_gate({'point_group': 'mmm', 'laue_group': 'mmm'}) is None
 
 
-def test_magnetic_primitive_cell_overrides_a_forbidding_parent():
-    """The MnSe2 case: cubic m-3 parent, orthorhombic mmm magnetic cell.
-
-    Judging the parent would report 'no altermagnetism' and fall back to the
-    ordinary path, losing the altermagnetic result entirely.
-    """
-    assert _altermagnetism_gate(
-        CUBIC_PARENT, working_cell_symmetry=ORTHORHOMBIC_MAGNETIC_CELL
-    ) is None
+def test_g0_overrides_a_forbidding_parent():
+    """The MnSe2 case: cubic m-3 parent, orthorhombic mmm G0."""
+    assert _altermagnetism_gate(CUBIC_PARENT, working_cell_symmetry=ORTHORHOMBIC_G0) is None
 
 
-def test_magnetic_primitive_cell_can_also_forbid_a_permitting_parent():
-    """The gate is not a one-way override -- the working cell simply decides."""
+def test_g0_can_also_forbid_where_the_parent_permitted():
+    """Not a one-way override -- the working cell's own symmetry decides."""
     reason = _altermagnetism_gate(
-        ORTHORHOMBIC_MAGNETIC_CELL, working_cell_symmetry=CUBIC_PARENT
+        {'point_group': 'mmm', 'laue_group': 'mmm'}, working_cell_symmetry=CUBIC_G0
     )
     assert reason is not None
     assert reason['laue_group'] == 'm-3'
 
 
-@pytest.mark.parametrize("laue_group", ['-1', '-3', 'm-3'])
-def test_all_forbidden_laue_groups_fire(laue_group):
-    reason = _altermagnetism_gate({'point_group': laue_group, 'laue_group': laue_group})
+@pytest.mark.parametrize("spacegroup_number,laue", [(1, '-1'), (146, '-3'), (205, 'm-3')])
+def test_forbidden_laue_groups_fire_via_g0(spacegroup_number, laue):
+    reason = _altermagnetism_gate(
+        CUBIC_PARENT,
+        working_cell_symmetry={'label': 'x', 'spacegroup_number': spacegroup_number,
+                               'laue_group': laue},
+    )
     assert reason is not None
-    assert reason['laue_group'] == laue_group
+    assert reason['laue_group'] == laue
 
 
-def _write_poscar(path, lattice, symbol, positions):
-    lines = [symbol, "1.0"]
-    lines += [" ".join(f"{value:.10f}" for value in row) for row in lattice]
-    lines += [symbol, str(len(positions)), "Direct"]
-    lines += [" ".join(f"{value:.10f}" for value in row) for row in positions]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def test_g0_symmetry_is_read_from_findspingroup_not_from_coordinates():
+    """The whole point: no structure file, no tolerance, no spglib call."""
+    sf_result = {'g0_symbol': 'Pbca', 'g0_number': 61}
+    assert _g0_symmetry(sf_result) == {
+        'label': 'Pbca (61)', 'spacegroup_number': 61, 'laue_group': 'mmm',
+    }
+    # MnSe2's real FindSpinGroup output must permit altermagnetism.
+    assert _altermagnetism_gate(CUBIC_PARENT, _g0_symmetry(sf_result)) is None
 
 
-def test_non_magnetic_symmetry_of_file_reads_real_laue_groups(tmp_path):
-    """The helper feeding the gate must report the cell's own Laue group."""
-    pytest.importorskip("ase")
-    from alterseek.find_sf_operations import non_magnetic_symmetry_of_file
-
-    # Simple cubic: Laue m-3m.
-    cubic = tmp_path / "cubic.vasp"
-    _write_poscar(cubic, np.eye(3) * 4.0, "Po", [[0.0, 0.0, 0.0]])
-    assert non_magnetic_symmetry_of_file(str(cubic))['laue_group'] == 'm-3m'
-
-    # Same cell stretched along c: Laue drops to 4/mmm, not cubic any more.
-    tetragonal = tmp_path / "tetragonal.vasp"
-    _write_poscar(tetragonal, np.diag([4.0, 4.0, 6.0]), "Po", [[0.0, 0.0, 0.0]])
-    assert non_magnetic_symmetry_of_file(str(tetragonal))['laue_group'] == '4/mmm'
-
-    # Three distinct axes: orthorhombic, Laue mmm -- the MnSe2 magnetic-cell class.
-    orthorhombic = tmp_path / "orthorhombic.vasp"
-    _write_poscar(orthorhombic, np.diag([4.0, 5.0, 6.0]), "Po", [[0.0, 0.0, 0.0]])
-    assert non_magnetic_symmetry_of_file(str(orthorhombic))['laue_group'] == 'mmm'
+def test_g0_symmetry_is_none_when_findspingroup_reported_no_g0():
+    assert _g0_symmetry({}) is None
+    assert _g0_symmetry({'g0_symbol': 'Pbca', 'g0_number': 999}) is None
 
 
-def test_non_magnetic_symmetry_of_file_returns_none_on_unreadable_input(tmp_path):
-    from alterseek.find_sf_operations import non_magnetic_symmetry_of_file
+@pytest.mark.parametrize("number,expected", [
+    (1, '-1'), (2, '-1'), (3, '2/m'), (15, '2/m'), (16, 'mmm'), (61, 'mmm'),
+    (74, 'mmm'), (75, '4/m'), (88, '4/m'), (89, '4/mmm'), (142, '4/mmm'),
+    (143, '-3'), (148, '-3'), (149, '-3m'), (167, '-3m'), (168, '6/m'),
+    (176, '6/m'), (177, '6/mmm'), (194, '6/mmm'), (195, 'm-3'), (205, 'm-3'),
+    (206, 'm-3'), (207, 'm-3m'), (230, 'm-3m'),
+])
+def test_laue_group_covers_every_crystal_class_boundary(number, expected):
+    assert laue_group_from_spacegroup_number(number) == expected
 
-    missing = tmp_path / "does-not-exist.vasp"
-    assert non_magnetic_symmetry_of_file(str(missing)) is None
+
+@pytest.mark.parametrize("bad", [0, 231, -1, None, "x", 1.5e300])
+def test_laue_group_rejects_non_spacegroup_numbers(bad):
+    assert laue_group_from_spacegroup_number(bad) is None
 
 
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
-def test_workflow_gates_on_the_magnetic_primitive_cell(tmp_path, monkeypatch):
-    """The wiring: the gate's symmetry must be read from the constructed cell.
+def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
+    """The wiring: the gate's symmetry must come from G0 of the built cell.
 
-    Reading it from the submitted structure instead is the MnSe2 bug, and no
-    assertion on the gate helper alone can catch that -- only checking which
-    file the workflow hands it does.
+    No assertion on the gate helper alone catches a workflow that computes the
+    right thing and then feeds the gate something else.
     """
     pytest.importorskip("findspingroup")
     pytest.importorskip("ase")
@@ -112,23 +115,14 @@ def test_workflow_gates_on_the_magnetic_primitive_cell(tmp_path, monkeypatch):
     if ssg_setting.find_spin_group_acc_primitive_from_data is None:
         pytest.skip("findspingroup acc-primitive setting unavailable")
 
-    prepared = {}
-    real_prepare = kpoints_module.prepare_magnetic_setting_files
+    seen = []
+    real_gate = kpoints_module._altermagnetism_gate
 
-    def spy_prepare(*args, **kwargs):
-        result = real_prepare(*args, **kwargs)
-        prepared["real_poscar_path"] = result["real_poscar_path"]
-        return result
+    def spy_gate(sf_result, working_cell_symmetry=None):
+        seen.append(working_cell_symmetry)
+        return real_gate(sf_result, working_cell_symmetry)
 
-    inspected = []
-    real_symmetry = kpoints_module.non_magnetic_symmetry_of_file
-
-    def spy_symmetry(structure_file):
-        inspected.append(structure_file)
-        return real_symmetry(structure_file)
-
-    monkeypatch.setattr(kpoints_module, "prepare_magnetic_setting_files", spy_prepare)
-    monkeypatch.setattr(kpoints_module, "non_magnetic_symmetry_of_file", spy_symmetry)
+    monkeypatch.setattr(kpoints_module, "_altermagnetism_gate", spy_gate)
 
     answers = "\n".join([str(POSCAR), "0 0 1", "1 -1 1 -1", "", ""]) + "\n"
     monkeypatch.chdir(tmp_path)
@@ -136,8 +130,10 @@ def test_workflow_gates_on_the_magnetic_primitive_cell(tmp_path, monkeypatch):
 
     kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify()
 
-    assert inspected, "the gate never inspected any cell's symmetry"
-    assert inspected == [prepared["real_poscar_path"]], (
-        "the gate must read the magnetic primitive cell, not the submitted structure"
-    )
-    assert str(POSCAR) not in inspected
+    assert seen, "the gate was never consulted"
+    working = seen[0]
+    assert working is not None, "the gate judged the submitted cell, not the built one"
+    # A G0 description, not a re-detection from coordinates.
+    assert set(working) == {'label', 'spacegroup_number', 'laue_group'}
+    assert laue_group_from_spacegroup_number(working['spacegroup_number']) == \
+        working['laue_group']

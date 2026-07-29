@@ -194,10 +194,20 @@ built in it will not show the splitting the magnetic structure actually has.
 Add `--output verbose` to keep the intermediate helper files for debugging
 instead of deleting them.
 
-The altermagnetism check follows the cell in use: the Laue-group exclusion is
-evaluated on the cell the path is built in, so a structure whose parent
-forbids altermagnetism but whose magnetic primitive cell permits it is
+The altermagnetism check follows the cell in use. By default the Laue-group
+exclusion is evaluated on **G0**, the spatial part of the spin space group
+reported by FindSpinGroup, which is the symmetry the magnetic primitive cell
+actually has; under `--parent-setting` it is evaluated on the submitted cell's
+own space group. So a structure whose nonmagnetic parent forbids altermagnetism
+but whose magnetic order lowers the symmetry to a Laue class that permits it is
 correctly treated as altermagnetic by default.
+
+This distinction is not cosmetic for supercell altermagnets. MnSe2 is deposited
+in a cubic `Pa-3` (205) parent, Laue `m-3`, which forbids altermagnetism; its
+magnetic primitive cell is a 3x1x1 supercell of that same cubic crystal, so
+with the moments stripped it is *still* cubic. Only G0 (`Pbca`, 61, Laue `mmm`)
+reflects the symmetry the magnetic state actually has, and Step 0 prints both
+the nonmagnetic parent and G0 so the two are never confused.
 
 ## Next Step
 
