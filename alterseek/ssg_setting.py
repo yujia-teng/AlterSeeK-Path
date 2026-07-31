@@ -16,8 +16,8 @@ except ImportError:  # pragma: no cover
     FIND_SG_MAGNETIC_SETTING_AVAILABLE = False
 
 from .io import (
-    _group_poscar_sites, _write_poscar, _write_without_species,
-    _reciprocal_from_poscar, _dedupe_frac_positions,
+    _atomic_write_text, _group_poscar_sites, _write_poscar, _write_without_species,
+    _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
     _load_magnetic_input_data,
 )
@@ -178,18 +178,21 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
     moments = np.array(cell.get("moments", np.zeros((len(elements), 3))), dtype=float)
 
     basename = os.path.splitext(os.path.basename(structure_file))[0]
-    temp_dir = os.path.join(output_dir, ".alterseek_ssgstd_tmp")
+    temp_dir = os.path.join(output_dir, ".alterseek_magnetic_tmp")
     os.makedirs(temp_dir, exist_ok=True)
-    real_path = os.path.join(temp_dir, f"{basename}_ssgprim.vasp")
-    mcif_path = os.path.join(output_dir, f"{basename}_ssgprim.mcif")
-    magmom_path = os.path.join(temp_dir, f"{basename}_ssgprim_MAGMOM.txt")
-    helper_path = os.path.join(temp_dir, f"{basename}_ssgstd.vasp")
+    real_path = os.path.join(temp_dir, f"{basename}_magnetic_primitive.vasp")
+    mcif_path = os.path.join(output_dir, f"{basename}_magnetic_primitive.mcif")
+    magmom_path = os.path.join(
+        temp_dir, f"{basename}_magnetic_primitive_MAGMOM.txt")
+    helper_path = os.path.join(
+        temp_dir, f"{basename}_magnetic_marker_input.vasp")
 
     symbols, counts, grouped_positions, ordered_indices = _group_poscar_sites(
         elements, positions)
     _write_poscar(
         real_path,
-        f"{basename} magnetic primitive from FindSpinGroup",
+        f"{basename} magnetic primitive from FindSpinGroup; "
+        f"moments: {basename}_magnetic_primitive_MAGMOM.txt",
         lattice,
         symbols,
         counts,
@@ -200,28 +203,30 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
     ordered_elements = [elements[idx] for idx in ordered_indices]
     _write_magnetic_mcif(
         mcif_path,
-        f"{basename}_ssgprim",
+        f"{basename}_magnetic_primitive",
         lattice,
         ordered_elements,
         grouped_positions,
         ordered_moments,
     )
+    axis = None
+    for moment in ordered_moments:
+        norm = np.linalg.norm(moment)
+        if norm > 1e-10:
+            axis = moment / norm
+            break
     with open(magmom_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("# Magnetic primitive POSCAR atom order matches:\n")
         f.write(f"# {real_path}\n")
-        f.write("# Vector moments from FindSpinGroup acc_primitive_cell_detail:\n")
-        for moment in ordered_moments:
-            f.write(f"{moment[0]: .10f} {moment[1]: .10f} {moment[2]: .10f}\n")
-        axis = None
-        for moment in ordered_moments:
-            norm = np.linalg.norm(moment)
-            if norm > 1e-10:
-                axis = moment / norm
-                break
+        f.write(f"# Species order: {' '.join(symbols)}\n")
+        f.write(f"# Counts: {' '.join(str(count) for count in counts)}\n")
         if axis is not None:
             scalars = [float(np.dot(moment, axis)) for moment in ordered_moments]
+            f.write("# Collinear spin axis (Cartesian): " + " ".join(
+                f"{value:.8g}" for value in axis) + "\n")
             f.write("# Collinear scalar MAGMOM along first nonzero moment axis:\n")
-            f.write("MAGMOM = " + " ".join(f"{value:.8g}" for value in scalars) + "\n")
+            f.write("MAGMOM = " + " ".join(
+                f"{value:.8g}" for value in scalars) + "\n")
 
     operations = _magnetic_primitive_ssg_operations(result)
     marker_helper = _build_marker_helper(
@@ -253,6 +258,13 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "basename": basename,
         "seekpath_type_numbers": None,
         "magnetic_cell_sites": len(elements),
+        # Both lattices are kept so finalize_magnetic_setting_outputs() can
+        # decide whether the magnetic cell is genuinely a different cell or
+        # merely the submitted one with its axes relabelled.
+        "magnetic_primitive_lattice": lattice,
+        "submitted_lattice": np.array(lattice_in, dtype=float),
+        "magnetic_symbols": list(symbols),
+        "magnetic_counts": list(counts),
         "spin_flip_operations": flip_count,
         "spin_preserve_operations": preserve_count,
         "summary": {
@@ -266,11 +278,77 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
     }
 
 
+def _is_axis_relabelling(magnetic_lattice, submitted_lattice, tol=1e-6):
+    """True when the magnetic cell is the submitted cell with its axes merely
+    reordered and/or reversed, rather than a genuinely different cell.
+
+    FindSpinGroup returns the magnetic primitive cell in its own convention,
+    which routinely permutes and flips the axes even when the cell is the one
+    that was submitted. MnSe2 (MAGNDATA 1.0.47) is the clean example: the
+    submitted 36-site cell comes back as the same three vectors in the order
+    (c, a, b), so the transformation is a bare permutation. Re-expressing the
+    path in it would rewrite every coordinate for no physical reason.
+
+    GdAuGe AFM5 is the contrasting case: its transformation combines two
+    submitted vectors, which is what turns the 120-degree hexagonal cell into
+    the 90-degree orthorhombic one. That is a real change of cell and the
+    calculation has to follow it.
+    """
+    submitted = np.asarray(submitted_lattice, dtype=float)
+    magnetic = np.asarray(magnetic_lattice, dtype=float)
+    try:
+        transform = magnetic @ np.linalg.inv(submitted)
+    except np.linalg.LinAlgError:
+        return False
+    if not np.allclose(transform, np.rint(transform), atol=tol):
+        return False
+    rounded = np.rint(transform)
+    if not np.all(np.isin(rounded, (-1.0, 0.0, 1.0))):
+        return False
+    return (np.all(np.count_nonzero(rounded, axis=0) == 1)
+            and np.all(np.count_nonzero(rounded, axis=1) == 1))
+
+
+def _is_proper_magnetic_supercell(
+    magnetic_lattice,
+    submitted_lattice,
+    tol=1e-6,
+):
+    """True when the submitted calculation cell is an integer supercell of
+    the magnetic primitive cell.
+
+    A deliberate calculation supercell remains a valid output basis.  The
+    magnetic primitive cell is still the right cell for the G0/IBZ analysis,
+    but the resulting k-points must be transformed back to the reciprocal
+    basis of the cell VASP will actually use.  GdAuGe SUPERCELL_221 is the
+    regression case: its submitted cell has index four over the six-site
+    magnetic primitive cell.
+
+    Index one is deliberately excluded.  A nontrivial unimodular basis change
+    is not a supercell and can be physically important for making the magnetic
+    symmetry explicit (GdAuGe SUPERCELL_211, hexagonal-looking input to the
+    SSG-adapted orthorhombic setting).
+    """
+    submitted = np.asarray(submitted_lattice, dtype=float)
+    magnetic = np.asarray(magnetic_lattice, dtype=float)
+    try:
+        transform = submitted @ np.linalg.inv(magnetic)
+    except np.linalg.LinAlgError:
+        return False
+    rounded = np.rint(transform)
+    if not np.allclose(transform, rounded, atol=tol):
+        return False
+    determinant = abs(float(np.linalg.det(rounded)))
+    index = int(round(determinant))
+    return index > 1 and np.isclose(determinant, index, atol=tol)
+
+
 def finalize_magnetic_setting_outputs(
     mag_setting,
     centroid_result,
     output_dir=".",
     verbose_output=False,
+    calculation_cell_dir=".",
 ):
     helper_source = centroid_result.get("standardized_structure_path")
     if not helper_source or not os.path.exists(helper_source):
@@ -278,19 +356,19 @@ def finalize_magnetic_setting_outputs(
 
     basename = mag_setting["basename"]
     real_final = os.path.join(
-        output_dir, f"{basename}_ssgstd.vasp"
+        output_dir, f"{basename}_seekpath_standard.vasp"
     )
 
     _write_without_species(
         helper_source,
         real_final,
         {"He"},
-        f"{basename} magnetic setting standardized",
+        f"{basename} SeeK-path standard cell from SSG G0 analysis",
     )
     helper_final = None
     if verbose_output:
         helper_final = os.path.join(
-            output_dir, f"{basename}_ssgstd_helper.vasp"
+            output_dir, f"{basename}_seekpath_marker_helper.vasp"
         )
         if os.path.abspath(helper_source) != os.path.abspath(helper_final):
             shutil.copyfile(helper_source, helper_final)
@@ -305,6 +383,113 @@ def finalize_magnetic_setting_outputs(
         mapping_final = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
         if os.path.abspath(mapping_source) != os.path.abspath(mapping_final):
             shutil.copyfile(mapping_source, mapping_final)
+
+    # Output basis. Reaching here means the analysis had to run in the magnetic
+    # cell, but that on its own does not mean the calculation cell changed:
+    # FindSpinGroup routinely returns the submitted cell with its axes reordered
+    # or reversed (MnSe2), and a deliberately submitted calculation supercell
+    # remains valid (GdAuGe SUPERCELL_221). Only a same-volume, nontrivial basis
+    # change -- GdAuGe AFM5's hexagonal-looking 211 cell to the SSG-adapted
+    # orthorhombic setting -- moves the calculation off the user's own cell.
+    #
+    # Either way the basis is never taken from the standardized cell written
+    # above: that is spglib's standardized *conventional* cell, so for a centred
+    # lattice it is 2x or 4x the primitive, and taking the basis from it used to
+    # hand the user a cell several times larger than the magnetism required.
+    #
+    # Runs before the temp-dir cleanup below, because the magnetic primitive
+    # POSCAR promoted here still lives in it.
+    magnetic_lattice = np.asarray(
+        mag_setting["magnetic_primitive_lattice"], dtype=float)
+    submitted_lattice = mag_setting.get("submitted_lattice")
+    submitted_cell_is_usable = (
+        submitted_lattice is not None
+        and (
+            _is_axis_relabelling(magnetic_lattice, submitted_lattice)
+            or _is_proper_magnetic_supercell(
+                magnetic_lattice, submitted_lattice)
+        )
+    )
+    cell_changed = not submitted_cell_is_usable
+    if cell_changed:
+        b_matrix_output = 2 * np.pi * np.linalg.inv(magnetic_lattice).T
+        output_lattice = magnetic_lattice
+    else:
+        output_lattice = np.asarray(submitted_lattice, dtype=float)
+        b_matrix_output = 2 * np.pi * np.linalg.inv(output_lattice).T
+    # Written next to KPOINTS_alter rather than into the output folder: it is
+    # not a record of the run but an input the user has to calculate with, and
+    # it only appears when the cell genuinely changed.
+    calculation_cell_path = None
+    calculation_magmom_path = None
+    source = mag_setting.get("real_poscar_path") if cell_changed else None
+    magmom_source = mag_setting.get("magmom_path") if cell_changed else None
+    if cell_changed:
+        if not source or not os.path.exists(source):
+            raise RuntimeError(
+                "Magnetic calculation POSCAR is missing; refusing an incomplete "
+                "calculation-cell handoff."
+            )
+        if not magmom_source or not os.path.exists(magmom_source):
+            raise RuntimeError(
+                "Matching magnetic moments are missing; refusing to hand over a "
+                "reordered calculation POSCAR without its MAGMOM data."
+            )
+        os.makedirs(calculation_cell_dir, exist_ok=True)
+        calculation_cell_path = os.path.normpath(
+            os.path.join(
+                calculation_cell_dir,
+                f"{basename}_magnetic_primitive.vasp",
+            )
+        )
+        calculation_magmom_path = os.path.normpath(
+            os.path.join(
+                calculation_cell_dir,
+                f"{basename}_magnetic_primitive_MAGMOM.txt",
+            )
+        )
+
+        with open(source, "r", encoding="utf-8") as f:
+            _atomic_write_text(calculation_cell_path, f.read())
+
+        with open(magmom_source, "r", encoding="utf-8") as f:
+            magmom_lines = f.read().splitlines()
+        if len(magmom_lines) >= 2 and magmom_lines[0] == \
+                "# Magnetic primitive POSCAR atom order matches:":
+            magmom_lines[1] = f"# {os.path.basename(calculation_cell_path)}"
+        else:
+            magmom_lines = [
+                "# Magnetic primitive POSCAR atom order matches:",
+                f"# {os.path.basename(calculation_cell_path)}",
+                *magmom_lines,
+            ]
+        _atomic_write_text(
+            calculation_magmom_path,
+            "\n".join(magmom_lines) + "\n",
+        )
+
+    if mapping_final:
+        if calculation_cell_path:
+            output_label = os.path.basename(calculation_cell_path)
+        else:
+            output_label = "submitted structure (calculation cell unchanged)"
+        with open(mapping_final, "r", encoding="utf-8") as f:
+            mapping_text = f.read().rstrip()
+        output_lines = [
+            "",
+            f"# kpoints_output_lattice is the direct lattice of {output_label}.",
+            "# KPOINTS_alter fractional coordinates are written in its "
+            "reciprocal basis.",
+            "kpoints_output_lattice:",
+        ]
+        output_lines.extend(
+            "  " + " ".join(f"{float(value): .10f}" for value in row)
+            for row in output_lattice
+        )
+        _atomic_write_text(
+            mapping_final,
+            mapping_text + "\n" + "\n".join(output_lines) + "\n",
+        )
 
     # Remove or relocate low-level seekpath artifacts for the hidden marker helper.
     # The clean final standardized structure above is the user-facing record.
@@ -331,8 +516,16 @@ def finalize_magnetic_setting_outputs(
 
     result = {
         "standard_real_path": real_final,
-        "b_matrix_output": _reciprocal_from_poscar(real_final),
+        "b_matrix_output": b_matrix_output,
+        "cell_changed": cell_changed,
     }
+    if calculation_cell_path:
+        result["calculation_cell_path"] = calculation_cell_path
+    if calculation_magmom_path:
+        result["calculation_magmom_path"] = calculation_magmom_path
+    if mag_setting.get("magnetic_symbols"):
+        result["calculation_species_order"] = list(
+            mag_setting["magnetic_symbols"])
     if mapping_final:
         result["standard_mapping_path"] = mapping_final
     if helper_final:

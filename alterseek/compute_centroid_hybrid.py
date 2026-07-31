@@ -166,9 +166,15 @@ def _write_seekpath_standard_poscar(lattice, positions, types, output_path, sour
         f.write("\n".join(lines) + "\n")
 
 
-def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matrix,
-                                  output_path, source_name):
-    """Record the input-cell to SeeK-path-standard axis mapping for users.
+def _write_seekpath_basis_mapping(
+    input_lattice,
+    primitive_lattice,
+    conventional_lattice,
+    rotation_matrix,
+    output_path,
+    source_name,
+):
+    """Record the analysis-input to SeeK-path-standard basis chain.
 
     ``source_name`` names the cell SeeK-path was actually given. It is not
     always the submitted structure: when the path is built in the magnetic
@@ -182,19 +188,26 @@ def _write_seekpath_basis_mapping(input_lattice, standard_lattice, rotation_matr
         )
 
     input_lattice = np.array(input_lattice, dtype=float)
-    standard_lattice = np.array(standard_lattice, dtype=float)
+    primitive_lattice = np.array(primitive_lattice, dtype=float)
+    conventional_lattice = np.array(conventional_lattice, dtype=float)
     rotation_matrix = np.array(rotation_matrix, dtype=float)
     lines = [
         "# SeeK-path standardization mapping",
-        f"# input_lattice is the lattice of {source_name}, the cell given to SeeK-path.",
-        "# seekpath_standard_lattice is the standardized cell written to *_seekpath_standard.vasp.",
+        f"# analysis_input_lattice is the lattice of {source_name}, "
+        "the cell given to SeeK-path.",
+        "# seekpath_standard_primitive_lattice is the internal HPKOT path basis.",
+        "# seekpath_standard_conventional_lattice is written to "
+        "*_seekpath_standard.vasp.",
         "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
         "",
-        "input_lattice:",
+        "analysis_input_lattice:",
         _fmt_matrix(input_lattice),
         "",
-        "seekpath_standard_lattice:",
-        _fmt_matrix(standard_lattice),
+        "seekpath_standard_primitive_lattice:",
+        _fmt_matrix(primitive_lattice),
+        "",
+        "seekpath_standard_conventional_lattice:",
+        _fmt_matrix(conventional_lattice),
         "",
         "seekpath_rotation_matrix:",
         _fmt_matrix(rotation_matrix),
@@ -311,6 +324,7 @@ def run(
         )
         _write_seekpath_basis_mapping(
             a_matrix,
+            np.array(sp_result["primitive_lattice"]),
             np.array(input_dataset.std_lattice),
             np.array(sp_result["rotation_matrix"]),
             standard_mapping_path,

@@ -37,16 +37,12 @@ Press Enter for the auto-detected SeeK-path, or provide a line-mode
 lattice type is reported using SeeK-path keys (`hP2`, `oI3`, `mC2`, etc.).
 
 A custom path is interpreted in the reciprocal fractional basis of the
-structure submitted in Step 0. By default the analysis works in the magnetic
-primitive cell (e.g. a hexagonal lattice whose moments lower it to
-orthorhombic), so the custom path is interpreted in that magnetic primitive
-cell's reciprocal basis; under `--parent-setting` it is interpreted in the
-nonmagnetic parent cell's basis instead. AlterSeeK-Path converts it to the standardized
-SeeK-path basis for internal processing and converts the final path to the
-calculation cell's reciprocal basis when writing output. Custom files must use
-reciprocal line mode and contain labeled endpoint pairs; one complete segment
-is valid, but a lone point, an odd endpoint count, a missing label, or a
-non-finite coordinate is rejected.
+structure submitted in Step 0. AlterSeeK-Path converts it to the standardized
+SeeK-path basis used for internal processing and converts the final path to
+the calculation cell's reciprocal basis when writing output. Custom files
+must use reciprocal line mode and contain labeled endpoint pairs; one complete
+segment is valid, but a lone point, an odd endpoint count, a missing label, or
+a non-finite coordinate is rejected.
 
 ## Step 2: General K Point
 
@@ -76,8 +72,8 @@ list, including figures.
 
 ## Output Files
 
-Only the two files with a downstream consumer are written to the working
-directory; everything else goes into `alterseek_output/`.
+Files the user must act on are written to the working directory; diagnostic and
+record files go into `alterseek_output/`.
 
 **Working directory**
 
@@ -87,6 +83,8 @@ directory; everything else goes into `alterseek_output/`.
 | `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
 | `alterband.toml` | VASP band-plot configuration; the band plotter reads it from here |
 | `alterband_qe.toml` | QE band-plot configuration; likewise |
+| `*_magnetic_primitive.vasp` | Magnetic primitive calculation cell in the SSG-adapted setting, written only when the calculation setting changes |
+| `*_magnetic_primitive_MAGMOM.txt` | Matching species order, Cartesian spin axis, and scalar MAGMOM line for that generated POSCAR |
 
 **`alterseek_output/`**
 
@@ -99,10 +97,10 @@ directory; everything else goes into `alterseek_output/`.
 | `spin_operations.txt` | Full spin-symmetry operation log |
 | `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
 | `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
-| `*_ssgprim.mcif` | Magnetic primitive cell with its moments (default route) |
-| `*_ssgstd.vasp` | The same cell standardized, as the k-path basis is defined in it |
-| `*_seekpath_standard.vasp` | Standardized cell (`--parent-setting` route) |
-| `*_seekpath_basis_mapping.txt` | Input-to-standardized lattice mapping and rotation |
+| `*_magnetic_primitive.mcif` | Magnetic primitive cell with its vector moments (default route) |
+| `*_seekpath_standard.vasp` | SeeK-path standardized conventional diagnostic cell; it is not the calculation POSCAR or final KPOINTS basis |
+| `*_seekpath_marker_helper.vasp` | Marker-bearing standardized helper, retained only with verbose output |
+| `*_seekpath_basis_mapping.txt` | Analysis input, internal primitive path, standardized conventional, and final KPOINTS output lattices |
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
 The workflow prints a note and writes the ordinary default path. The same
@@ -202,10 +200,11 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 
 ## `--parent-setting`
 
-By default, Figure 1/KPOINTS are built in the **magnetic primitive cell** --
-the cell that reflects the symmetry of the magnetic state -- which
-AlterSeeK-Path identifies from the input magnetic structure with
-FindSpinGroup's spin-space-group setting.
+By default, Figure 1 and the path symmetry are determined from the
+**magnetic primitive cell** -- the cell that reflects the symmetry of the
+magnetic state -- which AlterSeeK-Path identifies from the input magnetic
+structure with FindSpinGroup's spin-space-group setting. Final KPOINTS
+coordinates are expressed in the reciprocal basis of the calculation cell.
 
 That cell coincides with the ordinary nonmagnetic structure when the magnetic
 order does not lower the lattice symmetry. It differs when the order does
@@ -213,6 +212,11 @@ lower it: either a **q = 0** order selects a different magnetic primitive cell
 of the same volume (e.g. a hexagonal structural lattice whose magnetic pattern
 only respects orthorhombic symmetry), or a nonzero propagation vector
 **q != 0** enlarges it (e.g. a magnetic cell containing three parent cells).
+If the submitted calculation cell is itself an integer supercell of that
+magnetic primitive cell, AlterSeeK-Path keeps it and maps the path back into
+its reciprocal basis. A same-volume nontrivial basis change instead produces
+the matching `*_magnetic_primitive.vasp` and MAGMOM companion for the band
+calculation.
 If the construction fails, AlterSeeK-Path falls back to the nonmagnetic parent
 cell with a warning.
 

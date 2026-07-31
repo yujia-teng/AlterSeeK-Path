@@ -147,11 +147,18 @@ for the vacuum-axis detection details and output figures.
 
 ## `--parent-setting`
 
-By default AlterSeeK-Path builds the path in the **magnetic primitive cell**,
-the cell that reflects the symmetry of the magnetic state. It coincides with
-the ordinary nonmagnetic structure when the magnetic order does not lower the
-lattice symmetry, and differs when it does -- e.g. a hexagonal lattice whose
-magnetism only respects orthorhombic symmetry uses the orthorhombic cell.
+By default AlterSeeK-Path determines the path from the **magnetic primitive
+cell**, the cell that reflects the symmetry of the magnetic state. Final
+k-points are written in the reciprocal basis of the calculation cell. An
+intentional integer supercell of the magnetic primitive cell is therefore
+kept as submitted; a same-volume nontrivial basis change -- e.g. a
+hexagonal-looking cell whose magnetism only respects an SSG-adapted
+orthorhombic setting -- changes the calculation cell. In that case the working
+directory receives the matching `*_magnetic_primitive.vasp` and
+`*_magnetic_primitive_MAGMOM.txt`; use their recorded species and moment order
+together with the generated `KPOINTS_alter`. This is the physical magnetic
+primitive cell in an SSG-adapted setting; path symmetry is determined from
+G0, the spatial part of the SSG.
 
 ```bash
 alterseek-path --parent-setting

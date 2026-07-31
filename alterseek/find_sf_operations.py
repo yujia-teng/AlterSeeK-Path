@@ -802,6 +802,7 @@ MSG without SOC: {msg_without_soc_label}"""
         'laue_group': laue_group,
         'nonmagnetic_sites': non_magnetic['sites'],
         'nonmagnetic_lattice': non_magnetic['lattice'],
+        'nonmagnetic_spacegroup_number': non_magnetic['spacegroup_number'],
         'magnetic_space_group': msg_label,
         'magnetic_space_group_without_soc': msg_without_soc_label,
         'msg_without_soc_bns_number': getattr(msg_without_soc, 'bns_number', None),

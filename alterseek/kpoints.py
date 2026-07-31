@@ -159,6 +159,38 @@ def _g0_symmetry(sf_result, sites=None):
     }
 
 
+def _magnetic_cell_needed(sf_result):
+    """True when the band path has to be built in the magnetic primitive cell
+    rather than in the cell the user submitted.
+
+    Two things can make the submitted cell unusable, and both are read off
+    quantities Step 0 already determined -- no extra symmetry detection, and no
+    extra tolerance choice:
+
+    1. The magnetic order changes the *space group*, i.e. G0 differs from the
+       moment-free space group of the submitted cell (GdAuGe AFM5,
+       P6_3mc -> Cmc2_1; MnSe2, Pa-3 -> Pbca). A changed Laue group is one way
+       this happens, but not the only one: the order can also remove inversion
+       or mirrors while leaving the Laue group intact, and the magnetic cell is
+       then still the cell the path belongs in.
+    2. The submitted cell is not the nonmagnetic primitive cell, i.e. the
+       magnetic order enlarges the cell (BaMnO3, 10 -> 30 sites).
+    """
+    g0_number = sf_result.get('g0_number')
+    nonmagnetic_number = sf_result.get('nonmagnetic_spacegroup_number')
+    if g0_number is None or nonmagnetic_number is None:
+        # Unknown on either side: keep the magnetic route, the conservative
+        # choice -- it is the one that can represent a lowered symmetry.
+        return True
+    if int(g0_number) != int(nonmagnetic_number):
+        return True
+    nonmagnetic_sites = sf_result.get('nonmagnetic_sites')
+    submitted_sites = sf_result.get('num_atoms')
+    if nonmagnetic_sites is None or submitted_sites is None:
+        return True
+    return int(nonmagnetic_sites) != int(submitted_sites)
+
+
 def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
     """Return a reason dict when the working cell's Laue group forbids
     altermagnetism, or None when it permits it.
@@ -1382,7 +1414,16 @@ class KPointsModifier:
                 # in the ordinary path, where sf_result already describes the
                 # submitted cell.
                 working_cell_symmetry = None
-                if self.magnetic_setting:
+                # The magnetic primitive cell is adopted only when the submitted
+                # cell genuinely cannot carry the path: a changed space group or
+                # an enlarged cell (see _magnetic_cell_needed). Otherwise the
+                # ordinary route is kept, because re-deriving the geometry from
+                # FindSpinGroup's cell only re-orients it -- its axes can come
+                # back permuted and sign-flipped, which silently rewrites the
+                # path as a symmetry-equivalent but different set of
+                # coordinates while the user's own cell stops matching their
+                # KPOINTS.
+                if self.magnetic_setting and _magnetic_cell_needed(sf_result):
                     try:
                         mag_setting = prepare_magnetic_setting_files(
                             struct_file,
@@ -1436,6 +1477,36 @@ class KPointsModifier:
                                 centroid_result["b_matrix_output"] = magnetic_setting_outputs[
                                     "b_matrix_output"
                                 ]
+                                # Say something only when the user has to act.
+                                # The analysis running in the magnetic cell is
+                                # not itself news; a changed calculation cell
+                                # is, because their own POSCAR no longer matches
+                                # the path.
+                                if magnetic_setting_outputs.get("cell_changed"):
+                                    calc_cell = magnetic_setting_outputs.get(
+                                        "calculation_cell_path")
+                                    calc_magmom = magnetic_setting_outputs.get(
+                                        "calculation_magmom_path")
+                                    species_order = magnetic_setting_outputs.get(
+                                        "calculation_species_order")
+                                    print(
+                                        "[Cell] The magnetic order changes the cell; the path "
+                                        "is written in the magnetic primitive cell's basis."
+                                    )
+                                    if calc_cell:
+                                        print(
+                                            f"[Cell] Run the band calculation with {calc_cell}"
+                                        )
+                                    if calc_magmom:
+                                        print(
+                                            f"[Cell] Matching magnetic moments: {calc_magmom}"
+                                        )
+                                    if species_order:
+                                        print(
+                                            "[Cell] Species order: "
+                                            f"{' '.join(species_order)} "
+                                            "(match POTCAR and species-indexed settings)."
+                                        )
                                 if self.output_verbose:
                                     print(
                                         "[SSG setting] Kept intermediates in "
