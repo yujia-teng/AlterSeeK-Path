@@ -32,6 +32,7 @@ pytest.importorskip("ase")
 REF_DIR = Path(__file__).parent / "references"
 POSCAR = REF_DIR / "SUPERCELL_211.vasp"
 POSCAR_221 = REF_DIR / "SUPERCELL_221.vasp"
+CHANGED_CELL_AM = REF_DIR / "case15_changed_cell_altermagnet.vasp"
 GOLDEN = REF_DIR / "ssg_supercell211_golden_kpoints.txt"
 
 
@@ -208,6 +209,115 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
     ).splitlines()[0] == (
         "# Left basis: magnetic primitive cell "
         "'SUPERCELL_221_magnetic_primitive.mcif' real-space fractional "
+        "basis (a1, a2, a3)."
+    )
+
+
+def test_changed_calculation_cell_builds_butterfly_path(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Exercise cell replacement and butterfly construction in one run.
+
+    The structure is the tracked Case-15 Ca(Al2Fe)4 crystal, but this test uses
+    the balanced Fe order ++-- rather than the paper case's original +--+
+    order. FindSpinGroup identifies this validation configuration as an
+    altermagnet with G0 Immm (71). Its same-volume magnetic primitive setting
+    is a genuine nontrivial basis change, so the calculation POSCAR must be
+    replaced before the oI3 butterfly path is written.
+    """
+    from ase.io import read
+    from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
+    from alterseek import ssg_setting
+
+    if ssg_setting.find_spin_group_acc_primitive_from_data is None:
+        pytest.skip("findspingroup acc-primitive setting unavailable")
+
+    answers = "\n".join([
+        str(CHANGED_CELL_AM),
+        "0 0 1",
+        "0 2*1 2*-1 8*0",
+        "",
+        "",
+        "",
+    ]) + "\n"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
+
+    assert KPointsModifier(magnetic_setting=True).interactive_modify() is True
+
+    stdout = capsys.readouterr().out
+    assert "Magnetic primitive cell (G0): SG Immm (71)" in stdout
+    assert "Phase: AFM(Altermagnet)" in stdout
+    assert "11 original segments -> 28 generated segments" in stdout
+
+    stem = CHANGED_CELL_AM.stem
+    calculation_poscar = tmp_path / f"{stem}_magnetic_primitive.vasp"
+    calculation_magmom = tmp_path / f"{stem}_magnetic_primitive_MAGMOM.txt"
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "KPOINTS_alter",
+        "alterband.toml",
+        calculation_poscar.name,
+        calculation_magmom.name,
+        OUTPUT_DIR,
+    }
+
+    submitted_lattice = np.asarray(read(CHANGED_CELL_AM).cell, dtype=float)
+    calculation_lattice = np.asarray(read(calculation_poscar).cell, dtype=float)
+    assert not np.allclose(calculation_lattice, submitted_lattice)
+    assert np.isclose(
+        abs(np.linalg.det(calculation_lattice)),
+        abs(np.linalg.det(submitted_lattice)),
+    )
+
+    magmom_text = calculation_magmom.read_text(encoding="utf-8")
+    assert f"# {calculation_poscar.name}" in magmom_text
+    assert "# Species order: Al Ca Fe" in magmom_text
+    assert "# Counts: 8 1 4" in magmom_text
+    assert "MAGMOM = 0 0 0 0 0 0 0 0 0 1 -1 -1 1" in magmom_text
+
+    coordinate_rows = []
+    for line in (tmp_path / "KPOINTS_alter").read_text(
+        encoding="utf-8"
+    ).splitlines()[4:]:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        try:
+            coords = [float(value) for value in fields[:3]]
+        except ValueError:
+            continue
+        coordinate_rows.append((coords, fields[3]))
+
+    assert len(coordinate_rows) == 56
+    labels = [label for _, label in coordinate_rows]
+    assert "k" in labels and "k'" in labels
+    assert any(label.endswith("'") and label != "k'" for label in labels)
+    assert any(
+        label == "k" and np.allclose(coords, [0.1920785823, 0.1273278402, 0.1273278402])
+        for coords, label in coordinate_rows
+    )
+    assert any(
+        label == "k'" and np.allclose(coords, [0.4467337620, -0.1273278402, -0.1273278402])
+        for coords, label in coordinate_rows
+    )
+
+    out = tmp_path / OUTPUT_DIR
+    mapping = out / f"{stem}_seekpath_basis_mapping.txt"
+    mapping_text = mapping.read_text(encoding="utf-8")
+    mapping_lines = mapping_text.splitlines()
+    output_start = mapping_lines.index("kpoints_output_lattice:") + 1
+    mapped_output_lattice = np.array([
+        [float(value) for value in line.split()]
+        for line in mapping_lines[output_start:output_start + 3]
+    ])
+    assert np.allclose(mapped_output_lattice, calculation_lattice)
+    assert (out / "spin_flip_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0] == (
+        "# Left basis: magnetic primitive cell "
+        f"'{stem}_magnetic_primitive.mcif' real-space fractional "
         "basis (a1, a2, a3)."
     )
 
