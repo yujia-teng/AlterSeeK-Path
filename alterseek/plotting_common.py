@@ -112,16 +112,19 @@ def _get_bz_path_style(lattice_type, k1, k2):
     return style
 
 
-def _figure_output_paths(output_path):
+def _figure_output_paths(output_path, extra_formats=None):
     """Return the requested figure output paths, preserving the requested
     extension as the default. Set ALTERSEEK_BZ_FORMATS (e.g. "png,pdf") to
     override the format list entirely, or ALTERSEEK_BZ_EXTRA_FORMATS (e.g.
-    "pdf") to add formats on top of the default -- the latter is what the
-    toml `save_pdf` option sets."""
+    "pdf") to add formats on top of the default. ``extra_formats`` adds
+    formats for one call without modifying process-wide environment state."""
     root, ext = os.path.splitext(output_path)
     default_fmt = ext[1:] if ext else 'png'
     raw_formats = os.environ.get('ALTERSEEK_BZ_FORMATS', default_fmt)
     raw_formats += ',' + os.environ.get('ALTERSEEK_BZ_EXTRA_FORMATS', '')
+    if isinstance(extra_formats, str):
+        extra_formats = [extra_formats]
+    raw_formats += ',' + ','.join(extra_formats or [])
     formats = []
     for item in raw_formats.replace(';', ',').split(','):
         fmt = item.strip().lower().lstrip('.')
@@ -132,8 +135,8 @@ def _figure_output_paths(output_path):
     return [f"{root}.{fmt}" for fmt in formats]
 
 
-def _save_figure(fig, output_path, **kwargs):
-    saved_paths = _figure_output_paths(output_path)
+def _save_figure(fig, output_path, extra_formats=None, **kwargs):
+    saved_paths = _figure_output_paths(output_path, extra_formats=extra_formats)
     for path in saved_paths:
         fig.savefig(path, **kwargs)
     return saved_paths

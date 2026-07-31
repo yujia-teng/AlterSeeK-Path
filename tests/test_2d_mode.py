@@ -176,7 +176,23 @@ def test_compute_centroid_2d_differs_from_3d(tmp_path):
     assert abs(r2["centroid_frac"][2]) < 1e-12
 
 
-def test_save_pdf_adds_pdf_for_2d_figure_outputs(monkeypatch):
+def test_save_pdf_adds_pdf_without_leaking_to_next_run(monkeypatch):
+    monkeypatch.delenv("ALTERSEEK_BZ_FORMATS", raising=False)
+    monkeypatch.delenv("ALTERSEEK_BZ_EXTRA_FORMATS", raising=False)
+
+    assert _figure_output_paths(
+        "first_2d_ibz_tP1.png",
+        extra_formats=("pdf",),
+    ) == [
+        "first_2d_ibz_tP1.png",
+        "first_2d_ibz_tP1.pdf",
+    ]
+    assert _figure_output_paths("second_2d_ibz_tP1.png") == [
+        "second_2d_ibz_tP1.png",
+    ]
+
+
+def test_environment_extra_figure_formats_remain_supported(monkeypatch):
     monkeypatch.delenv("ALTERSEEK_BZ_FORMATS", raising=False)
     monkeypatch.setenv("ALTERSEEK_BZ_EXTRA_FORMATS", "pdf")
     assert _figure_output_paths("slab_2d_ibz_tP1.png") == [

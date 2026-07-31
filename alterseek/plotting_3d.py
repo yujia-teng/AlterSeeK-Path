@@ -561,7 +561,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                           centroid_frac, R,
                           output_path, elev=14, azim=20, show_plot=True,
                           block=True, path_sequence=None, R_cart=None,
-                          defer_show=False, unique_ops=None):
+                          defer_show=False, unique_ops=None, save_pdf=False):
     """
     Generate the spin-flip connection figure (replaces Fig 2 / mapped-BZ figure).
 
@@ -797,7 +797,13 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                                             dashed_back=True)
             _draw(ax_save)
             plt.tight_layout()
-            saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(
+                fig_save,
+                output_path,
+                extra_formats=("pdf",) if save_pdf else (),
+                dpi=300,
+                bbox_inches='tight',
+            )
             plt.close(fig_save)
             plt.close(fig)
             _print_saved_paths(saved_paths)
@@ -821,7 +827,13 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                                     elev=elev, azim=azim, dashed_back=True)
     _draw(ax_save)
     plt.tight_layout()
-    saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
+    saved_paths = _save_figure(
+        fig_save,
+        output_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.close(fig_save)
     _print_saved_paths(saved_paths)
     return display_fig
@@ -836,7 +848,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                         elev=14, azim=20, show_plot=True,
                         defer_show=False, z0=0.0,
                         show_helper_plane=True,
-                        hull_labels=None):
+                        hull_labels=None, save_pdf=False):
     """
     Show Figure 1's IBZ hull mapped by spin-preserving/spin-flipping operations.
 
@@ -912,7 +924,13 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                                             dashed_back=True)
             _draw(ax_save)
             plt.tight_layout()
-            saved_paths = _save_figure(fig_save, output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(
+                fig_save,
+                output_path,
+                extra_formats=("pdf",) if save_pdf else (),
+                dpi=300,
+                bbox_inches='tight',
+            )
             plt.close(fig_save)
             plt.close(fig)
             _print_saved_paths(saved_paths)
@@ -932,7 +950,13 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                           elev=elev, azim=azim, dashed_back=True)
     _draw(ax)
     plt.tight_layout()
-    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
+    saved_paths = _save_figure(
+        fig,
+        output_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.close(fig)
     _print_saved_paths(saved_paths)
     return display_fig
@@ -1025,7 +1049,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  z0=0.0, show_title=False,
                                  show_projected_axes=True,
                                  show_legend=False,
-                                 hull_labels=None):
+                                 hull_labels=None, save_pdf=False):
     """Draw a darker top-view kz=0 slice of the Figure 3 spin-BZ coloring."""
     if hull_pts is None or hull_simplices is None or not len(unique_ops):
         print("[Note] Skipping spin-BZ top-view figure (no hull or symmetry ops available).")
@@ -1143,7 +1167,13 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig):
-            saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
+            saved_paths = _save_figure(
+                fig,
+                output_path,
+                extra_formats=("pdf",) if save_pdf else (),
+                dpi=300,
+                bbox_inches='tight',
+            )
             plt.close(fig)
             _print_saved_paths(saved_paths)
         display_fig._alterseek_save_after_show = _save_after_show
@@ -1151,7 +1181,13 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
 
     if show_plot and not defer_show:
         plt.show()
-    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches='tight')
+    saved_paths = _save_figure(
+        fig,
+        output_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches='tight',
+    )
     _print_saved_paths(saved_paths)
     plt.close(fig)
     return display_fig

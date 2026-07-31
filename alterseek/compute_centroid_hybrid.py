@@ -258,6 +258,7 @@ def run(
     view_azim=None,
     symprec=None,
     figure_basename=None,
+    save_pdf=False,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -703,7 +704,13 @@ def run(
                          hull_pts=points_arr, lattice_type=sc_type,
                          hull_labels=labels_list)
                 plt.tight_layout()
-                saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
+                saved_paths = _save_figure(
+                    fig1s,
+                    fig1_path,
+                    extra_formats=("pdf",) if save_pdf else (),
+                    dpi=300,
+                    bbox_inches='tight',
+                )
                 plt.close(fig1s)
                 plt.close(fig)
                 _print_saved_paths(saved_paths)
@@ -727,7 +734,13 @@ def run(
                  hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
                  hull_labels=labels_list)
         plt.tight_layout()
-        saved_paths = _save_figure(fig1s, fig1_path, dpi=300, bbox_inches='tight')
+        saved_paths = _save_figure(
+            fig1s,
+            fig1_path,
+            extra_formats=("pdf",) if save_pdf else (),
+            dpi=300,
+            bbox_inches='tight',
+        )
         _print_saved_paths(saved_paths, verbose=verbose)
         plt.close(fig1s)
 

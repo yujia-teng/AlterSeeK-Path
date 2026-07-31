@@ -967,7 +967,8 @@ class KPointsModifier:
 
     def _generate_spin_figures(self, centroid_result, struct_file, general_kpoint,
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
-                               preserve_ops_for_plot, new_kpoints, display_figures):
+                               preserve_ops_for_plot, new_kpoints, display_figures,
+                               save_pdf=False):
         """Generate Figures 2-4 (spin-flip / spin-BZ / kz=0 top view) for the
         selected spin-flip operation; append any created figures to
         display_figures.  Extracted from interactive_modify (phase 5)."""
@@ -985,7 +986,9 @@ class KPointsModifier:
                         centroid_result, general_kpoint, R_for_kpts,
                         basename, output_dir=OUTPUT_DIR,
                         flip_ops_for_plot=(flip_ops_for_plot
-                                           if flip_ops_for_plot else None))
+                                           if flip_ops_for_plot else None),
+                        save_pdf=save_pdf,
+                    )
                 except Exception as _e:
                     print(f"[Warning] Could not generate 2D figures: {_e}")
         elif centroid_result is not None:
@@ -1074,6 +1077,7 @@ class KPointsModifier:
                         output_path=fig_path,
                         show_plot=True,
                         defer_show=True,
+                        save_pdf=save_pdf,
                         **extra_kwargs,
                     )
                     if fig is not None:
@@ -1306,8 +1310,7 @@ class KPointsModifier:
         view_elev = float(input_config['view_elev']) if 'view_elev' in input_config else None
         view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
         symprec = float(input_config['symprec']) if 'symprec' in input_config else None
-        if input_config.get('save_pdf', False):
-            os.environ['ALTERSEEK_BZ_EXTRA_FORMATS'] = 'pdf'
+        save_pdf = bool(input_config.get('save_pdf', False))
 
         def _ask(prompt_text, key):
             print(prompt_text, end='', flush=True)
@@ -1494,6 +1497,7 @@ class KPointsModifier:
                             input_vacuum_axis=self.input_vacuum_axis,
                             view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                             figure_basename=_figure_basename(struct_file),
+                            save_pdf=save_pdf,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             magnetic_setting_outputs = finalize_magnetic_setting_outputs(
@@ -1642,7 +1646,8 @@ class KPointsModifier:
                         mode_2d=self.mode_2d,
                         input_vacuum_axis=self.input_vacuum_axis,
                         view_elev=view_elev, view_azim=view_azim, symprec=symprec,
-                            figure_basename=_figure_basename(struct_file),
+                        figure_basename=_figure_basename(struct_file),
+                        save_pdf=save_pdf,
                     )
                     display_figures.extend(centroid_result.get('display_figures', []))
                     print(
@@ -1790,7 +1795,8 @@ class KPointsModifier:
                                           input_vacuum_axis=self.input_vacuum_axis,
                                           view_elev=view_elev, view_azim=view_azim,
                                           symprec=symprec,
-                                          figure_basename=_figure_basename(struct_file))
+                                          figure_basename=_figure_basename(struct_file),
+                                          save_pdf=save_pdf)
                 display_figures.extend(result.get('display_figures', []))
                 c = result['centroid_frac']
                 general_kpoint = [c[0], c[1], c[2]]
@@ -1949,7 +1955,7 @@ class KPointsModifier:
                 self._generate_spin_figures(
                     centroid_result, struct_file, general_kpoint, R_for_kpts,
                     R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot,
-                    new_kpoints, display_figures)
+                    new_kpoints, display_figures, save_pdf=save_pdf)
                 # Step 5: Save modified file
                 return _save_and_finish(new_kpoints, R, selected_transformation_label)
             else:

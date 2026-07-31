@@ -1,6 +1,7 @@
 """Validation and exit-status tests for alterseek_input.toml and the CLI."""
 
 import io
+import os
 import sys
 
 import pytest
@@ -55,3 +56,15 @@ def test_cli_returns_nonzero_for_missing_structure(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["alterseek-path"])
     monkeypatch.setattr(sys, "stdin", io.StringIO("missing.vasp\n"))
     assert main() == 1
+
+
+def test_save_pdf_does_not_mutate_process_environment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ALTERSEEK_BZ_EXTRA_FORMATS", raising=False)
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "missing.vasp"\nsave_pdf = true\n',
+        encoding="utf-8",
+    )
+
+    assert KPointsModifier().interactive_modify() is False
+    assert "ALTERSEEK_BZ_EXTRA_FORMATS" not in os.environ

@@ -515,7 +515,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
 def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
                                    flip_ops_for_plot, output_path,
-                                   show_title=False, show_legend=False):
+                                   show_title=False, show_legend=False,
+                                   save_pdf=False):
     """Figure 3: color every 2D symmetry image of the IBZ red/blue by spin."""
     import matplotlib.pyplot as plt
     axis = int(centroid_result.get("vacuum_axis", 2))
@@ -585,7 +586,13 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
         ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=12,
                  borderaxespad=0, frameon=True)
     fig.tight_layout()
-    saved_paths = _save_figure(fig, output_path, dpi=300, bbox_inches="tight")
+    saved_paths = _save_figure(
+        fig,
+        output_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
     return saved_paths
 
@@ -595,7 +602,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
 # ---------------------------------------------------------------------------
 
 def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
-                    output_dir=".", flip_ops_for_plot=None):
+                    output_dir=".", flip_ops_for_plot=None, save_pdf=False):
     """Save the 2D Figure 1 (IBZ), 2 (spin-flip), and 3 (spin pattern) views.
 
     ``R_for_kpts`` is the selected spin-flip operation in the standardized
@@ -650,7 +657,13 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig1.tight_layout()
     fig1_path = os.path.join(output_dir, f"{basename}_2d_ibz_{sc_type}.png")
-    saved.extend(_save_figure(fig1, fig1_path, dpi=300, bbox_inches="tight"))
+    saved.extend(_save_figure(
+        fig1,
+        fig1_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches="tight",
+    ))
     plt.close(fig1)
 
     # ----- Figure 2: spin-up IBZ + spin-flip image -----
@@ -713,13 +726,24 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig2.tight_layout()
     fig2_path = os.path.join(output_dir, f"{basename}_2d_spinflip_{sc_type}.png")
-    saved.extend(_save_figure(fig2, fig2_path, dpi=300, bbox_inches="tight"))
+    saved.extend(_save_figure(
+        fig2,
+        fig2_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300,
+        bbox_inches="tight",
+    ))
     plt.close(fig2)
 
     # ----- Figure 3: spin-up / spin-down BZ pattern -----
     fig3_path = os.path.join(output_dir, f"{basename}_2d_spinbz_{sc_type}.png")
     fig3_saved = _plot_spin_pattern_top_view_2d(
-        centroid_result, R_for_kpts, flip_ops_for_plot, fig3_path)
+        centroid_result,
+        R_for_kpts,
+        flip_ops_for_plot,
+        fig3_path,
+        save_pdf=save_pdf,
+    )
     if fig3_saved is not None:
         saved.extend(fig3_saved)
 
