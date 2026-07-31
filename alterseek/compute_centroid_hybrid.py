@@ -346,13 +346,14 @@ def run(
     )
     dataset = spglib.get_symmetry_dataset(spg_cell, symprec=symprec)
     b_matrix = np.array(sp_result['reciprocal_primitive_lattice'])
-    # Reciprocal lattice of the user-provided input cell. Step 0 rotations
-    # are written in this basis by find_sf_operations.py.
+    # Reciprocal lattice of the structure passed to SeeK-path. This is the
+    # submitted structure in the ordinary route and the magnetic marker input
+    # (with the magnetic primitive lattice) in the magnetic-cell route.
     b_matrix_input = 2 * np.pi * np.linalg.inv(np.array(a_matrix)).T
 
     # Conventional-cell reciprocal lattice (no 2pi needed -- cancels in formula).
-    # Used to correctly convert seed flip ops that were written using the
-    # conventional cell (input-cell POSCAR and spin_flip_operations.txt).
+    # Used to correctly convert seed flip operations written in the analysis
+    # input structure's fractional basis.
     _conv_lat = np.array(sp_result.get('conv_lattice', sp_result['primitive_lattice']))
     b_matrix_conv = np.linalg.inv(_conv_lat).T
     b1, b2, b3 = b_matrix

@@ -78,6 +78,19 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     assert "SUPERCELL_211_magnetic_primitive.vasp" in mapping_text
     assert (out / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
     assert (out / f"{POSCAR.stem}_magnetic_primitive.mcif").exists()
+    assert (out / "spin_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0] == (
+        "# Basis: submitted structure 'SUPERCELL_211.vasp' real-space "
+        "fractional basis (a1, a2, a3)."
+    )
+    assert (out / "spin_flip_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0] == (
+        "# Basis: magnetic primitive cell "
+        "'SUPERCELL_211_magnetic_primitive.mcif' real-space fractional "
+        "basis (a1, a2, a3)."
+    )
 
     # Only files the user acts on stay at the top level: KPOINTS_alter feeds
     # the band calculation, alterband.toml is read from the working directory
@@ -184,6 +197,19 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
         for row in k_rows
     ), k_rows
     assert (out / f"{POSCAR_221.stem}_magnetic_primitive.mcif").exists()
+    assert (out / "spin_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0] == (
+        "# Basis: submitted structure 'SUPERCELL_221.vasp' real-space "
+        "fractional basis (a1, a2, a3)."
+    )
+    assert (out / "spin_flip_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0] == (
+        "# Left basis: magnetic primitive cell "
+        "'SUPERCELL_221_magnetic_primitive.mcif' real-space fractional "
+        "basis (a1, a2, a3)."
+    )
 
 
 def test_prepare_mcif_uses_refined_from_data_route(tmp_path, monkeypatch):

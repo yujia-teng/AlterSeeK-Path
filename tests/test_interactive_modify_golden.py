@@ -17,15 +17,13 @@ import pytest
 pytest.importorskip("findspingroup")
 pytest.importorskip("ase")
 
-REPO = Path(__file__).resolve().parents[1]
-POSCAR = REPO / "data" / "case_12_tP1-2121" / "POSCAR"
+POSCAR = Path(__file__).parent / "references" / "case12_POSCAR"
 REFERENCE = Path(__file__).parent / "references" / "case12_golden_kpoints.txt"
 
 
-@pytest.mark.skipif(not POSCAR.exists(), reason="case_12 POSCAR not present")
 def test_interactive_modify_case12_golden(tmp_path, monkeypatch):
     try:
-        from alterseek.kpoints import KPointsModifier
+        from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
     except Exception as exc:  # pragma: no cover - deps missing
         pytest.skip(f"kpoints/deps unavailable: {exc}")
 
@@ -41,3 +39,23 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch):
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = REFERENCE.read_text(encoding="utf-8")
     assert produced.splitlines() == expected.splitlines()
+
+    output_dir = tmp_path / OUTPUT_DIR
+    full_header = (output_dir / "spin_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+    flip_headers = (output_dir / "spin_flip_operations.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[:3]
+    assert full_header == (
+        "# Basis: submitted structure 'case12_POSCAR' real-space "
+        "fractional basis (a1, a2, a3)."
+    )
+    assert flip_headers == [
+        "# Left basis: submitted structure 'case12_POSCAR' real-space "
+        "fractional basis (a1, a2, a3).",
+        "# Right basis: SeeK-path standardized primitive real-space "
+        "fractional basis (a1, a2, a3).",
+        "# k mapping: k' = R^(-T) k (mod G) in each corresponding reciprocal "
+        "basis (b1, b2, b3).",
+    ]

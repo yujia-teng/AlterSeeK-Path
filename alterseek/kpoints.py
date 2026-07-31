@@ -1081,7 +1081,13 @@ class KPointsModifier:
                 except Exception as _e:
                     print(f"[Warning] Could not generate {fig_name} figure: {_e}")
 
-    def _select_spin_flip_operation(self, flip_ops, centroid_result, preset_choice=None):
+    def _select_spin_flip_operation(
+        self,
+        flip_ops,
+        centroid_result,
+        preset_choice=None,
+        operation_basis_label="operation-source structure",
+    ):
         """Step 3: choose the spin-flip operation R (default Option 1 /
         numbered / 'list' / 'manual').  Returns (R, selected_transformation_label).
         Extracted from interactive_modify (phase 5). `preset_choice`, if given
@@ -1121,7 +1127,10 @@ class KPointsModifier:
                                 and centroid_result is not None
                                 and 'b_matrix' in centroid_result)
             if _names_available:
-                print("  Note: R is in the input-cell fractional basis;")
+                print(
+                    f"  Note: R is in the {operation_basis_label} "
+                    "fractional basis;"
+                )
                 print("  rotation axis/mirror plane indices are in the reciprocal (b1,b2,b3) basis.")
             print("Default R: Option 1")
             _preset_pending = preset_choice is not None
@@ -1179,15 +1188,21 @@ class KPointsModifier:
             selected_transformation_label = "manual"
         return R, selected_transformation_label
 
-    def _convert_operation_to_primitive_basis(self, R, flip_ops, preserve_ops,
-                                              centroid_result):
-        """Step 4 (basis): convert R and all flip/preserve ops from the input-cell
-        fractional basis to the seekpath primitive basis, and annotate the operation
-        files with both bases.  Returns (R_for_kpts, R_cart_for_plot,
-        flip_ops_for_plot, preserve_ops_for_plot).  Extracted from interactive_modify."""
-        # find_sf_operations.py writes FindSpinGroup rotations in the input file's
-        # fractional basis.  KPOINTS/IBZ coordinates are in the seekpath primitive
-        # reciprocal basis, which can differ for centered lattices (e.g. BCT, RHL).
+    def _convert_operation_to_primitive_basis(
+        self,
+        R,
+        flip_ops,
+        preserve_ops,
+        centroid_result,
+        operation_basis_label,
+    ):
+        """Convert operations from their source-cell fractional basis to the
+        SeeK-path primitive basis and annotate the files with both bases."""
+        # The ordinary route writes FindSpinGroup rotations in the submitted
+        # structure's fractional basis. The magnetic-cell route replaces them
+        # with rotations in the magnetic primitive fractional basis. IBZ
+        # coordinates are in the SeeK-path primitive reciprocal basis, which
+        # can differ for centered lattices (e.g. BCT, RHL).
         # Convert through Cartesian k-space so k', Figure 2, and the path all use
         # the same physical spin-flip operation:
         #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
@@ -1225,9 +1240,19 @@ class KPointsModifier:
             def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
                 try:
                     with open(filename, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(
+                            f"# Left basis: {operation_basis_label} real-space "
+                            "fractional basis (a1, a2, a3).\n"
+                        )
+                        f.write(
+                            "# Right basis: SeeK-path standardized primitive "
+                            "real-space fractional basis (a1, a2, a3).\n"
+                        )
+                        f.write(
+                            "# k mapping: k' = R^(-T) k (mod G) in each "
+                            "corresponding reciprocal basis (b1, b2, b3).\n"
+                        )
                         f.write(f"# Found {len(input_ops)} inversion-extended {label} point operations\n")
-                        f.write("# Left matrix: input POSCAR fractional basis.\n")
-                        f.write("# Right matrix: standardized SeeK-path/HPKOT primitive basis used by Figures 1-4 and KPOINTS.\n")
                         for i, (input_op, std_op) in enumerate(zip(input_ops, standardized_ops), 1):
                             f.write(f"Operation_{i}\n")
                             input_int = np.rint(np.array(input_op, dtype=float)).astype(int)
@@ -1315,6 +1340,9 @@ class KPointsModifier:
         centroid_error = None
         centroid_struct_file = struct_file
         centroid_seekpath_type_numbers = None
+        operation_basis_label = (
+            f"submitted structure '{os.path.basename(struct_file)}'"
+        )
         display_figures = []
         self.extra_general_points = []
 
@@ -1434,6 +1462,7 @@ class KPointsModifier:
                         centroid_struct_file = mag_setting["helper_path"]
                         centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
                         magnetic_setting_counts = mag_setting
+                        operation_basis_label = mag_setting["operation_basis_label"]
                         # The altermagnetism gate below must judge the cell the
                         # path is built in, and must judge it by its *magnetic*
                         # symmetry. Both matter for MnSe2 (MAGNDATA 1.0.47): it
@@ -1773,14 +1802,17 @@ class KPointsModifier:
         if general_kpoint is not None:
             out_k = self._general_kpoint_output_basis(general_kpoint)
             if out_k is not None:
-                print(f"IBZ centroid (input-cell basis): [{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]")
+                print(
+                    "IBZ centroid (KPOINTS output basis): "
+                    f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]"
+                )
             try:
                 with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
                           "a", encoding="utf-8", newline="\n") as f:
                     f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
                             f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
                     if out_k is not None:
-                        f.write(f"General k-point (IBZ centroid, input-cell basis): "
+                        f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
                                 f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
             except Exception:
                 pass
@@ -1883,18 +1915,27 @@ class KPointsModifier:
             )
             return False
 
-        # Operation naming: the listed matrices are in the INPUT-cell fractional
-        # basis, so the axis cannot be read from the integers directly. Convert
-        # each through Cartesian (same path Figure 2 uses) and classify there, so
-        # the name (Cn / Sn / m_{hkl} / inversion) matches the figure labels.
+        # Operation naming: the listed matrices are in the recorded operation-
+        # source fractional basis, so the axis cannot be read from the integers
+        # directly. Convert each through Cartesian (same path Figure 2 uses) and
+        # classify there, so the name matches the figure labels.
         R, selected_transformation_label = self._select_spin_flip_operation(
-            flip_ops, centroid_result, preset_choice=preset_flip_choice)
+            flip_ops,
+            centroid_result,
+            preset_choice=preset_flip_choice,
+            operation_basis_label=operation_basis_label,
+        )
         # Step 4: Process k-points
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
         (R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
          preserve_ops_for_plot) = self._convert_operation_to_primitive_basis(
-            R, flip_ops, preserve_ops, centroid_result)
+            R,
+            flip_ops,
+            preserve_ops,
+            centroid_result,
+            operation_basis_label,
+        )
         # Calculate and show k'
         k_prime = self.transform_kpoint(general_kpoint, R_for_kpts)
         print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")

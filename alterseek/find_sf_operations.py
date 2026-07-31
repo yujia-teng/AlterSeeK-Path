@@ -192,9 +192,25 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
 
 
 # --- HELPER 1: Write FULL details for human reading ---
-def write_operations_to_file(filename, rotations, translations, spin_rotations, label_info, verbose=True):
+def write_operations_to_file(
+    filename,
+    rotations,
+    translations,
+    spin_rotations,
+    label_info,
+    verbose=True,
+    basis_label="input structure",
+):
     """Writes all spin symmetry operations to a text file."""
     with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(
+            f"# Basis: {basis_label} real-space fractional basis "
+            "(a1, a2, a3).\n"
+        )
+        f.write(
+            "# Convention: x' = R x + t for fractional real-space "
+            "column coordinates.\n"
+        )
         f.write("="*40 + "\n")
         f.write("SPIN SYMMETRY LOG\n")
         f.write("="*40 + "\n\n")
@@ -285,7 +301,14 @@ def operation_count_summary(rotations, spin_rotations, spin_axis):
     }
 
 
-def write_flip_ops_to_file(filename, rotations, spin_rotations, spin_axis, verbose=True):
+def write_flip_ops_to_file(
+    filename,
+    rotations,
+    spin_rotations,
+    spin_axis,
+    verbose=True,
+    basis_label="input structure",
+):
     """
     Filters operations whose spin rotation reverses the collinear spin axis.
     For each spin-flip spatial operation R, also include the inversion-extended
@@ -303,6 +326,14 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, spin_axis, verbo
         return 0
 
     with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(
+            f"# Basis: {basis_label} real-space fractional basis "
+            "(a1, a2, a3).\n"
+        )
+        f.write(
+            "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
+            "reciprocal basis (b1, b2, b3).\n"
+        )
         f.write(f"# Found {len(flip_ops)} inversion-extended spin-flipping point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(flip_ops):
@@ -317,7 +348,14 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, spin_axis, verbo
     return len(flip_ops)
 
 
-def write_preserve_ops_to_file(filename, rotations, spin_rotations, spin_axis, verbose=True):
+def write_preserve_ops_to_file(
+    filename,
+    rotations,
+    spin_rotations,
+    spin_axis,
+    verbose=True,
+    basis_label="input structure",
+):
     """Write inversion-extended spin-preserving point operations."""
     preserve_indices = _operation_class_indices(spin_rotations, spin_axis, flip=False)
     preserve_ops, source_indices = _collect_point_ops(
@@ -328,6 +366,14 @@ def write_preserve_ops_to_file(filename, rotations, spin_rotations, spin_axis, v
         return 0
 
     with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(
+            f"# Basis: {basis_label} real-space fractional basis "
+            "(a1, a2, a3).\n"
+        )
+        f.write(
+            "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
+            "reciprocal basis (b1, b2, b3).\n"
+        )
         f.write(f"# Found {len(preserve_ops)} inversion-extended spin-preserving point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(preserve_ops):
@@ -784,15 +830,36 @@ MSG without SOC: {msg_without_soc_label}"""
 
     # 1. Write the full readable log with LABELS
     os.makedirs(output_dir, exist_ok=True)
-    write_operations_to_file(os.path.join(output_dir, "spin_operations.txt"),
-                             rotations, translations, spin_rotations, label_info_str,
-                             verbose=verbose)
+    submitted_basis = f"submitted structure '{os.path.basename(structure_file)}'"
+    write_operations_to_file(
+        os.path.join(output_dir, "spin_operations.txt"),
+        rotations,
+        translations,
+        spin_rotations,
+        label_info_str,
+        verbose=verbose,
+        basis_label=submitted_basis,
+    )
 
     # 2. Write the automation file
     flip_filename = os.path.join(output_dir, "spin_flip_operations.txt")
     preserve_filename = os.path.join(output_dir, "spin_preserve_operations.txt")
-    flip_count = write_flip_ops_to_file(flip_filename, rotations, spin_rotations, spin_axis, verbose=verbose)
-    preserve_count = write_preserve_ops_to_file(preserve_filename, rotations, spin_rotations, spin_axis, verbose=verbose)
+    flip_count = write_flip_ops_to_file(
+        flip_filename,
+        rotations,
+        spin_rotations,
+        spin_axis,
+        verbose=verbose,
+        basis_label=submitted_basis,
+    )
+    preserve_count = write_preserve_ops_to_file(
+        preserve_filename,
+        rotations,
+        spin_rotations,
+        spin_axis,
+        verbose=verbose,
+        basis_label=submitted_basis,
+    )
     return {
         'structure_file': structure_file,
         'num_atoms': num_atoms,

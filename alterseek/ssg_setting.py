@@ -99,8 +99,16 @@ def _collect_point_ops_from_payload(operations, indices, include_inversion=True)
     return point_ops, source_indices
 
 
-def _write_operation_file(filename, rotations, source_indices, label):
+def _write_operation_file(filename, rotations, source_indices, label, basis_label):
     with open(filename, "w", encoding="utf-8", newline="\n") as f:
+        f.write(
+            f"# Basis: {basis_label} real-space fractional basis "
+            "(a1, a2, a3).\n"
+        )
+        f.write(
+            "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
+            "reciprocal basis (b1, b2, b3).\n"
+        )
         f.write(f"# Found {len(rotations)} inversion-extended spin-{label} point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rotation in enumerate(rotations):
@@ -111,7 +119,12 @@ def _write_operation_file(filename, rotations, source_indices, label):
     return len(rotations)
 
 
-def _write_magnetic_setting_operation_files(operations, spin_axis, output_dir="."):
+def _write_magnetic_setting_operation_files(
+    operations,
+    spin_axis,
+    basis_label,
+    output_dir=".",
+):
     flip_indices = _operation_class_indices(operations, spin_axis, flip=True)
     preserve_indices = _operation_class_indices(operations, spin_axis, flip=False)
     flip_ops, flip_sources = _collect_point_ops_from_payload(operations, flip_indices)
@@ -121,12 +134,14 @@ def _write_magnetic_setting_operation_files(operations, spin_axis, output_dir=".
         flip_ops,
         flip_sources,
         "flipping",
+        basis_label,
     )
     preserve_count = _write_operation_file(
         os.path.join(output_dir, "spin_preserve_operations.txt"),
         preserve_ops,
         preserve_sources,
         "preserving",
+        basis_label,
     )
     return flip_count, preserve_count
 
@@ -245,8 +260,14 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         marker_helper["positions"],
     )
     spin_axis = _spin_axis_from_moments(moments)
+    magnetic_basis = (
+        f"magnetic primitive cell '{os.path.basename(mcif_path)}'"
+    )
     flip_count, preserve_count = _write_magnetic_setting_operation_files(
-        operations, spin_axis, output_dir=output_dir
+        operations,
+        spin_axis,
+        magnetic_basis,
+        output_dir=output_dir,
     )
 
     return {
@@ -267,6 +288,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "magnetic_counts": list(counts),
         "spin_flip_operations": flip_count,
         "spin_preserve_operations": preserve_count,
+        "operation_basis_label": magnetic_basis,
         "summary": {
             "index": result.get("index"),
             "acc_symbol": result.get("acc_symbol"),
