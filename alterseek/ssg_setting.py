@@ -19,7 +19,7 @@ from .io import (
     _atomic_write_text, _group_poscar_sites, _write_poscar, _write_without_species,
     _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
-    _load_magnetic_input_data,
+    _load_magnetic_input_data, _write_seekpath_standard_mcif,
 )
 
 
@@ -283,6 +283,9 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         # decide whether the magnetic cell is genuinely a different cell or
         # merely the submitted one with its axes relabelled.
         "magnetic_primitive_lattice": lattice,
+        "magnetic_positions": np.asarray(grouped_positions, dtype=float),
+        "magnetic_elements": ordered_elements,
+        "magnetic_moments": ordered_moments,
         "submitted_lattice": np.array(lattice_in, dtype=float),
         "magnetic_symbols": list(symbols),
         "magnetic_counts": list(counts),
@@ -387,6 +390,26 @@ def finalize_magnetic_setting_outputs(
         {"He"},
         f"{basename} SeeK-path standard cell from SSG G0 analysis",
     )
+    standard_mcif_path = os.path.join(
+        output_dir, f"{basename}_seekpath_standard.mcif"
+    )
+    try:
+        _write_seekpath_standard_mcif(
+            real_final,
+            standard_mcif_path,
+            f"{basename}_seekpath_standard",
+            mag_setting["magnetic_primitive_lattice"],
+            mag_setting["magnetic_positions"],
+            mag_setting["magnetic_elements"],
+            mag_setting["magnetic_moments"],
+            symprec=centroid_result.get("symprec"),
+        )
+    except Exception as exc:
+        standard_mcif_path = None
+        print(
+            "[Warning] Could not write the SeeK-path-standardized magnetic "
+            f"MCIF: {exc}"
+        )
     helper_final = None
     if verbose_output:
         helper_final = os.path.join(
@@ -541,6 +564,8 @@ def finalize_magnetic_setting_outputs(
         "b_matrix_output": b_matrix_output,
         "cell_changed": cell_changed,
     }
+    if standard_mcif_path:
+        result["standard_magnetic_path"] = standard_mcif_path
     if calculation_cell_path:
         result["calculation_cell_path"] = calculation_cell_path
     if calculation_magmom_path:

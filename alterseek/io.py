@@ -5,6 +5,7 @@ lattice geometry utilities, atomic text writes, and band-plot config writing.
 Extracted from alterseek_path.py (restructuring phase 4, renamed from
 io_vasp.py). pymatgen/ase imports are function-local (kept lazy).
 """
+import itertools
 import os
 import uuid
 import numpy as np
@@ -208,6 +209,174 @@ def _write_magnetic_mcif(path, title, lattice, elements, positions, moments_cart
         f.write("_atom_site_moment.crystalaxis_z\n")
         for label, moment in zip(labels, moments_crystal):
             f.write(f"{label} {moment[0]:.10f} {moment[1]:.10f} {moment[2]:.10f}\n")
+
+
+def _match_periodic_standard_sites(
+    target_positions,
+    target_types,
+    candidate_positions,
+    candidate_types,
+    target_lattice,
+):
+    """Match two standardized structures up to one origin shift.
+
+    The structures are already in the same lattice basis at this point, but
+    spglib's structural and magnetic standardizations may choose different
+    origins and site orders. Return candidate indices in target-site order and
+    the largest Cartesian mismatch.
+    """
+    target_positions = np.asarray(target_positions, dtype=float)
+    target_types = np.asarray(target_types, dtype=int)
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    candidate_types = np.asarray(candidate_types, dtype=int)
+    target_lattice = np.asarray(target_lattice, dtype=float)
+    if len(target_positions) != len(candidate_positions):
+        return None
+    if sorted(target_types.tolist()) != sorted(candidate_types.tolist()):
+        return None
+
+    best = None
+    first_type = target_types[0]
+    for first_candidate in np.flatnonzero(candidate_types == first_type):
+        shift = target_positions[0] - candidate_positions[first_candidate]
+        shifted = np.mod(candidate_positions + shift, 1.0)
+        used = set()
+        mapping = []
+        max_distance = 0.0
+        for target_pos, atomic_number in zip(target_positions, target_types):
+            choices = []
+            for candidate in np.flatnonzero(candidate_types == atomic_number):
+                candidate = int(candidate)
+                if candidate in used:
+                    continue
+                delta = shifted[candidate] - target_pos
+                delta -= np.rint(delta)
+                distance = float(np.linalg.norm(delta @ target_lattice))
+                choices.append((distance, candidate))
+            if not choices:
+                mapping = []
+                break
+            distance, candidate = min(choices)
+            used.add(candidate)
+            mapping.append(candidate)
+            max_distance = max(max_distance, distance)
+        if mapping and (best is None or max_distance < best[1]):
+            best = (mapping, max_distance)
+    return best
+
+
+def _write_seekpath_standard_mcif(
+    target_structure_path,
+    output_path,
+    title,
+    source_lattice,
+    source_positions,
+    source_elements,
+    source_moments_cart,
+    symprec=1e-3,
+):
+    """Write spins in the exact standardized conventional cell SeeK-path uses.
+
+    Structural and magnetic standardization can return the same conventional
+    cell with different axis order, Cartesian orientation, origin, and site
+    order. Align the magnetic standard cell to the already-written SeeK-path
+    VASP before writing the MCIF; never copy moment rows by index.
+    """
+    import spglib
+    from pymatgen.core import Element, Structure
+
+    target = Structure.from_file(target_structure_path)
+    target_lattice = np.asarray(target.lattice.matrix, dtype=float)
+    target_positions = np.asarray(target.frac_coords, dtype=float)
+    target_types = np.asarray([site.specie.Z for site in target], dtype=int)
+
+    source_lattice = np.asarray(source_lattice, dtype=float)
+    source_positions = np.asarray(source_positions, dtype=float)
+    source_elements = [str(element) for element in source_elements]
+    source_types = np.asarray(
+        [Element(element).Z for element in source_elements], dtype=int)
+    source_moments_cart = np.asarray(source_moments_cart, dtype=float)
+    if source_moments_cart.shape != (len(source_positions), 3):
+        raise ValueError("magnetic moments must contain one Cartesian vector per site")
+
+    tolerance = 1e-3 if symprec is None else float(symprec)
+    magnetic = spglib.get_magnetic_symmetry_dataset(
+        (source_lattice, source_positions, source_types, source_moments_cart),
+        is_axial=True,
+        symprec=tolerance,
+        mag_symprec=1e-5,
+    )
+    if magnetic is None:
+        raise RuntimeError("spglib could not standardize the magnetic structure")
+
+    magnetic_lattice = np.asarray(magnetic.std_lattice, dtype=float)
+    magnetic_positions = np.asarray(magnetic.std_positions, dtype=float)
+    magnetic_types = np.asarray(magnetic.std_types, dtype=int)
+    magnetic_moments = np.asarray(magnetic.std_tensors, dtype=float)
+    if len(magnetic_positions) != len(target_positions):
+        raise RuntimeError(
+            "magnetic and SeeK-path standard cells have different site counts "
+            f"({len(magnetic_positions)} != {len(target_positions)})"
+        )
+
+    # The standard settings of a magnetic subgroup and its G0 parent normally
+    # differ only by axis permutation/reversal plus a rigid Cartesian rotation.
+    # Prefer proper transformations so axial moments rotate like ordinary
+    # vectors and no artificial reflection of the spin pattern is introduced.
+    best = None
+    for permutation in itertools.permutations(range(3)):
+        for signs in itertools.product((-1.0, 1.0), repeat=3):
+            basis_change = np.zeros((3, 3), dtype=float)
+            for row, column in enumerate(permutation):
+                basis_change[row, column] = signs[row]
+            if np.linalg.det(basis_change) < 0.0:
+                continue
+            reindexed_lattice = basis_change @ magnetic_lattice
+            rotation = np.linalg.solve(reindexed_lattice, target_lattice)
+            if np.linalg.det(rotation) < 0.0:
+                continue
+            if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-5):
+                continue
+            reindexed_positions = np.mod(
+                magnetic_positions @ np.linalg.inv(basis_change), 1.0
+            )
+            matched = _match_periodic_standard_sites(
+                target_positions,
+                target_types,
+                reindexed_positions,
+                magnetic_types,
+                target_lattice,
+            )
+            if matched is None:
+                continue
+            mapping, max_distance = matched
+            if best is None or max_distance < best[0]:
+                best = (max_distance, mapping, rotation)
+    if best is None:
+        raise RuntimeError(
+            "could not align the magnetic standard cell with the SeeK-path cell"
+        )
+
+    max_distance, mapping, rotation = best
+    if max_distance > max(1e-5, 5.0 * tolerance):
+        raise RuntimeError(
+            "magnetic-to-SeeK-path site mismatch is too large "
+            f"({max_distance:.3g} A)"
+        )
+    aligned_moments = (magnetic_moments @ rotation)[mapping]
+    target_elements = [str(site.specie) for site in target]
+    _write_magnetic_mcif(
+        output_path,
+        title,
+        target_lattice,
+        target_elements,
+        target_positions,
+        aligned_moments,
+    )
+    return {
+        "path": os.path.normpath(output_path),
+        "max_site_mismatch": max_distance,
+    }
 
 
 def _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart):

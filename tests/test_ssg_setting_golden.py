@@ -19,6 +19,7 @@ future breakage.
 """
 import io
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,31 @@ POSCAR = REF_DIR / "SUPERCELL_211.vasp"
 POSCAR_221 = REF_DIR / "SUPERCELL_221.vasp"
 CHANGED_CELL_AM = REF_DIR / "case15_changed_cell_altermagnet.vasp"
 GOLDEN = REF_DIR / "ssg_supercell211_golden_kpoints.txt"
+
+
+def _assert_standard_mcif_matches_vasp(out, stem, expected_nonzero_moments):
+    from pymatgen.core import Structure
+    from pymatgen.io.cif import CifParser
+
+    standard_vasp = out / f"{stem}_seekpath_standard.vasp"
+    standard_mcif = out / f"{stem}_seekpath_standard.mcif"
+    assert standard_vasp.exists()
+    assert standard_mcif.exists()
+    structural = Structure.from_file(standard_vasp)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        magnetic = CifParser(str(standard_mcif)).parse_structures(
+            primitive=False
+        )[0]
+    assert len(magnetic) == len(structural)
+    assert np.allclose(magnetic.lattice.matrix, structural.lattice.matrix)
+    nonzero = [
+        np.linalg.norm(site.properties["magmom"].moment)
+        for site in magnetic
+        if "magmom" in site.properties
+        and np.linalg.norm(site.properties["magmom"].moment) > 1e-8
+    ]
+    assert len(nonzero) == expected_nonzero_moments
 
 
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
@@ -78,6 +104,7 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     assert "kpoints_output_lattice:" in mapping_text
     assert "SUPERCELL_211_magnetic_primitive.vasp" in mapping_text
     assert (out / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
+    _assert_standard_mcif_matches_vasp(out, POSCAR.stem, 4)
     assert (out / f"{POSCAR.stem}_magnetic_primitive.mcif").exists()
     assert (out / "spin_operations.txt").read_text(
         encoding="utf-8"
@@ -183,6 +210,7 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
     assert not (
         tmp_path / f"{POSCAR_221.stem}_magnetic_primitive_MAGMOM.txt"
     ).exists()
+    _assert_standard_mcif_matches_vasp(out, POSCAR_221.stem, 2)
 
     kpoints_text = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     k_rows = [
@@ -276,6 +304,7 @@ def test_changed_calculation_cell_builds_butterfly_path(
     assert "# Species order: Al Ca Fe" in magmom_text
     assert "# Counts: 8 1 4" in magmom_text
     assert "MAGMOM = 0 0 0 0 0 0 0 0 0 1 -1 -1 1" in magmom_text
+    _assert_standard_mcif_matches_vasp(tmp_path / OUTPUT_DIR, stem, 8)
 
     coordinate_rows = []
     for line in (tmp_path / "KPOINTS_alter").read_text(

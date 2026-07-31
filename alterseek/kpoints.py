@@ -53,6 +53,8 @@ from .ssg_setting import (
 )
 from .io import (
     _atomic_write_text,
+    _load_magnetic_input_data,
+    _write_seekpath_standard_mcif,
     write_bandplot_lattice_config,
     write_qe_bandplot_config,
 )
@@ -1454,7 +1456,8 @@ class KPointsModifier:
                 # path as a symmetry-equivalent but different set of
                 # coordinates while the user's own cell stops matching their
                 # KPOINTS.
-                if self.magnetic_setting and _magnetic_cell_needed(sf_result):
+                magnetic_cell_needed = _magnetic_cell_needed(sf_result)
+                if self.magnetic_setting and magnetic_cell_needed:
                     try:
                         mag_setting = prepare_magnetic_setting_files(
                             struct_file,
@@ -1545,6 +1548,47 @@ class KPointsModifier:
                                         "[SSG setting] Kept intermediates in "
                                         f"{magnetic_setting_outputs.get('intermediate_dir')}"
                                     )
+                        if magnetic_setting_counts is None:
+                            # The submitted cell already carries the magnetic
+                            # order, but SeeK-path may still permute/rotate it
+                            # into its standard setting. Write a spin-bearing
+                            # MCIF beside the structural standardized VASP so
+                            # that setting can be inspected directly.
+                            try:
+                                standard_vasp = centroid_result.get(
+                                    "standardized_structure_path"
+                                )
+                                if standard_vasp:
+                                    (magnetic_lattice,
+                                     magnetic_positions,
+                                     magnetic_elements,
+                                     magnetic_moments,
+                                     _) = _load_magnetic_input_data(
+                                        struct_file,
+                                        moments_str,
+                                        spin_axis_cart,
+                                    )
+                                    standard_mcif = os.path.splitext(
+                                        standard_vasp
+                                    )[0] + ".mcif"
+                                    _write_seekpath_standard_mcif(
+                                        standard_vasp,
+                                        standard_mcif,
+                                        f"{_figure_basename(struct_file)}_seekpath_standard",
+                                        magnetic_lattice,
+                                        magnetic_positions,
+                                        magnetic_elements,
+                                        magnetic_moments,
+                                        symprec=centroid_result.get("symprec"),
+                                    )
+                                    centroid_result[
+                                        "standardized_magnetic_structure_path"
+                                    ] = standard_mcif
+                            except Exception as exc:
+                                print(
+                                    "[Warning] Could not write the SeeK-path-"
+                                    f"standardized magnetic MCIF: {exc}"
+                                )
                         display_figures.extend(centroid_result.get('display_figures', []))
                     except Exception as e:
                         centroid_error = e
@@ -1578,17 +1622,33 @@ class KPointsModifier:
                     _cell_suffix(sf_result.get('nonmagnetic_sites'),
                                  sf_result.get('nonmagnetic_lattice')),
                 )]
-                if working_cell_symmetry is not None:
-                    # Always shown, including when it agrees with the
-                    # nonmagnetic cell: "the magnetic cell has the same
-                    # symmetry here" is a result, and hiding it makes its
-                    # absence ambiguous.
+                reported_g0_symmetry = working_cell_symmetry
+                reported_g0_lattice = lattice_tag
+                if reported_g0_symmetry is None:
+                    # G0 is still a result when no separate magnetic-cell
+                    # construction is needed. In that case the submitted cell
+                    # is already primitive for the magnetic order, so its site
+                    # count and lattice class describe both rows. If a distinct
+                    # magnetic cell exists but was not constructed (for example
+                    # under --parent-setting), report G0 without borrowing the
+                    # parent cell's size or lattice label.
+                    reported_g0_symmetry = _g0_symmetry(
+                        sf_result,
+                        sites=(None if magnetic_cell_needed else
+                               sf_result.get('nonmagnetic_sites')),
+                    )
+                    if magnetic_cell_needed:
+                        reported_g0_lattice = None
+                if reported_g0_symmetry is not None:
                     cell_rows.append((
                         'Magnetic primitive cell (G0):',
-                        working_cell_symmetry['label'],
-                        working_cell_symmetry['point_group'],
-                        working_cell_symmetry['laue_group'],
-                        _cell_suffix(working_cell_symmetry.get('sites'), lattice_tag),
+                        reported_g0_symmetry['label'],
+                        reported_g0_symmetry['point_group'],
+                        reported_g0_symmetry['laue_group'],
+                        _cell_suffix(
+                            reported_g0_symmetry.get('sites'),
+                            reported_g0_lattice,
+                        ),
                     ))
                 recovery_note = None
                 if parent_recovery:
