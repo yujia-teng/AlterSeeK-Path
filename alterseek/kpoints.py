@@ -905,9 +905,11 @@ class KPointsModifier:
         return pairs
 
     def _general_kpoint_output_basis(self, general_kpoint) -> Optional[List[float]]:
-        """Return the general point k in the output (input-cell) basis, or
-        None when the conversion is unavailable. When the standardized and
-        input bases coincide the returned value equals the input."""
+        """Return the general point k in the KPOINTS output basis, or None
+        when the conversion is unavailable. The output basis belongs to the
+        calculation cell -- the submitted cell unless the magnetic order
+        changed it -- and when it coincides with the standardized basis the
+        returned value equals the input."""
         if general_kpoint is None:
             return None
         if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
