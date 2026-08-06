@@ -222,6 +222,10 @@ If construction of the required magnetic primitive cell fails, AlterSeeK-Path
 stops without writing a parent-cell replacement path. Fix the reported input or
 dependency problem, or explicitly rerun with `--parent-setting` when a
 nonmagnetic reference path is actually intended.
+Likewise, after path construction the calculation-cell basis and any required
+replacement POSCAR/MAGMOM handoff must be finalized successfully before
+KPOINTS are written. Diagnostic standardized VASP/MCIF, mapping, and verbose
+helper files remain best-effort outputs and report a warning if unavailable.
 
 ```bash
 alterseek-path --parent-setting

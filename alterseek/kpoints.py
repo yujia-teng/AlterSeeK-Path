@@ -1505,51 +1505,68 @@ class KPointsModifier:
                             save_pdf=save_pdf,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
-                            magnetic_setting_outputs = finalize_magnetic_setting_outputs(
-                                magnetic_setting_counts,
-                                centroid_result,
-                                output_dir=OUTPUT_DIR,
-                                verbose_output=self.output_verbose,
-                            )
-                            if magnetic_setting_outputs:
-                                centroid_result["b_matrix_output"] = magnetic_setting_outputs[
-                                    "b_matrix_output"
-                                ]
-                                # Say something only when the user has to act.
-                                # The analysis running in the magnetic cell is
-                                # not itself news; a changed calculation cell
-                                # is, because their own POSCAR no longer matches
-                                # the path.
-                                if magnetic_setting_outputs.get("cell_changed"):
-                                    calc_cell = magnetic_setting_outputs.get(
-                                        "calculation_cell_path")
-                                    calc_magmom = magnetic_setting_outputs.get(
-                                        "calculation_magmom_path")
-                                    species_order = magnetic_setting_outputs.get(
-                                        "calculation_species_order")
+                            try:
+                                magnetic_setting_outputs = finalize_magnetic_setting_outputs(
+                                    magnetic_setting_counts,
+                                    centroid_result,
+                                    output_dir=OUTPUT_DIR,
+                                    verbose_output=self.output_verbose,
+                                )
+                            except Exception as exc:
+                                print(
+                                    "[Error] Magnetic calculation-cell "
+                                    f"finalization failed: {exc} Aborting."
+                                )
+                                return False
+                            if (
+                                not isinstance(magnetic_setting_outputs, dict)
+                                or "b_matrix_output" not in magnetic_setting_outputs
+                                or "cell_changed" not in magnetic_setting_outputs
+                            ):
+                                print(
+                                    "[Error] Magnetic calculation-cell "
+                                    "finalization returned no verified output "
+                                    "basis. Aborting."
+                                )
+                                return False
+                            centroid_result["b_matrix_output"] = magnetic_setting_outputs[
+                                "b_matrix_output"
+                            ]
+                            # Say something only when the user has to act.
+                            # The analysis running in the magnetic cell is
+                            # not itself news; a changed calculation cell
+                            # is, because their own POSCAR no longer matches
+                            # the path.
+                            if magnetic_setting_outputs.get("cell_changed"):
+                                calc_cell = magnetic_setting_outputs.get(
+                                    "calculation_cell_path")
+                                calc_magmom = magnetic_setting_outputs.get(
+                                    "calculation_magmom_path")
+                                species_order = magnetic_setting_outputs.get(
+                                    "calculation_species_order")
+                                print(
+                                    "[Cell] The magnetic order changes the cell; the path "
+                                    "is written in the magnetic primitive cell's basis."
+                                )
+                                if calc_cell:
                                     print(
-                                        "[Cell] The magnetic order changes the cell; the path "
-                                        "is written in the magnetic primitive cell's basis."
+                                        f"[Cell] Run the band calculation with {calc_cell}"
                                     )
-                                    if calc_cell:
-                                        print(
-                                            f"[Cell] Run the band calculation with {calc_cell}"
-                                        )
-                                    if calc_magmom:
-                                        print(
-                                            f"[Cell] Matching magnetic moments: {calc_magmom}"
-                                        )
-                                    if species_order:
-                                        print(
-                                            "[Cell] Species order: "
-                                            f"{' '.join(species_order)} "
-                                            "(match POTCAR and species-indexed settings)."
-                                        )
-                                if self.output_verbose:
+                                if calc_magmom:
                                     print(
-                                        "[SSG setting] Kept intermediates in "
-                                        f"{magnetic_setting_outputs.get('intermediate_dir')}"
+                                        f"[Cell] Matching magnetic moments: {calc_magmom}"
                                     )
+                                if species_order:
+                                    print(
+                                        "[Cell] Species order: "
+                                        f"{' '.join(species_order)} "
+                                        "(match POTCAR and species-indexed settings)."
+                                    )
+                            if self.output_verbose:
+                                print(
+                                    "[SSG setting] Kept intermediates in "
+                                    f"{magnetic_setting_outputs.get('intermediate_dir')}"
+                                )
                         if magnetic_setting_counts is None:
                             # The submitted cell already carries the magnetic
                             # order, but SeeK-path may still permute/rotate it

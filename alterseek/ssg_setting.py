@@ -376,58 +376,89 @@ def finalize_magnetic_setting_outputs(
     calculation_cell_dir=".",
 ):
     helper_source = centroid_result.get("standardized_structure_path")
-    if not helper_source or not os.path.exists(helper_source):
-        return {}
-
     basename = mag_setting["basename"]
-    real_final = os.path.join(
-        output_dir, f"{basename}_seekpath_standard.vasp"
-    )
-
-    _write_without_species(
-        helper_source,
-        real_final,
-        {"He"},
-        f"{basename} SeeK-path standard cell from SSG G0 analysis",
-    )
-    standard_mcif_path = os.path.join(
-        output_dir, f"{basename}_seekpath_standard.mcif"
-    )
-    try:
-        _write_seekpath_standard_mcif(
-            real_final,
-            standard_mcif_path,
-            f"{basename}_seekpath_standard",
-            mag_setting["magnetic_primitive_lattice"],
-            mag_setting["magnetic_positions"],
-            mag_setting["magnetic_elements"],
-            mag_setting["magnetic_moments"],
-            symprec=centroid_result.get("symprec"),
-        )
-    except Exception as exc:
-        standard_mcif_path = None
-        print(
-            "[Warning] Could not write the SeeK-path-standardized magnetic "
-            f"MCIF: {exc}"
-        )
+    real_final = None
+    standard_mcif_path = None
     helper_final = None
-    if verbose_output:
-        helper_final = os.path.join(
-            output_dir, f"{basename}_seekpath_marker_helper.vasp"
-        )
-        if os.path.abspath(helper_source) != os.path.abspath(helper_final):
-            shutil.copyfile(helper_source, helper_final)
 
-    # The basis mapping is the only record of how the path's reciprocal basis
-    # relates to the submitted cell, and this route is where that is least
-    # obvious, since the cell being standardized is one the user never supplied.
-    # Keep it under the same name the ordinary route uses.
+    # These standardized structures are diagnostic views, not the calculation
+    # cell and not the basis of KPOINTS_alter. Their absence must not prevent the
+    # required calculation-basis decision below from being completed.
+    if helper_source and os.path.exists(helper_source):
+        real_candidate = os.path.join(
+            output_dir, f"{basename}_seekpath_standard.vasp"
+        )
+        try:
+            _write_without_species(
+                helper_source,
+                real_candidate,
+                {"He"},
+                f"{basename} SeeK-path standard cell from SSG G0 analysis",
+            )
+            real_final = real_candidate
+        except Exception as exc:
+            print(
+                "[Warning] Could not write the marker-free SeeK-path standard "
+                f"cell: {exc}"
+            )
+
+        if real_final:
+            standard_mcif_candidate = os.path.join(
+                output_dir, f"{basename}_seekpath_standard.mcif"
+            )
+            try:
+                _write_seekpath_standard_mcif(
+                    real_final,
+                    standard_mcif_candidate,
+                    f"{basename}_seekpath_standard",
+                    mag_setting["magnetic_primitive_lattice"],
+                    mag_setting["magnetic_positions"],
+                    mag_setting["magnetic_elements"],
+                    mag_setting["magnetic_moments"],
+                    symprec=centroid_result.get("symprec"),
+                )
+                standard_mcif_path = standard_mcif_candidate
+            except Exception as exc:
+                print(
+                    "[Warning] Could not write the SeeK-path-standardized "
+                    f"magnetic MCIF: {exc}"
+                )
+
+        if verbose_output:
+            helper_candidate = os.path.join(
+                output_dir, f"{basename}_seekpath_marker_helper.vasp"
+            )
+            try:
+                if os.path.abspath(helper_source) != os.path.abspath(helper_candidate):
+                    shutil.copyfile(helper_source, helper_candidate)
+                helper_final = helper_candidate
+            except OSError as exc:
+                print(
+                    "[Warning] Could not keep the verbose SeeK-path marker "
+                    f"helper: {exc}"
+                )
+    else:
+        print(
+            "[Warning] SeeK-path standardized structure is unavailable; "
+            "skipping standardized diagnostic VASP/MCIF files."
+        )
+
+    # The basis mapping is the human-readable record of how the path's reciprocal
+    # basis relates to the submitted cell. The matrices used by the workflow are
+    # already held in memory, so inability to preserve this diagnostic text file
+    # must not invalidate an otherwise verified calculation-basis decision.
     mapping_source = centroid_result.get("standard_mapping_path")
     mapping_final = None
     if mapping_source and os.path.exists(mapping_source):
-        mapping_final = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
-        if os.path.abspath(mapping_source) != os.path.abspath(mapping_final):
-            shutil.copyfile(mapping_source, mapping_final)
+        mapping_candidate = os.path.join(
+            output_dir, f"{basename}_seekpath_basis_mapping.txt"
+        )
+        try:
+            if os.path.abspath(mapping_source) != os.path.abspath(mapping_candidate):
+                shutil.copyfile(mapping_source, mapping_candidate)
+            mapping_final = mapping_candidate
+        except OSError as exc:
+            print(f"[Warning] Could not keep the SeeK-path basis mapping: {exc}")
 
     # Output basis. Reaching here means the analysis had to run in the magnetic
     # cell, but that on its own does not mean the calculation cell changed:
@@ -514,27 +545,31 @@ def finalize_magnetic_setting_outputs(
         )
 
     if mapping_final:
-        if calculation_cell_path:
-            output_label = os.path.basename(calculation_cell_path)
-        else:
-            output_label = "submitted structure (calculation cell unchanged)"
-        with open(mapping_final, "r", encoding="utf-8") as f:
-            mapping_text = f.read().rstrip()
-        output_lines = [
-            "",
-            f"# kpoints_output_lattice is the direct lattice of {output_label}.",
-            "# KPOINTS_alter fractional coordinates are written in its "
-            "reciprocal basis.",
-            "kpoints_output_lattice:",
-        ]
-        output_lines.extend(
-            "  " + " ".join(f"{float(value): .10f}" for value in row)
-            for row in output_lattice
-        )
-        _atomic_write_text(
-            mapping_final,
-            mapping_text + "\n" + "\n".join(output_lines) + "\n",
-        )
+        try:
+            if calculation_cell_path:
+                output_label = os.path.basename(calculation_cell_path)
+            else:
+                output_label = "submitted structure (calculation cell unchanged)"
+            with open(mapping_final, "r", encoding="utf-8") as f:
+                mapping_text = f.read().rstrip()
+            output_lines = [
+                "",
+                f"# kpoints_output_lattice is the direct lattice of {output_label}.",
+                "# KPOINTS_alter fractional coordinates are written in its "
+                "reciprocal basis.",
+                "kpoints_output_lattice:",
+            ]
+            output_lines.extend(
+                "  " + " ".join(f"{float(value): .10f}" for value in row)
+                for row in output_lattice
+            )
+            _atomic_write_text(
+                mapping_final,
+                mapping_text + "\n" + "\n".join(output_lines) + "\n",
+            )
+        except (OSError, UnicodeError) as exc:
+            print(f"[Warning] Could not finalize the SeeK-path basis mapping: {exc}")
+            mapping_final = None
 
     # Remove or relocate low-level seekpath artifacts for the hidden marker helper.
     # The clean final standardized structure above is the user-facing record.
@@ -560,10 +595,11 @@ def finalize_magnetic_setting_outputs(
             pass
 
     result = {
-        "standard_real_path": real_final,
         "b_matrix_output": b_matrix_output,
         "cell_changed": cell_changed,
     }
+    if real_final:
+        result["standard_real_path"] = real_final
     if standard_mcif_path:
         result["standard_magnetic_path"] = standard_mcif_path
     if calculation_cell_path:

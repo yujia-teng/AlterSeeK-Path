@@ -253,6 +253,89 @@ def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
     assert not (tmp_path / "KPOINTS_alter").exists()
 
 
+@pytest.mark.parametrize("finalizer_mode", ["empty", "exception"])
+def test_required_magnetic_finalization_failure_aborts(
+    tmp_path, monkeypatch, capsys, finalizer_mode
+):
+    """A centroid result must not hide a missing verified output basis."""
+    from alterseek import kpoints as kpoints_module
+
+    structure = tmp_path / "POSCAR"
+    structure.write_text("test structure placeholder\n", encoding="utf-8")
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = "1 -1"\n',
+        encoding="utf-8",
+    )
+    sf_result = {
+        "g0_number": 61,
+        "nonmagnetic_spacegroup_number": 205,
+        "nonmagnetic_sites": 2,
+        "num_atoms": 2,
+    }
+    mag_setting = {
+        "helper_path": "magnetic_marker_input.vasp",
+        "seekpath_type_numbers": None,
+        "operation_basis_label": "magnetic primitive test cell",
+        "magnetic_cell_sites": 2,
+        "spin_flip_operations": 1,
+    }
+    centroid_result = {"display_figures": []}
+
+    def synthetic_finalizer(*args, **kwargs):
+        if finalizer_mode == "exception":
+            raise RuntimeError("synthetic calculation-cell handoff failure")
+        return {}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
+    monkeypatch.setattr(
+        kpoints_module,
+        "prepare_magnetic_setting_files",
+        lambda *args, **kwargs: mag_setting,
+    )
+    monkeypatch.setattr(
+        kpoints_module, "compute_centroid", lambda *args, **kwargs: centroid_result
+    )
+    monkeypatch.setattr(
+        kpoints_module, "finalize_magnetic_setting_outputs", synthetic_finalizer
+    )
+
+    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    output = capsys.readouterr().out
+    assert "finalization" in output
+    assert "Aborting" in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_missing_standardized_diagnostic_does_not_skip_required_basis_finalization(
+    tmp_path, capsys
+):
+    """The optional standard-cell view is not needed to select output basis."""
+    from alterseek.ssg_setting import finalize_magnetic_setting_outputs
+
+    lattice = np.diag([4.0, 5.0, 6.0])
+    result = finalize_magnetic_setting_outputs(
+        {
+            "basename": "case",
+            "magnetic_primitive_lattice": lattice,
+            "submitted_lattice": lattice.copy(),
+            "magnetic_symbols": ["Mn"],
+        },
+        {"standardized_structure_path": None},
+        output_dir=str(tmp_path),
+        calculation_cell_dir=str(tmp_path),
+    )
+
+    assert result["cell_changed"] is False
+    assert np.allclose(result["b_matrix_output"], 2 * np.pi * np.linalg.inv(lattice).T)
+    assert "standard_real_path" not in result
+    assert "skipping standardized diagnostic" in capsys.readouterr().out
+
+
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
 def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
     """The wiring: the gate's symmetry must come from G0 of the built cell.
