@@ -1484,12 +1484,14 @@ class KPointsModifier:
                         working_cell_symmetry = _g0_symmetry(
                             sf_result, sites=mag_setting.get('magnetic_cell_sites'))
                     except Exception as e:
-                        print(f"[Warning] Magnetic primitive cell construction failed: {e}")
-                        print("[Warning] Falling back to the nonmagnetic parent cell "
-                              "(equivalent to --parent-setting). The path will not "
-                              "reflect the symmetry of the magnetic state.")
-                        centroid_struct_file = struct_file
-                        centroid_seekpath_type_numbers = None
+                        print(f"[Error] Magnetic primitive cell construction failed: {e}")
+                        print(
+                            "[Error] The default magnetic-state path cannot be "
+                            "generated. Fix the input/dependency problem, or "
+                            "explicitly rerun with --parent-setting to request "
+                            "the nonmagnetic reference path. Aborting."
+                        )
+                        return False
                 if CENTROID_AVAILABLE:
                     try:
                         centroid_result = compute_centroid(

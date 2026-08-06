@@ -218,8 +218,10 @@ magnetic primitive cell, AlterSeeK-Path keeps it and maps the path back into
 its reciprocal basis. A same-volume nontrivial basis change instead produces
 the matching `*_magnetic_primitive.vasp` and MAGMOM companion for the band
 calculation.
-If the construction fails, AlterSeeK-Path falls back to the nonmagnetic parent
-cell with a warning.
+If construction of the required magnetic primitive cell fails, AlterSeeK-Path
+stops without writing a parent-cell replacement path. Fix the reported input or
+dependency problem, or explicitly rerun with `--parent-setting` when a
+nonmagnetic reference path is actually intended.
 
 ```bash
 alterseek-path --parent-setting

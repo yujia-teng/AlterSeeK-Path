@@ -205,6 +205,54 @@ def test_cell_suffix_only_describes_what_is_known():
     assert _cell_suffix(None, 'unknown') == ""
 
 
+def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
+    tmp_path, monkeypatch, capsys
+):
+    """A default-route failure must not silently change the physical cell.
+
+    Step 0 has already established that G0 differs from the nonmagnetic parent,
+    so falling back would produce a path for a symmetry the magnetic state does
+    not have. The parent route remains available only by explicit CLI choice.
+    """
+    from alterseek import kpoints as kpoints_module
+
+    structure = tmp_path / "POSCAR"
+    structure.write_text("test structure placeholder\n", encoding="utf-8")
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = "1 -1"\n',
+        encoding="utf-8",
+    )
+    sf_result = {
+        "g0_number": 61,
+        "nonmagnetic_spacegroup_number": 205,
+        "nonmagnetic_sites": 2,
+        "num_atoms": 2,
+    }
+
+    def fail_construction(*args, **kwargs):
+        raise RuntimeError("synthetic ACC-primitive failure")
+
+    def forbid_parent_centroid(*args, **kwargs):
+        raise AssertionError("parent-cell centroid generation must not run")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
+    monkeypatch.setattr(
+        kpoints_module, "prepare_magnetic_setting_files", fail_construction
+    )
+    monkeypatch.setattr(kpoints_module, "compute_centroid", forbid_parent_centroid)
+
+    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    output = capsys.readouterr().out
+    assert "Magnetic primitive cell construction failed" in output
+    assert "explicitly rerun with --parent-setting" in output
+    assert "Falling back" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
 @pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
 def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
     """The wiring: the gate's symmetry must come from G0 of the built cell.
