@@ -232,6 +232,10 @@ Likewise, after path construction the calculation-cell basis and any required
 replacement POSCAR/MAGMOM handoff must be finalized successfully before
 KPOINTS are written. Diagnostic standardized VASP/MCIF, mapping, and verbose
 helper files remain best-effort outputs and report a warning if unavailable.
+The internal symmetry marker uses He by default. If He is a real species in
+the submitted structure, AlterSeeK-Path deterministically chooses another
+chemical element absent from that structure (Ne first) and later removes only
+that selected artificial marker species from the standardized diagnostic cell.
 
 ```bash
 alterseek-path --parent-setting

@@ -37,6 +37,69 @@ CHANGED_CELL_AM = REF_DIR / "case15_changed_cell_altermagnet.vasp"
 GOLDEN = REF_DIR / "ssg_supercell211_golden_kpoints.txt"
 
 
+def test_marker_species_is_deterministic_and_absent_from_real_atoms():
+    from alterseek import ssg_setting
+
+    operation = {
+        "real_rotation": np.eye(3),
+        "translation": [0.0, 0.0, 0.0],
+    }
+    common = {
+        "lattice": np.diag([4.0, 4.0, 4.0]),
+        "counts": [1],
+        "positions": [np.zeros(3)],
+        "operations": [operation],
+    }
+
+    ordinary = ssg_setting._build_marker_helper(
+        symbols=["Fe"], **common
+    )
+    helium_structure = ssg_setting._build_marker_helper(
+        symbols=["He"], **common
+    )
+
+    assert ordinary["marker_species"] == "He"
+    assert ordinary["symbols"] == ["Fe", "He"]
+    assert helium_structure["marker_species"] == "Ne"
+    assert helium_structure["symbols"] == ["He", "Ne"]
+    assert ssg_setting._select_marker_species(["He", "Ne"]) == "Ar"
+
+
+def test_marker_cleanup_preserves_physical_helium(tmp_path):
+    from alterseek import ssg_setting
+    from alterseek.io import _read_grouped_poscar
+
+    lattice = np.diag([4.0, 4.0, 8.0])
+    helper = tmp_path / "standardized_marker_helper.vasp"
+    ssg_setting._write_poscar(
+        helper,
+        "physical He plus artificial Ne marker",
+        lattice,
+        ["He", "Ne"],
+        [1, 1],
+        [np.zeros(3), np.array([0.21, 0.17, 0.13])],
+    )
+
+    result = ssg_setting.finalize_magnetic_setting_outputs(
+        {
+            "basename": "helium_case",
+            "marker_species": "Ne",
+            "magnetic_primitive_lattice": lattice,
+            "magnetic_positions": np.array([[0.0, 0.0, 0.0]]),
+            "magnetic_elements": ["He"],
+            "magnetic_moments": np.array([[0.0, 0.0, 1.0]]),
+            "submitted_lattice": lattice.copy(),
+            "magnetic_symbols": ["He"],
+        },
+        {"standardized_structure_path": str(helper), "symprec": 1e-3},
+        output_dir=str(tmp_path),
+        calculation_cell_dir=str(tmp_path),
+    )
+
+    _, elements, _ = _read_grouped_poscar(result["standard_real_path"])
+    assert elements == ["He"]
+
+
 def _assert_standard_mcif_matches_vasp(out, stem, expected_nonzero_moments):
     from pymatgen.core import Structure
     from pymatgen.io.cif import CifParser
@@ -431,3 +494,5 @@ def test_prepare_mcif_uses_refined_from_data_route(tmp_path, monkeypatch):
     assert calls["from_data"]["spin_setting"] == "cartesian"
     assert Path(result["real_poscar_path"]).exists()
     assert Path(result["helper_path"]).exists()
+    assert result["marker_species"] == "He"
+    assert result["summary"]["marker_species"] == "He"

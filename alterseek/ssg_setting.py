@@ -1,4 +1,4 @@
-"""SSG-setting (He-marker) workflow: build spin-space-group setting inputs.
+"""SSG-setting marker workflow: build spin-space-group setting inputs.
 
 Extracted from alterseek_path.py (restructuring phase 4).
 """
@@ -30,6 +30,8 @@ _MARKER_SEEDS = [
     np.array([0.21100000, 0.13700000, 0.29300001]),
 ]
 
+_MARKER_SPECIES_PREFERENCE = ("He", "Ne", "Ar", "Kr", "Xe", "Rn", "Og")
+
 
 def _marker_orbit(seed, operations):
     positions = []
@@ -40,14 +42,32 @@ def _marker_orbit(seed, operations):
     return _dedupe_frac_positions(positions)
 
 
+def _select_marker_species(real_symbols):
+    """Choose a deterministic chemical symbol absent from the real structure."""
+    from ase.data import chemical_symbols
+
+    used = {str(symbol) for symbol in real_symbols}
+    candidates = dict.fromkeys(
+        (*_MARKER_SPECIES_PREFERENCE, *chemical_symbols[1:])
+    )
+    for candidate in candidates:
+        if candidate not in used:
+            return candidate
+    raise RuntimeError(
+        "Could not choose an unused chemical species for the SSG marker helper."
+    )
+
+
 def _build_marker_helper(lattice, symbols, counts, positions, operations):
+    marker_species = _select_marker_species(symbols)
     best = None
     for seed in _MARKER_SEEDS:
         markers = _marker_orbit(seed, operations)
         helper_positions = list(positions) + markers
         candidate = {
             "seed": seed,
-            "symbols": list(symbols) + ["He"],
+            "marker_species": marker_species,
+            "symbols": list(symbols) + [marker_species],
             "counts": list(counts) + [len(markers)],
             "positions": helper_positions,
             "markers": markers,
@@ -253,7 +273,8 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
     )
     _write_poscar(
         helper_path,
-        f"{basename} SSG-setting marker helper from FindSpinGroup",
+        f"{basename} SSG-setting {marker_helper['marker_species']} marker "
+        "helper from FindSpinGroup",
         lattice,
         marker_helper["symbols"],
         marker_helper["counts"],
@@ -292,12 +313,14 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "spin_flip_operations": flip_count,
         "spin_preserve_operations": preserve_count,
         "operation_basis_label": magnetic_basis,
+        "marker_species": marker_helper["marker_species"],
         "summary": {
             "index": result.get("index"),
             "acc_symbol": result.get("acc_symbol"),
             "setting": result.get("acc_primitive_cell_setting"),
             "marker_seed": marker_helper["seed"].tolist(),
             "marker_count": len(marker_helper["markers"]),
+            "marker_species": marker_helper["marker_species"],
             "marker_min_distance": marker_helper["min_distance"],
         },
     }
@@ -389,10 +412,11 @@ def finalize_magnetic_setting_outputs(
             output_dir, f"{basename}_seekpath_standard.vasp"
         )
         try:
+            marker_species = mag_setting.get("marker_species", "He")
             _write_without_species(
                 helper_source,
                 real_candidate,
-                {"He"},
+                {marker_species},
                 f"{basename} SeeK-path standard cell from SSG G0 analysis",
             )
             real_final = real_candidate
