@@ -28,7 +28,8 @@ spin-preserving operations. Supported formats: `POSCAR`, `.vasp`, `.cif`
 
 For non-`.mcif` input, enter a Cartesian spin axis (default `0 0 1`) and
 scalar moments along it in atom order, VASP `MAGMOM`-style (`1 -1` or
-`5*0 2*1.0`); untyped atoms default to `0`.
+`5*0 2*1.0`). Missing trailing values default to `0`; providing more moments
+than structure sites is rejected as an atom-order/count error.
 
 ## Step 1: High-Symmetry K-Path
 

@@ -11,8 +11,13 @@ import uuid
 import numpy as np
 
 try:
-    from .find_sf_operations import parse_cartesian_spin_axis, parse_magmoms
+    from .find_sf_operations import (
+        fit_magmoms_to_structure,
+        parse_cartesian_spin_axis,
+        parse_magmoms,
+    )
 except ImportError:  # pragma: no cover
+    fit_magmoms_to_structure = None
     parse_cartesian_spin_axis = None
     parse_magmoms = None
 
@@ -402,14 +407,12 @@ def _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart):
     lattice = np.array(structure.get_cell(), dtype=float)
     positions = np.array(structure.get_scaled_positions(), dtype=float)
     elements = structure.get_chemical_symbols()
-    if parse_cartesian_spin_axis is None or parse_magmoms is None:
+    if (parse_cartesian_spin_axis is None or parse_magmoms is None
+            or fit_magmoms_to_structure is None):
         raise RuntimeError("find_sf_operations magnetic input parsers are not available.")
     axis = parse_cartesian_spin_axis(spin_axis_cart)
     scalars = parse_magmoms(moments_str) if moments_str else []
-    if len(scalars) < len(elements):
-        scalars.extend([0.0] * (len(elements) - len(scalars)))
-    elif len(scalars) > len(elements):
-        scalars = scalars[:len(elements)]
+    scalars = fit_magmoms_to_structure(scalars, len(elements))
     moments = np.asarray(scalars, dtype=float)[:, None] * axis[None, :]
     return lattice, positions, elements, moments, "cartesian"
 

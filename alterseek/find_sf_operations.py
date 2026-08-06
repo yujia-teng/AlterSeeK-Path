@@ -472,6 +472,23 @@ def parse_magmoms(moments_str):
     return values
 
 
+def fit_magmoms_to_structure(values, num_atoms):
+    """Pad missing scalar moments, but reject values beyond the site count."""
+    values = list(values)
+    num_atoms = int(num_atoms)
+    if num_atoms < 0:
+        raise ValueError("structure atom count cannot be negative")
+    if len(values) > num_atoms:
+        excess = len(values) - num_atoms
+        noun = "value" if excess == 1 else "values"
+        raise ValueError(
+            f"{len(values)} magnetic moments were provided for a "
+            f"{num_atoms}-atom structure; remove {excess} excess {noun}"
+        )
+    values.extend([0.0] * (num_atoms - len(values)))
+    return values
+
+
 def parse_cartesian_spin_axis(axis_str):
     """Parse and normalize a Cartesian collinear spin axis."""
     if axis_str is None or not str(axis_str).strip():
@@ -694,6 +711,7 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
                 user_mags = []
             else:
                 user_mags = parse_magmoms(moments_str)
+            user_mags = fit_magmoms_to_structure(user_mags, num_atoms)
         except ValueError as exc:
             print(
                 "Error: Invalid manual magnetic input. Enter a nonzero Cartesian "
@@ -701,10 +719,6 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
                 f"({exc})"
             )
             return False
-        if len(user_mags) < num_atoms:
-            user_mags.extend([0.0] * (num_atoms - len(user_mags)))
-        elif len(user_mags) > num_atoms:
-            user_mags = user_mags[:num_atoms]
         magmoms = np.asarray(user_mags, dtype=float)[:, None] * manual_axis[None, :]
         if verbose:
             print(f"Cartesian spin axis: {manual_axis}")

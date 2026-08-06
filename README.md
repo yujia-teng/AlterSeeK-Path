@@ -62,8 +62,8 @@ for the full field reference.
 - Structure file: `POSCAR` / `.vasp` / `.cif` (moments entered manually) or
   `.mcif` (moments read from the file).
 - Spin axis + moments: Cartesian axis (default `0 0 1`) and VASP
-  `MAGMOM`-style scalar moments (e.g. `5*0 2*1.0`); untyped atoms default to
-  `0`.
+  `MAGMOM`-style scalar moments (e.g. `5*0 2*1.0`); missing trailing values
+  default to `0`, while excess values are rejected.
 - K-path: press Enter for the auto-generated path, or give a line-mode
   `KPATH.in`/KPOINTS-style file. A custom path is interpreted in the reciprocal
   fractional basis of the submitted structure and must contain labeled,
