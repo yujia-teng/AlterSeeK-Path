@@ -184,6 +184,83 @@ def is_valid_2d_spin_flip(R, vacuum_axis, tol=1e-6):
             and not is_trivial_2d_spin_flip(R, vacuum_axis, tol))
 
 
+def slab_plane_normal_cartesian(lattice, vacuum_axis):
+    """Return the physical slab-plane normal from a direct lattice.
+
+    ``vacuum_axis`` identifies the submitted lattice vector containing the
+    vacuum. The physical plane is defined by the other two direct vectors; its
+    Cartesian normal remains meaningful after any cell-basis permutation or
+    unimodular change.
+    """
+    lattice = np.asarray(lattice, dtype=float)
+    if lattice.shape != (3, 3):
+        raise ValueError("lattice must be a 3x3 matrix")
+    if vacuum_axis not in (0, 1, 2):
+        raise ValueError("vacuum axis must be 0, 1, or 2")
+    in_plane = [index for index in range(3) if index != vacuum_axis]
+    normal = np.cross(lattice[in_plane[0]], lattice[in_plane[1]])
+    norm = np.linalg.norm(normal)
+    if not np.isfinite(norm) or norm <= 1e-12:
+        raise ValueError("submitted in-plane lattice vectors are collinear")
+    return normal / norm
+
+
+def reciprocal_operation_cartesian(R, b_matrix):
+    """Convert real-space fractional R to its Cartesian reciprocal action."""
+    R = np.asarray(R, dtype=float)
+    b_matrix = np.asarray(b_matrix, dtype=float)
+    if R.shape != (3, 3) or b_matrix.shape != (3, 3):
+        raise ValueError("operation and reciprocal basis must both be 3x3")
+    b_transpose = b_matrix.T
+    return b_transpose @ np.linalg.inv(R).T @ np.linalg.inv(b_transpose)
+
+
+def _cartesian_plane_basis(plane_normal):
+    normal = np.asarray(plane_normal, dtype=float)
+    if normal.shape != (3,) or not np.all(np.isfinite(normal)):
+        raise ValueError("plane normal must contain three finite components")
+    norm = np.linalg.norm(normal)
+    if norm <= 1e-12:
+        raise ValueError("plane normal cannot be zero")
+    normal = normal / norm
+    first = _perp_unit(normal)
+    second = np.cross(normal, first)
+    second /= np.linalg.norm(second)
+    return normal, np.column_stack((first, second))
+
+
+def keeps_2d_plane_cartesian(R, b_matrix, plane_normal, tol=1e-6):
+    """True when R preserves the physical Cartesian slab plane."""
+    operation = reciprocal_operation_cartesian(R, b_matrix)
+    normal, plane_basis = _cartesian_plane_basis(plane_normal)
+    mapped_plane = operation @ plane_basis
+    return np.all(np.abs(normal @ mapped_plane) < tol)
+
+
+def is_trivial_2d_spin_flip_cartesian(
+    R,
+    b_matrix,
+    plane_normal,
+    tol=1e-6,
+):
+    """True when R restricts to +I or -I on the physical slab plane."""
+    operation = reciprocal_operation_cartesian(R, b_matrix)
+    _, plane_basis = _cartesian_plane_basis(plane_normal)
+    block = plane_basis.T @ operation @ plane_basis
+    return (np.allclose(block, np.eye(2), atol=tol)
+            or np.allclose(block, -np.eye(2), atol=tol))
+
+
+def is_valid_2d_spin_flip_cartesian(R, b_matrix, plane_normal, tol=1e-6):
+    """True for a plane-preserving, nontrivial physical 2D spin flip."""
+    return (
+        keeps_2d_plane_cartesian(R, b_matrix, plane_normal, tol)
+        and not is_trivial_2d_spin_flip_cartesian(
+            R, b_matrix, plane_normal, tol
+        )
+    )
+
+
 def _perp_unit(v):
     """Return a unit vector perpendicular to v (for any nonzero v)."""
     v = np.asarray(v, dtype=float)

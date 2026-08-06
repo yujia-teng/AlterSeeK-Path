@@ -186,10 +186,16 @@ Operations that are trivial in-plane (identity or k to -k) don't count. If
 none remain, the verdict is `NO` and the ordinary in-plane path is written
 without `k'`.
 
-The vacuum axis is auto-detected in the standardized cell regardless of
-`--vacuum-axis {a,b,c}` (default `c`), which only sanity-checks the input
-cell. The workflow warns if the input has no clear vacuum gap or a tilted
-vacuum axis.
+`--vacuum-axis {a,b,c}` (default `c`) identifies the submitted cell's vacuum
+vector. The other two submitted lattice vectors define one physical Cartesian
+slab plane, which is carried through submitted, magnetic-primitive,
+SeeK-path-standardized, and final KPOINTS bases. Spin operations are tested in
+Cartesian reciprocal space, so magnetic-cell axis permutations cannot change
+the 2D verdict. Written k-points are projected only to remove numerical residue
+normal to that same plane; a genuinely out-of-plane point aborts instead of
+being silently flattened. SeeK-path still auto-detects its own standardized
+vacuum-axis index for the 2D hull and path. The workflow warns if the input has
+no clear vacuum gap or a tilted vacuum axis.
 
 Instead of the 3D figures, 2D mode saves top-down figures:
 

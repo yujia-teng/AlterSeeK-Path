@@ -16,6 +16,7 @@ import pytest
 from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
 from alterseek import symmetry
+from alterseek.kpoints import KPointsModifier
 from alterseek.plotting_common import _figure_output_paths
 
 
@@ -67,6 +68,88 @@ def test_keeps_plane_guard():
     out_of_plane = np.array([[0., 0, 1], [0, 1, 0], [1, 0, 0]])  # swaps x and z
     assert not symmetry.keeps_2d_plane(out_of_plane, 2)
     assert not symmetry.is_valid_2d_spin_flip(out_of_plane, 2)         # fails Filter 1
+
+
+def test_cartesian_plane_filter_survives_magnetic_axis_permutation():
+    """Operation basis (c,a,b) must not reuse submitted vacuum index c=2."""
+    submitted_lattice = _diag([3.0, 3.0, 20.0])
+    magnetic_lattice = np.array([
+        [0.0, 0.0, 20.0],  # a_magnetic = c_input: physical vacuum
+        [3.0, 0.0, 0.0],   # b_magnetic = a_input
+        [0.0, 3.0, 0.0],   # c_magnetic = b_input
+    ])
+    b_magnetic = 2 * np.pi * np.linalg.inv(magnetic_lattice).T
+    plane_normal = symmetry.slab_plane_normal_cartesian(
+        submitted_lattice, vacuum_axis=2
+    )
+
+    # Leaves a_magnetic (the physical vacuum) fixed and swaps the two physical
+    # in-plane axes. The old index-2 check rejects it because it mistakes
+    # c_magnetic for the vacuum.
+    valid_physical_flip = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+    ])
+    assert not symmetry.is_valid_2d_spin_flip(valid_physical_flip, 2)
+    assert symmetry.is_valid_2d_spin_flip_cartesian(
+        valid_physical_flip, b_magnetic, plane_normal
+    )
+
+    # Swaps physical vacuum and in-plane axes. The old index-2 check accepts it
+    # as an in-plane swap, while the Cartesian test correctly rejects it.
+    mixes_physical_vacuum = np.array([
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+    assert symmetry.is_valid_2d_spin_flip(mixes_physical_vacuum, 2)
+    assert not symmetry.is_valid_2d_spin_flip_cartesian(
+        mixes_physical_vacuum, b_magnetic, plane_normal
+    )
+
+    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
+    centroid_result = {"b_matrix_input": b_magnetic}
+    modifier._configure_2d_plane(
+        centroid_result,
+        submitted_lattice=submitted_lattice,
+    )
+    assert modifier._is_valid_2d_operation(
+        valid_physical_flip, centroid_result
+    )
+    assert not modifier._is_valid_2d_operation(
+        mixes_physical_vacuum, centroid_result
+    )
+
+
+def test_2d_output_projection_uses_physical_plane_not_input_axis_index():
+    magnetic_lattice = np.array([
+        [0.0, 0.0, 20.0],
+        [3.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0],
+    ])
+    b_magnetic = 2 * np.pi * np.linalg.inv(magnetic_lattice).T
+    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
+    modifier.kpoints_basis_matrix = b_magnetic
+    modifier.output_basis_matrix = b_magnetic
+    modifier.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
+
+    output = modifier._kpoint_for_output_basis(
+        [1e-10, 0.2, 0.3, "k"]
+    )
+    assert output[:3] == pytest.approx([0.0, 0.2, 0.3], abs=1e-12)
+
+
+def test_2d_output_rejects_a_genuinely_out_of_plane_point():
+    lattice = _diag([3.0, 3.0, 20.0])
+    reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
+    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
+    modifier.kpoints_basis_matrix = reciprocal
+    modifier.output_basis_matrix = reciprocal
+    modifier.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
+
+    with pytest.raises(RuntimeError, match="outside the physical slab plane"):
+        modifier._kpoint_for_output_basis([0.2, 0.3, 0.1, "bad"])
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +257,30 @@ def test_compute_centroid_2d_differs_from_3d(tmp_path):
     # 3D keeps the out-of-plane centroid component; 2D zeroes it.
     assert abs(r3["centroid_frac"][2]) > 1e-6
     assert abs(r2["centroid_frac"][2]) < 1e-12
+
+
+def test_interactive_2d_output_stays_in_physical_plane(tmp_path, monkeypatch):
+    poscar = tmp_path / "POSCAR"
+    _write_tetragonal_slab(poscar)
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = ""\n'
+        'path = ""\n'
+        'output_code = "vasp"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert KPointsModifier(mode_2d=True, input_vacuum_axis=2).interactive_modify()
+    lines = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8").splitlines()
+    coordinate_rows = [
+        line.split()
+        for line in lines[4:]
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert coordinate_rows
+    assert all(float(row[2]) == 0.0 for row in coordinate_rows)
 
 
 def test_save_pdf_adds_pdf_without_leaking_to_next_run(monkeypatch):

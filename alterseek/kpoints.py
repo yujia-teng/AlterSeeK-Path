@@ -21,8 +21,8 @@ try:
     from .symmetry import (no_altermagnetism_reason,
                           laue_group_from_spacegroup_number,
                           point_group_from_spacegroup_number,
-                          is_valid_2d_spin_flip,
-                          is_trivial_2d_spin_flip,
+                          is_valid_2d_spin_flip_cartesian,
+                          slab_plane_normal_cartesian,
                           describe_spinflip_op)
     from .plotting_3d import (plot_spin_flip_figure,
                              plot_spin_bz_figure,
@@ -38,8 +38,8 @@ except ImportError as _exc:
     no_altermagnetism_reason = None
     laue_group_from_spacegroup_number = None
     point_group_from_spacegroup_number = None
-    is_valid_2d_spin_flip = None
-    is_trivial_2d_spin_flip = None
+    is_valid_2d_spin_flip_cartesian = None
+    slab_plane_normal_cartesian = None
     plot_spin_flip_figure = None
     plot_spin_bz_figure = None
     plot_spin_bz_top_view_figure = None
@@ -290,10 +290,43 @@ class KPointsModifier:
         self.kpoints_basis_matrix = None
         self.output_basis_matrix = None
         self.kpoints_basis_rotation = None
+        self.plane_normal_cartesian = None
         self.magnetic_setting = magnetic_setting
         self.output_verbose = output_verbose
         self.mode_2d = mode_2d
         self.input_vacuum_axis = input_vacuum_axis
+
+    def _configure_2d_plane(self, centroid_result, submitted_lattice=None):
+        """Record the physical slab plane independently of any cell basis."""
+        if not self.mode_2d:
+            self.plane_normal_cartesian = None
+            return
+        if slab_plane_normal_cartesian is None:
+            raise RuntimeError("Cartesian 2D plane helpers are unavailable")
+        if submitted_lattice is None:
+            b_input = np.asarray(centroid_result["b_matrix_input"], dtype=float)
+            submitted_lattice = 2 * np.pi * np.linalg.inv(b_input).T
+        normal = slab_plane_normal_cartesian(
+            submitted_lattice,
+            self.input_vacuum_axis,
+        )
+        self.plane_normal_cartesian = normal
+        centroid_result["plane_normal_cartesian"] = normal.copy()
+
+    def _is_valid_2d_operation(self, operation, centroid_result):
+        """Classify an operation in its source basis against the physical plane."""
+        if is_valid_2d_spin_flip_cartesian is None:
+            raise RuntimeError("Cartesian 2D operation helpers are unavailable")
+        if self.plane_normal_cartesian is None:
+            raise RuntimeError("Physical 2D plane has not been configured")
+        operation_basis = np.asarray(
+            centroid_result["b_matrix_input"], dtype=float
+        )
+        return is_valid_2d_spin_flip_cartesian(
+            operation,
+            operation_basis,
+            self.plane_normal_cartesian,
+        )
 
     @staticmethod
     def _display_label(label: str) -> str:
@@ -475,12 +508,23 @@ class KPointsModifier:
                 f"Output-basis conversion failed for k-point '{point[3]}': {exc}. "
                 "Refusing to write unconverted coordinates into KPOINTS."
             ) from exc
-        k_out = [k_out[0], k_out[1], k_out[2]]
         if self.mode_2d:
-            # The physical 2D path lies in the input vacuum k=0 plane; clear any
-            # numerical residue along that axis so the written KPOINTS are exactly
-            # in-plane.
-            k_out[self.input_vacuum_axis] = 0.0
+            if self.plane_normal_cartesian is None:
+                raise RuntimeError(
+                    "Physical 2D plane was not configured before KPOINTS output."
+                )
+            normal = np.asarray(self.plane_normal_cartesian, dtype=float)
+            normal /= np.linalg.norm(normal)
+            k_cart = k_out @ b_output
+            normal_component = float(k_cart @ normal)
+            plane_tolerance = 1e-7 * max(1.0, float(np.linalg.norm(k_cart)))
+            if abs(normal_component) > plane_tolerance:
+                raise RuntimeError(
+                    f"2D k-point '{point[3]}' lies outside the physical slab "
+                    f"plane ({normal_component:.3g} 1/Angstrom)."
+                )
+            k_cart = k_cart - normal_component * normal
+            k_out = k_cart @ np.linalg.inv(b_output)
         return [k_out[0], k_out[1], k_out[2], point[3]]
 
     def load_flip_operations(self, filename: str = None) -> List[np.ndarray]:
@@ -1348,6 +1392,7 @@ class KPointsModifier:
         operation_basis_label = (
             f"submitted structure '{os.path.basename(struct_file)}'"
         )
+        submitted_lattice_for_2d = None
         display_figures = []
         self.extra_general_points = []
 
@@ -1468,6 +1513,9 @@ class KPointsModifier:
                         centroid_struct_file = mag_setting["helper_path"]
                         centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
                         magnetic_setting_counts = mag_setting
+                        submitted_lattice_for_2d = mag_setting.get(
+                            "submitted_lattice"
+                        )
                         operation_basis_label = mag_setting["operation_basis_label"]
                         # The altermagnetism gate below must judge the cell the
                         # path is built in, and must judge it by its *magnetic*
@@ -1733,6 +1781,18 @@ class KPointsModifier:
                         "Lattice type: "
                         f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
                     )
+                if self.mode_2d:
+                    try:
+                        self._configure_2d_plane(
+                            centroid_result,
+                            submitted_lattice=submitted_lattice_for_2d,
+                        )
+                    except Exception as exc:
+                        print(
+                            "[Error] Could not establish the physical 2D slab "
+                            f"plane: {exc} Aborting."
+                        )
+                        return False
                 print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
                 sp_path   = centroid_result['sp_path']
                 sp_coords = centroid_result['sp_point_coords']
@@ -1957,27 +2017,33 @@ class KPointsModifier:
         flip_ops = _inversion_extended(flip_ops)
         preserve_ops = _inversion_extended(preserve_ops)
 
-        # 2D mode: keep only genuine in-plane spin-flip operations. A flip
-        # operation whose in-plane 2x2 block is +-I (C2z/mz/inversion type)
-        # produces no in-plane splitting, so it must not be chosen for the
-        # 2D path. If none survive, the slab is not a 2D altermagnet.
+        # 2D mode: keep only genuine in-plane spin-flip operations. Test each
+        # operation in Cartesian reciprocal space because its fractional matrix
+        # may use a reordered magnetic-cell basis. It must preserve the physical
+        # slab plane and must not restrict to +-I within that plane.
         _flip_ops_emptied_2d = False
         if self.mode_2d and flip_ops:
-            vax = self.input_vacuum_axis
-            valid_flip_ops = [op for op in flip_ops
-                              if is_valid_2d_spin_flip(op, vax)]
+            try:
+                valid_flip_ops = [
+                    op for op in flip_ops
+                    if self._is_valid_2d_operation(op, centroid_result)
+                ]
+            except Exception as exc:
+                print(f"[Error] 2D spin-operation filtering failed: {exc}")
+                return False
             n_excluded = len(flip_ops) - len(valid_flip_ops)
             if valid_flip_ops:
                 print(f"[2D mode] In-plane spin splitting: YES "
                       f"({len(valid_flip_ops)} valid 2D spin-flip ops"
-                      + (f", {n_excluded} trivial C2/m ops excluded" if n_excluded else "")
+                      + (f", {n_excluded} invalid 2D ops excluded" if n_excluded else "")
                       + ").")
                 flip_ops = valid_flip_ops
             else:
-                print("[2D mode] In-plane spin splitting: NO -- every spin-flip "
-                      "operation acts as +-identity in-plane (C2z/mz/inversion "
-                      "type). This slab is not a 2D altermagnet; writing the "
-                      "ordinary in-plane path without a k' partner.")
+                print("[2D mode] In-plane spin splitting: NO -- no spin-flip "
+                      "operation both preserves the physical slab plane and "
+                      "acts nontrivially within it. This slab is not a 2D "
+                      "altermagnet; writing the ordinary in-plane path without "
+                      "a k' partner.")
                 flip_ops = []
                 _flip_ops_emptied_2d = True
 
@@ -2010,6 +2076,20 @@ class KPointsModifier:
             preset_choice=preset_flip_choice,
             operation_basis_label=operation_basis_label,
         )
+        if self.mode_2d:
+            try:
+                selected_is_valid_2d = self._is_valid_2d_operation(
+                    R, centroid_result
+                )
+            except Exception as exc:
+                print(f"[Error] Selected 2D spin operation could not be checked: {exc}")
+                return False
+            if not selected_is_valid_2d:
+                print(
+                    "[Error] Selected spin-flip operation does not preserve the "
+                    "physical slab plane or is trivial within it. Aborting."
+                )
+                return False
         # Step 4: Process k-points
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
