@@ -106,6 +106,35 @@ def test_qe_writer_keeps_k_to_k_prime_gap_disconnected(tmp_path):
     assert _qe_waypoints(output) == [("A", 30), ("k", 1), ("k'", 30), ("B", 1)]
 
 
+def test_writers_record_the_operation_source_basis(tmp_path):
+    """The recorded R is the raw Step-3 selection, so the header must name
+    the operation-source basis (magnetic primitive cell in the magnetic
+    route) instead of claiming a generic input cell."""
+    modifier = KPointsModifier()
+    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
+    points = [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]]
+    matrix = np.eye(3)
+    label = "magnetic primitive cell 'CASE_magnetic_primitive.mcif'"
+
+    vasp_out = tmp_path / "KPOINTS_alter"
+    assert modifier.write_kpoints_file(
+        points, str(vasp_out), matrix, "Option 2", operation_basis_label=label
+    )
+    assert vasp_out.read_text(encoding="utf-8").splitlines()[0].startswith(
+        f"Selected spin-flip operation (Option 2) in {label} "
+        "real-space fractional basis:"
+    )
+
+    qe_out = tmp_path / "KPOINTS_alter_qe"
+    assert modifier.write_kpoints_file_qe(
+        points, str(qe_out), matrix, "Option 2", operation_basis_label=label
+    )
+    assert qe_out.read_text(encoding="utf-8").splitlines()[-1].startswith(
+        f"! Spin-flip operation (Option 2) in {label} "
+        "real-space fractional basis:"
+    )
+
+
 def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
         tmp_path, monkeypatch):
     modifier = KPointsModifier()

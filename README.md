@@ -100,11 +100,11 @@ Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
 IBZ centroid (standardized basis): [0.277778, 0.111111, 0.250000]
-IBZ centroid (input-cell basis): [0.277778, 0.111111, 0.250000]
+IBZ centroid (KPOINTS output basis): [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Spin-flip operation
 Found 12 spin-flip operations R.
-  Note: R is in the input-cell fractional basis;
+  Note: R is in the submitted structure 'POSCAR' fractional basis;
   rotation axis/mirror plane indices are in the reciprocal (b1,b2,b3) basis.
 Default R: Option 1
 Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': 1

@@ -920,16 +920,21 @@ class KPointsModifier:
 
     def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
                            transformation_matrix: Optional[np.ndarray] = None,
-                           transformation_label: Optional[str] = None):
+                           transformation_label: Optional[str] = None,
+                           operation_basis_label: Optional[str] = None):
         """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
         try:
             if transformation_matrix is not None:
                 flat_matrix = np.array(transformation_matrix).flatten()
                 matrix_str = " ".join(f"{x:.8f}" for x in flat_matrix)
                 label = f" ({transformation_label})" if transformation_label else ""
+                # The recorded matrix is the raw Step-3 selection, so its basis
+                # is the operation source's -- the magnetic primitive cell in
+                # the magnetic route, not necessarily the submitted cell.
+                basis_name = operation_basis_label or "operation-source structure"
                 first_line = (
-                    f"Selected spin-flip operation{label} in input-cell "
-                    f"fractional basis: {matrix_str}\n"
+                    f"Selected spin-flip operation{label} in {basis_name} "
+                    f"real-space fractional basis: {matrix_str}\n"
                 )
             else:
                 first_line = f"{self.header_lines[0]}\n"
@@ -972,7 +977,8 @@ class KPointsModifier:
                               output_file: str = "KPOINTS_alter_qe",
                               transformation_matrix: Optional[np.ndarray] = None,
                               transformation_label: Optional[str] = None,
-                              ninterp: int = 30):
+                              ninterp: int = 30,
+                              operation_basis_label: Optional[str] = None):
         """Write KPOINTS in QE K_POINTS crystal_b format."""
         try:
             valid_pairs = self._valid_segment_pairs(new_kpoints)
@@ -1010,9 +1016,12 @@ class KPointsModifier:
                 flat = np.array(transformation_matrix).flatten()
                 mat_str = " ".join(f"{x:.8f}" for x in flat)
                 lbl = f" ({transformation_label})" if transformation_label else ""
+                # Same basis note as the VASP writer: the matrix is the raw
+                # Step-3 selection in the operation source's basis.
+                basis_name = operation_basis_label or "operation-source structure"
                 lines.append(
-                    f"! Spin-flip operation{lbl} in input-cell fractional basis: "
-                    f"{mat_str}\n"
+                    f"! Spin-flip operation{lbl} in {basis_name} "
+                    f"real-space fractional basis: {mat_str}\n"
                 )
             _atomic_write_text(output_file, "".join(lines))
             print(f"QE KPOINTS written to: {output_file}")
@@ -1426,13 +1435,15 @@ class KPointsModifier:
             code_choice = _choose_output_code()
             if code_choice == "qe":
                 write_ok = self.write_kpoints_file_qe(
-                    path_points, "KPOINTS_alter_qe", R_matrix, R_label
+                    path_points, "KPOINTS_alter_qe", R_matrix, R_label,
+                    operation_basis_label=operation_basis_label,
                 )
                 if write_ok:
                     write_qe_bandplot_config()
             else:
                 write_ok = self.write_kpoints_file(
-                    path_points, "KPOINTS_alter", R_matrix, R_label
+                    path_points, "KPOINTS_alter", R_matrix, R_label,
+                    operation_basis_label=operation_basis_label,
                 )
                 if write_ok and centroid_result is not None:
                     write_bandplot_lattice_config(

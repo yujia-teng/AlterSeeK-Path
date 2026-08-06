@@ -1,4 +1,4 @@
-Selected spin-flip operation (Option 1) in input-cell fractional basis: 0.00000000 -1.00000000 0.00000000 1.00000000 0.00000000 0.00000000 0.00000000 0.00000000 1.00000000
+Selected spin-flip operation (Option 1) in submitted structure 'case12_POSCAR' real-space fractional basis: 0.00000000 -1.00000000 0.00000000 1.00000000 0.00000000 0.00000000 0.00000000 0.00000000 1.00000000
    30
 Line-Mode
 Reciprocal

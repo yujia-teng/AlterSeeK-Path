@@ -276,6 +276,13 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
     _assert_standard_mcif_matches_vasp(out, POSCAR_221.stem, 2)
 
     kpoints_text = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
+    # The recorded matrix is the raw Step-3 selection, which on this route is
+    # expressed in the magnetic primitive basis -- not the submitted 2x2x1
+    # calculation cell. The header must name that basis explicitly.
+    assert kpoints_text.splitlines()[0].startswith(
+        "Selected spin-flip operation (Option 1) in magnetic primitive cell "
+        "'SUPERCELL_221_magnetic_primitive.mcif' real-space fractional basis:"
+    ), kpoints_text.splitlines()[0]
     k_rows = [
         line.split()
         for line in kpoints_text.splitlines()
