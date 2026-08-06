@@ -304,6 +304,61 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
     )
 
 
+def test_custom_path_in_magnetic_route_reads_submitted_basis(
+    tmp_path,
+    monkeypatch,
+):
+    """A custom Step-1 path is defined in the submitted structure's basis.
+
+    The 221 supercell run analyzes symmetry in the six-site magnetic
+    primitive cell while keeping the submitted 2x2x1 cell as the output
+    basis. A custom endpoint given in the submitted basis must therefore
+    come back out numerically unchanged in KPOINTS_alter. Interpreting the
+    file in the magnetic analysis basis instead (the old behavior) rescales
+    the in-plane coordinates and breaks this round trip.
+    """
+    from alterseek.kpoints import KPointsModifier
+    from alterseek import ssg_setting
+
+    if ssg_setting.find_spin_group_acc_primitive_from_data is None:
+        pytest.skip("findspingroup acc-primitive setting unavailable")
+
+    custom_path = tmp_path / "KPATH_custom.in"
+    custom_path.write_text(
+        "Custom path in the submitted SUPERCELL_221 basis\n"
+        "   30\n"
+        "Line-Mode\n"
+        "Reciprocal\n"
+        "   0.0000000000   0.0000000000   0.0000000000     GAMMA\n"
+        "   0.6666666667  -1.3333333333   0.0000000000     K\n",
+        encoding="utf-8",
+    )
+
+    answers = "\n".join([
+        str(POSCAR_221),
+        "0 0 1",
+        "4*8 4*-8 16*0",
+        str(custom_path),
+        "1",
+        "",
+    ]) + "\n"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
+
+    assert KPointsModifier(magnetic_setting=True).interactive_modify() is True
+
+    kpoints_text = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
+    rows = {}
+    for line in kpoints_text.splitlines():
+        parts = line.split()
+        if len(parts) == 4 and parts[-1] in {"GAMMA", "K"}:
+            rows[parts[-1]] = [float(value) for value in parts[:3]]
+    assert rows["GAMMA"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-8)
+    assert rows["K"] == pytest.approx(
+        [0.6666666667, -1.3333333333, 0.0], abs=1e-8
+    )
+
+
 def test_changed_calculation_cell_builds_butterfly_path(
     tmp_path,
     monkeypatch,

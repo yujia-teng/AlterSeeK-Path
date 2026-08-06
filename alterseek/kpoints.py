@@ -451,13 +451,17 @@ class KPointsModifier:
             return False
 
     def convert_custom_path_from_input_basis(self, centroid_result) -> None:
-        """Convert a submitted KPOINTS path from the input-cell reciprocal
-        basis into the standardized primitive basis used internally.
+        """Convert a submitted KPOINTS path from the submitted structure's
+        reciprocal basis into the standardized primitive basis used internally.
 
         Custom path files are defined to use the reciprocal basis of the
-        structure submitted at Step 0. Output uses the magnetic primitive
-        cell's basis, which differs whenever the magnetic order lowers the
-        lattice symmetry, so input and output matrices are kept distinct.
+        structure file submitted at Step 0 -- the only cell the user has in
+        hand when writing one. That is not always the analysis cell:
+        ``b_matrix_input`` belongs to the magnetic marker helper in the
+        magnetic-cell route, so the submitted basis is carried separately as
+        ``b_matrix_submitted``. Output uses the calculation cell's basis,
+        which differs whenever the magnetic order changes the cell, so source
+        and output matrices are kept distinct.
         """
         if not self.kpoints_data:
             raise ValueError("No custom KPOINTS path has been loaded.")
@@ -468,17 +472,22 @@ class KPointsModifier:
             dtype=float,
         )
         b_internal = b_standard @ rotation
-        b_input = np.asarray(centroid_result['b_matrix_input'], dtype=float)
+        b_submitted = np.asarray(
+            centroid_result.get(
+                'b_matrix_submitted', centroid_result['b_matrix_input']
+            ),
+            dtype=float,
+        )
         b_output = np.asarray(
-            centroid_result.get('b_matrix_output', b_input),
+            centroid_result.get('b_matrix_output', b_submitted),
             dtype=float,
         )
 
         try:
-            input_to_internal = b_input @ np.linalg.inv(b_internal)
+            submitted_to_internal = b_submitted @ np.linalg.inv(b_internal)
             converted = []
             for point in self.kpoints_data:
-                frac = np.asarray(point[:3], dtype=float) @ input_to_internal
+                frac = np.asarray(point[:3], dtype=float) @ submitted_to_internal
                 converted.append([float(frac[0]), float(frac[1]), float(frac[2]), point[3]])
         except Exception as exc:
             raise RuntimeError(f"Custom KPOINTS basis conversion failed: {exc}") from exc
@@ -487,7 +496,8 @@ class KPointsModifier:
         self.kpoints_basis_matrix = b_standard
         self.kpoints_basis_rotation = rotation
         self.output_basis_matrix = b_output
-        print("[Basis] Converted custom KPOINTS path from input-cell to standardized basis.")
+        print("[Basis] Converted custom KPOINTS path from the submitted "
+              "structure's basis to the standardized basis.")
 
     def _kpoint_for_output_basis(self, point: List) -> List:
         """Convert an internal k-point to the POSCAR reciprocal basis for VASP."""
@@ -1553,6 +1563,19 @@ class KPointsModifier:
                             save_pdf=save_pdf,
                         )
                         if self.magnetic_setting and magnetic_setting_counts is not None:
+                            # In this route compute_centroid saw the marker
+                            # helper, so its b_matrix_input is the magnetic
+                            # primitive basis. Custom Step-1 path files are
+                            # defined in the submitted structure's basis;
+                            # keep that basis available for their conversion.
+                            submitted_lattice = magnetic_setting_counts.get(
+                                "submitted_lattice")
+                            if submitted_lattice is not None:
+                                centroid_result["b_matrix_submitted"] = (
+                                    2 * np.pi * np.linalg.inv(
+                                        np.asarray(submitted_lattice, dtype=float)
+                                    ).T
+                                )
                             try:
                                 magnetic_setting_outputs = finalize_magnetic_setting_outputs(
                                     magnetic_setting_counts,
