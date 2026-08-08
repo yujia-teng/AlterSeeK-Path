@@ -311,6 +311,192 @@ def test_required_magnetic_finalization_failure_aborts(
     assert not (tmp_path / "KPOINTS_alter").exists()
 
 
+def test_output_basis_step_failure_aborts_instead_of_being_recorded(
+    tmp_path, monkeypatch, capsys
+):
+    """A failure after compute_centroid() must abort, not be stashed and ignored.
+
+    The whole post-centroid block used to sit inside the same handler as
+    compute_centroid() itself, which only stored the exception in
+    ``centroid_error``. That variable is consulted solely when
+    ``centroid_result is None``, so a failure raised *after* the centroid was
+    assigned was silently discarded: the run continued with a healthy-looking
+    ``centroid_result`` that had no ``b_matrix_output``, Step 1 fell back to
+    ``b_matrix_input`` -- the marker helper's basis in the magnetic route -- and
+    KPOINTS_alter was written in the wrong reciprocal basis with nothing shown
+    to the user.
+
+    A singular ``submitted_lattice`` reproduces it: recording the submitted
+    reciprocal basis inverts that matrix, which is the first unguarded step
+    after the centroid is in hand.
+    """
+    from alterseek import kpoints as kpoints_module
+
+    structure = tmp_path / "POSCAR"
+    structure.write_text("test structure placeholder\n", encoding="utf-8")
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = "1 -1"\n',
+        encoding="utf-8",
+    )
+    # Complete enough to get past the Step 0 summary, so that if the abort is
+    # ever lost again the run reaches Step 1 and the assertions below describe
+    # the real regression rather than a gap in this fixture.
+    sf_result = {
+        "structure_file": "POSCAR",
+        "g0_number": 61,
+        "g0_symbol": "Pbca",
+        "nonmagnetic_spacegroup_number": 205,
+        "nonmagnetic_sites": 2,
+        "nonmagnetic_lattice": "cP1",
+        "num_atoms": 2,
+        "space_group": "Pa-3 (205)",
+        "point_group": "m-3",
+        "laue_group": "m-3",
+        "magnetic_phase": "AFM(Altermagnet)",
+        "ssg_index": "61.1.1.1.L",
+        "ssg_symbol": "test",
+        "magnetic_space_group_without_soc": "Pb'c'a (BNS 61.436)",
+        "actual_spin_flip_point_operations": 4,
+        "actual_spin_preserve_point_operations": 4,
+    }
+    mag_setting = {
+        "helper_path": "magnetic_marker_input.vasp",
+        "seekpath_type_numbers": None,
+        "operation_basis_label": "magnetic primitive test cell",
+        "magnetic_cell_sites": 2,
+        "spin_flip_operations": 1,
+        # Singular: np.linalg.inv() on it raises, standing in for any failure
+        # in the block that decides the KPOINTS output basis.
+        "submitted_lattice": np.zeros((3, 3)),
+    }
+    centroid_result = {"display_figures": []}
+
+    def forbid_finalizer(*args, **kwargs):
+        raise AssertionError(
+            "output-basis finalization must not run after the submitted basis "
+            "could not be recorded"
+        )
+
+    monkeypatch.chdir(tmp_path)
+    # Answers for the Step 1 manual-file prompt the old code fell through to.
+    # Never consumed once the abort is in place.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("KPATH.in\n"))
+    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
+    monkeypatch.setattr(
+        kpoints_module,
+        "prepare_magnetic_setting_files",
+        lambda *args, **kwargs: mag_setting,
+    )
+    monkeypatch.setattr(
+        kpoints_module, "compute_centroid", lambda *args, **kwargs: centroid_result
+    )
+    monkeypatch.setattr(
+        kpoints_module, "finalize_magnetic_setting_outputs", forbid_finalizer
+    )
+
+    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    output = capsys.readouterr().out
+    assert "Could not establish the KPOINTS output basis" in output
+    assert "Aborting" in output
+    # The old handler reported every failure as a Step 1 problem and offered a
+    # manual KPOINTS file instead.
+    assert "Falling back to manual file input" not in output
+    assert "b_matrix_output" not in centroid_result
+    assert not (tmp_path / "KPOINTS_alter").exists()
+    assert not (tmp_path / "KPOINTS_alter_qe").exists()
+
+
+def test_centroid_failure_is_reported_once_under_its_own_headline(
+    tmp_path, monkeypatch, capsys
+):
+    """A centroid failure is reported where it happened, and not retried.
+
+    Two defects used to compound here. The failure was stashed in
+    ``centroid_error``, re-raised inside the Step 1 ``try``, and caught again,
+    so every centroid failure reached the user as ``Auto path generation
+    failed`` -- the wrong headline, with the original traceback discarded.
+    Then Step 2 called ``compute_centroid()`` a third time, with identical
+    arguments, for the same structure that had just failed; that call could
+    only fail again, and reported the same problem a second time in different
+    words.
+    """
+    from alterseek import kpoints as kpoints_module
+
+    (tmp_path / "POSCAR").write_text("test structure placeholder\n", encoding="utf-8")
+    # A valid line-mode path, so Step 1's manual fallback succeeds and the run
+    # reaches Step 2 -- where the redundant third call used to live.
+    (tmp_path / "KPATH.in").write_text(
+        "manual path\n"
+        "  20\n"
+        "Line-Mode\n"
+        "Reciprocal\n"
+        "  0.0000000000  0.0000000000  0.0000000000     GAMMA\n"
+        "  0.5000000000  0.0000000000  0.0000000000     X\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = "1 -1"\n'
+        'output_code = "vasp"\n',
+        encoding="utf-8",
+    )
+    # mmm passes the Laue gate, and G0 == the nonmagnetic group with equal site
+    # counts keeps the run on the ordinary route (no magnetic cell to build).
+    sf_result = {
+        "structure_file": "POSCAR",
+        "g0_number": 61,
+        "g0_symbol": "Pbca",
+        "nonmagnetic_spacegroup_number": 61,
+        "nonmagnetic_sites": 2,
+        "nonmagnetic_lattice": "oP1",
+        "num_atoms": 2,
+        "space_group": "Pbca (61)",
+        "point_group": "mmm",
+        "laue_group": "mmm",
+        "magnetic_phase": "AFM(Altermagnet)",
+        "ssg_index": "61.1.1.1.L",
+        "ssg_symbol": "test",
+        "magnetic_space_group_without_soc": "Pb'c'a (BNS 61.436)",
+        "actual_spin_flip_point_operations": 0,
+        "actual_spin_preserve_point_operations": 8,
+        "spin_flip_operations": 0,
+    }
+
+    calls = []
+
+    def failing_centroid(*args, **kwargs):
+        calls.append(args[0] if args else None)
+        raise RuntimeError("synthetic seekpath failure")
+
+    answers = (
+        "KPATH.in\n"      # Step 1 manual file
+        "0.1 0.2 0.3\n"   # Step 2 general k-point, entered by hand
+        "vasp\n"          # Step 5 output code
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
+    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
+    monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
+
+    kpoints_module.KPointsModifier(magnetic_setting=False).interactive_modify()
+    output = capsys.readouterr().out
+
+    # Exactly one attempt for this structure -- the retry in Step 2 is gone.
+    assert len(calls) == 1, f"compute_centroid called {len(calls)} times"
+    assert "IBZ centroid construction failed" in output
+    assert "synthetic seekpath failure" in output
+    # The old, misleading headline and the old duplicate second report.
+    assert "Auto path generation failed" not in output
+    assert "Centroid computation failed" not in output
+
+
 def test_missing_standardized_diagnostic_does_not_skip_required_basis_finalization(
     tmp_path, capsys
 ):

@@ -1430,6 +1430,14 @@ class KPointsModifier:
                     return False
             return True
 
+        def _prompt_manual_path():
+            """Step 1 fallback: ask for a KPOINTS/KPATH.in file and load it."""
+            print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
+            filename = input().strip()
+            if not filename:
+                filename = "KPATH.in"
+            return _load_custom_path(filename)
+
         def _save_and_finish(path_points, R_matrix, R_label):
             """Step 5: choose the output code, write the KPOINTS file (plus
             its band-plot config), and show any deferred figures."""
@@ -1575,6 +1583,22 @@ class KPointsModifier:
                             figure_basename=_figure_basename(struct_file),
                             save_pdf=save_pdf,
                         )
+                    except Exception as e:
+                        # Only the centroid/path construction itself is
+                        # recoverable, and only by asking for a manual KPOINTS
+                        # file in Step 1. Everything after this call is handled
+                        # separately below, because failing there is not
+                        # recoverable at all.
+                        centroid_error = e
+                if centroid_result is not None:
+                    try:
+                        # This block decides the reciprocal basis KPOINTS is written
+                        # in, so a failure here aborts. Recording it and carrying on --
+                        # which one handler wrapped around compute_centroid() above
+                        # used to do -- left a healthy-looking centroid_result with no
+                        # 'b_matrix_output'. Step 1 then fell back to 'b_matrix_input',
+                        # which in the magnetic route is the marker helper's basis, and
+                        # KPOINTS_alter was written in the wrong basis with no error.
                         if self.magnetic_setting and magnetic_setting_counts is not None:
                             # In this route compute_centroid saw the marker
                             # helper, so its b_matrix_input is the magnetic
@@ -1693,8 +1717,12 @@ class KPointsModifier:
                                     f"standardized magnetic MCIF: {exc}"
                                 )
                         display_figures.extend(centroid_result.get('display_figures', []))
-                    except Exception as e:
-                        centroid_error = e
+                    except Exception as exc:
+                        print(
+                            "[Error] Could not establish the KPOINTS output "
+                            f"basis: {exc} Aborting."
+                        )
+                        return False
                 if magnetic_setting_counts is not None:
                     _step0_wrote_flip_file = (
                         magnetic_setting_counts.get('spin_flip_operations', 0) > 0
@@ -1797,11 +1825,9 @@ class KPointsModifier:
                           f"{sf_result['extended_spin_preserve_operations']} with translations)")
                     print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
-        if centroid_struct_file and CENTROID_AVAILABLE:
+        if centroid_struct_file and CENTROID_AVAILABLE and centroid_error is None:
             try:
                 if centroid_result is None:
-                    if centroid_error is not None:
-                        raise centroid_error
                     centroid_result = compute_centroid(
                         centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
                         defer_show=True, verbose=False,
@@ -1922,17 +1948,18 @@ class KPointsModifier:
                 print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
                 print(f"[Warning] Auto path generation failed: {e}")
                 print("Falling back to manual file input.")
-                print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
-                filename = input().strip()
-                if not filename: filename = "KPATH.in"
-                if not _load_custom_path(filename):
+                if not _prompt_manual_path():
                     return False
         else:
             print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-            print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
-            filename = input().strip()
-            if not filename: filename = "KPATH.in"
-            if not _load_custom_path(filename):
+            if centroid_error is not None:
+                # Reported here, at the step that has to work around it, rather
+                # than re-raised into the handler above -- that reported every
+                # centroid failure under the wrong headline ("Auto path
+                # generation failed") and discarded the original traceback.
+                print(f"[Warning] IBZ centroid construction failed: {centroid_error}")
+                print("Falling back to manual file input.")
+            if not _prompt_manual_path():
                 return False
 
         # Laue groups -1, -3, and m-3 do not have a one-dimensional,
@@ -1961,23 +1988,11 @@ class KPointsModifier:
                 print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
             except Exception as e:
                 print(f"[Warning] Centroid retrieval failed: {e}")
-        elif struct_file and CENTROID_AVAILABLE:
-            try:
-                result = compute_centroid(centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
-                                          defer_show=True, verbose=False,
-                                          seekpath_type_numbers=centroid_seekpath_type_numbers,
-                                          mode_2d=self.mode_2d,
-                                          input_vacuum_axis=self.input_vacuum_axis,
-                                          view_elev=view_elev, view_azim=view_azim,
-                                          symprec=symprec,
-                                          figure_basename=_figure_basename(struct_file),
-                                          save_pdf=save_pdf)
-                display_figures.extend(result.get('display_figures', []))
-                c = result['centroid_frac']
-                general_kpoint = [c[0], c[1], c[2]]
-                print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
-            except Exception as e:
-                print(f"[Warning] Centroid computation failed: {e}")
+        # No third compute_centroid() call here. Reaching Step 2 without a
+        # centroid means the call above already failed for this same structure,
+        # so retrying it with identical arguments only produced a second,
+        # differently worded report of the same failure. Step 2 asks for the
+        # k-point manually instead, which is what it does anyway.
 
         # Append centroid to spin_operations.txt for reference
         if general_kpoint is not None:
