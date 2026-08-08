@@ -244,3 +244,17 @@ def test_custom_path_uses_submitted_basis_not_magnetic_analysis_basis():
     assert modifier._kpoint_for_output_basis(modifier.kpoints_data[0])[:3] == pytest.approx(
         [0.5, 0.25, 0.0]
     )
+
+
+def test_custom_path_submitted_basis_does_not_evaluate_input_fallback():
+    modifier = KPointsModifier()
+    modifier.kpoints_data = [[0.5, 0.25, 0.0, "X"], [0.0, 0.0, 0.0, "GAMMA"]]
+    centroid_result = {
+        "b_matrix": np.diag([2.0, 2.0, 3.0]),
+        "b_matrix_submitted": np.diag([1.0, 2.0, 3.0]),
+        "seekpath_rotation_matrix": np.eye(3),
+    }
+
+    modifier.convert_custom_path_from_input_basis(centroid_result)
+
+    assert modifier.kpoints_data[0][:3] == pytest.approx([0.25, 0.25, 0.0])

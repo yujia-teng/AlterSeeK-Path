@@ -432,12 +432,12 @@ class KPointsModifier:
             dtype=float,
         )
         b_internal = b_standard @ rotation
-        b_submitted = np.asarray(
-            centroid_result.get(
-                'b_matrix_submitted', centroid_result['b_matrix_input']
-            ),
-            dtype=float,
+        b_submitted_source = (
+            centroid_result['b_matrix_submitted']
+            if 'b_matrix_submitted' in centroid_result
+            else centroid_result['b_matrix_input']
         )
+        b_submitted = np.asarray(b_submitted_source, dtype=float)
         b_output = np.asarray(
             centroid_result.get('b_matrix_output', b_submitted),
             dtype=float,
@@ -1365,12 +1365,7 @@ class KPointsModifier:
             input-cell basis to the standardized internal basis."""
             if not self.read_kpoints_file(custom_filename):
                 return False
-            if centroid_result is not None:
-                try:
-                    self.convert_custom_path_from_input_basis(centroid_result)
-                except Exception as exc:
-                    print(f"[Error] {exc}")
-                    return False
+            self.convert_custom_path_from_input_basis(centroid_result)
             return True
 
         def _save_and_finish(path_points, R_matrix, R_label):

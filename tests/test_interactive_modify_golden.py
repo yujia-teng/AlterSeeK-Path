@@ -143,6 +143,65 @@ def test_optional_spin_figure_failure_does_not_block_kpoints(
     assert (tmp_path / "KPOINTS_alter").exists()
 
 
+def test_optional_figure1_failure_does_not_block_kpoints(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import kpoints as kpoints_module
+
+    def fail_figure1(*args, **kwargs):
+        raise RuntimeError("synthetic Figure 1 failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(centroid_module, "setup_3d_ax", fail_figure1)
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "[Warning] Could not generate Figure 1" in output
+    assert "synthetic Figure 1 failure" in output
+    assert "IBZ centroid construction failed" not in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_custom_path_conversion_error_reaches_workflow_boundary(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import kpoints as kpoints_module
+
+    custom_path = tmp_path / "KPATH.in"
+    custom_path.write_text(
+        "Custom path\n30\nLine-Mode\nReciprocal\n"
+        "0.0 0.0 0.0 GAMMA\n0.5 0.0 0.0 X\n",
+        encoding="utf-8",
+    )
+    answers = "\n".join([
+        str(POSCAR), "0 0 1", "5 -5", str(custom_path)
+    ]) + "\n"
+
+    def fail_conversion(*args, **kwargs):
+        raise RuntimeError("synthetic custom-path conversion failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
+    monkeypatch.setattr(
+        kpoints_module.KPointsModifier,
+        "convert_custom_path_from_input_basis",
+        fail_conversion,
+    )
+
+    with pytest.raises(
+        RuntimeError, match="synthetic custom-path conversion failure"
+    ):
+        kpoints_module.KPointsModifier().interactive_modify()
+
+    output = capsys.readouterr().out
+    assert "Successfully read 2 k-points" in output
+    assert "[Error] synthetic custom-path conversion failure" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
 def test_display_failure_after_kpoints_write_remains_successful(
     tmp_path, monkeypatch, capsys
 ):

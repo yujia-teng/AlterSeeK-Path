@@ -637,68 +637,85 @@ def run(
     )
     elev1, azim1 = default_elev, default_azim
     fig1_path = os.path.join(output_dir, f'{fig_basename}_ibz_{sc_display}.png')
-    if show_plot and not mode_2d:
-        # Interactive mode: create the figure now. alterseek_path can defer
-        # the actual plt.show() call until all prompts and file writes finish.
-        # Opens at (default_elev, default_azim) so a fixed camera angle (e.g.
-        # matched across cases) is used unless the user rotates it manually.
-        fig1, ax1 = setup_3d_ax(fig1_title,
-                                bz_loops, b_matrix, bz_center, bz_span,
-                                elev=default_elev, azim=default_azim)
-        plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
-                 hull_labels=labels_list)
-        plt.tight_layout()
-        if defer_show:
-            def _save_fig1_after_show(fig=fig1, ax=ax1):
-                fig1s, ax1s = setup_3d_ax(fig1_title,
-                                          bz_loops, b_matrix, bz_center, bz_span,
-                                          elev=ax.elev, azim=ax.azim,
-                                          dashed_back=True)
-                plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
-                         display_labels_plot, hull, centroid_cart,
-                         hull_pts=points_arr, lattice_type=sc_type,
-                         hull_labels=labels_list)
-                plt.tight_layout()
-                saved_paths = _save_figure(
-                    fig1s,
-                    fig1_path,
-                    extra_formats=("pdf",) if save_pdf else (),
-                    dpi=300,
-                    bbox_inches='tight',
-                )
-                plt.close(fig1s)
-                plt.close(fig)
-                _print_saved_paths(saved_paths)
-            fig1._alterseek_save_after_show = _save_fig1_after_show
-            display_figures.append(fig1)
-            elev1, azim1 = default_elev, default_azim
+    fig1 = None
+    fig1s = None
+    try:
+        if show_plot and not mode_2d:
+            # Interactive mode: create the figure now. alterseek_path can defer
+            # the actual plt.show() call until all prompts and file writes finish.
+            # Opens at (default_elev, default_azim) so a fixed camera angle (e.g.
+            # matched across cases) is used unless the user rotates it manually.
+            fig1, ax1 = setup_3d_ax(fig1_title,
+                                    bz_loops, b_matrix, bz_center, bz_span,
+                                    elev=default_elev, azim=default_azim)
+            plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
+                     hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
+                     hull_labels=labels_list)
+            plt.tight_layout()
+            if defer_show:
+                def _save_fig1_after_show(fig=fig1, ax=ax1):
+                    fig1s, ax1s = setup_3d_ax(
+                        fig1_title,
+                        bz_loops, b_matrix, bz_center, bz_span,
+                        elev=ax.elev, azim=ax.azim,
+                        dashed_back=True,
+                    )
+                    plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
+                             display_labels_plot, hull, centroid_cart,
+                             hull_pts=points_arr, lattice_type=sc_type,
+                             hull_labels=labels_list)
+                    plt.tight_layout()
+                    saved_paths = _save_figure(
+                        fig1s,
+                        fig1_path,
+                        extra_formats=("pdf",) if save_pdf else (),
+                        dpi=300,
+                        bbox_inches='tight',
+                    )
+                    plt.close(fig1s)
+                    plt.close(fig)
+                    _print_saved_paths(saved_paths)
+                fig1._alterseek_save_after_show = _save_fig1_after_show
+                display_figures.append(fig1)
+                elev1, azim1 = default_elev, default_azim
+            else:
+                plt.show()
+                elev1, azim1 = ax1.elev, ax1.azim
         else:
-            plt.show()
-            elev1, azim1 = ax1.elev, ax1.azim
-    else:
-        # Automated mode (called from alterseek_path): use default angles, no window
-        elev1, azim1 = default_elev, default_azim
+            # Automated mode (called from alterseek_path): use default angles,
+            # no window.
+            elev1, azim1 = default_elev, default_azim
 
-    # Render with dashed back-edges and save unless deferred post-show saving is active
-    # (skipped in 2D mode: Figures stay 3D-only and are not produced for slabs yet)
-    if not (show_plot and defer_show) and not mode_2d:
-        fig1s, ax1s = setup_3d_ax(fig1_title,
-                                  bz_loops, b_matrix, bz_center, bz_span,
-                                  elev=elev1, azim=azim1, dashed_back=True)
-        plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                 hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
-                 hull_labels=labels_list)
-        plt.tight_layout()
-        saved_paths = _save_figure(
-            fig1s,
-            fig1_path,
-            extra_formats=("pdf",) if save_pdf else (),
-            dpi=300,
-            bbox_inches='tight',
-        )
-        _print_saved_paths(saved_paths, verbose=verbose)
-        plt.close(fig1s)
+        # Render with dashed back-edges and save unless deferred post-show
+        # saving is active. Skipped in 2D mode, whose figures are generated by
+        # the separate 2D plotting route.
+        if not (show_plot and defer_show) and not mode_2d:
+            fig1s, ax1s = setup_3d_ax(fig1_title,
+                                      bz_loops, b_matrix, bz_center, bz_span,
+                                      elev=elev1, azim=azim1, dashed_back=True)
+            plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
+                     hull, centroid_cart, hull_pts=points_arr,
+                     lattice_type=sc_type, hull_labels=labels_list)
+            plt.tight_layout()
+            saved_paths = _save_figure(
+                fig1s,
+                fig1_path,
+                extra_formats=("pdf",) if save_pdf else (),
+                dpi=300,
+                bbox_inches='tight',
+            )
+            _print_saved_paths(saved_paths, verbose=verbose)
+            plt.close(fig1s)
+    except Exception as exc:
+        # Figure 1 is the ordinary BZ/IBZ view, not part of the numerical
+        # centroid, path, or basis result. A Matplotlib or image-write failure
+        # must not turn valid analysis into a reported centroid failure.
+        display_figures.clear()
+        for figure in (fig1s, fig1):
+            if figure is not None:
+                plt.close(figure)
+        elev1, azim1 = default_elev, default_azim
+        print(f"[Warning] Could not generate Figure 1: {exc}")
 
     return {
         'sc_type': sc_display,
