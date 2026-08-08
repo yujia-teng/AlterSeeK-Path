@@ -1,9 +1,7 @@
 import numpy as np
 
-from alterseek.compute_centroid_hybrid import (
-    _parent_hint_from_cif_block,
-    _select_mcif_parent_symprec,
-)
+from alterseek.compute_centroid_hybrid import _select_mcif_parent_symprec
+from alterseek.mcif import _parent_hint_from_cif_block
 
 
 def test_parent_hint_reads_declared_child_transform():

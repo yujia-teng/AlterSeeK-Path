@@ -25,8 +25,8 @@ from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
 )
+from .atomic_write import _atomic_write_text, _atomic_open_text
 from .io import (
-    _atomic_write_text,
     _load_magnetic_input_data,
     _write_seekpath_standard_mcif,
     write_bandplot_lattice_config,
@@ -504,15 +504,6 @@ class KPointsModifier:
         matrices = []
         unique = []
         current_matrix = []
-        if not os.path.exists(filename):
-            legacy = os.path.join(
-                os.path.dirname(filename),
-                "preserve_spin_operations.txt"
-                if os.path.basename(filename) == "spin_preserve_operations.txt"
-                else "flip_spin_operations.txt",
-            )
-            if filename != legacy and os.path.exists(legacy):
-                filename = legacy
         try:
             with open(filename, 'r', encoding='utf-8-sig') as f:
                 lines = f.readlines()
@@ -1209,7 +1200,8 @@ class KPointsModifier:
                             transformation_matrix.append([float(x) for x in row_input])
                             break
                         print("Please enter exactly 3 numbers.")
-                    except ValueError: pass
+                    except ValueError:
+                        print("Please enter 3 numbers.")
             R = np.array(transformation_matrix)
             selected_transformation_label = "manual"
         return R, selected_transformation_label
@@ -1265,7 +1257,7 @@ class KPointsModifier:
                 ]
             def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
                 try:
-                    with open(filename, "w", encoding="utf-8", newline="\n") as f:
+                    with _atomic_open_text(filename) as f:
                         f.write(
                             f"# Left basis: {operation_basis_label} real-space "
                             "fractional basis (a1, a2, a3).\n"
@@ -1467,7 +1459,9 @@ class KPointsModifier:
                 if not isinstance(sf_result, dict):
                     print("[Error] Spin-symmetry analysis failed. Aborting.")
                     return False
-            if isinstance(sf_result, dict):
+            # Either a validated dict from the branch above, or None because the
+            # no-moments branch never ran the analysis.
+            if sf_result is not None:
                 magnetic_setting_counts = None
                 magnetic_setting_outputs = None
                 # Symmetry of the cell the path is actually built in. Stays None
@@ -1935,12 +1929,13 @@ class KPointsModifier:
         general_kpoint = None
 
         if centroid_result is not None:
-            try:
-                c = centroid_result['centroid_frac']
+            c = centroid_result.get('centroid_frac')
+            if c is None:
+                print("[Warning] The centroid result carries no IBZ centroid; "
+                      "enter the general k-point by hand.")
+            else:
                 general_kpoint = [c[0], c[1], c[2]]
                 print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
-            except Exception as e:
-                print(f"[Warning] Centroid retrieval failed: {e}")
         # No third compute_centroid() call here. Reaching Step 2 without a
         # centroid means the call above already failed for this same structure,
         # so retrying it with identical arguments only produced a second,
@@ -1963,8 +1958,9 @@ class KPointsModifier:
                     if out_k is not None:
                         f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
                                 f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
-            except Exception:
-                pass
+            except OSError as exc:
+                print("[Warning] Could not append the general k-point to "
+                      f"spin_operations.txt: {exc}")
 
         if general_kpoint is None:
             print("Format: kx ky kz (space-separated)")

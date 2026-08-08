@@ -8,8 +8,9 @@ import numpy as np
 
 from findspingroup import find_spin_group_acc_primitive_from_data
 
+from .atomic_write import _atomic_write_text, _atomic_open_text
 from .io import (
-    _atomic_write_text, _group_poscar_sites, _write_poscar, _write_without_species,
+    _group_poscar_sites, _write_poscar, _write_without_species,
     _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
     _load_magnetic_input_data, _write_seekpath_standard_mcif,
@@ -113,7 +114,7 @@ def _collect_point_ops_from_payload(operations, indices, include_inversion=True)
 
 
 def _write_operation_file(filename, rotations, source_indices, label, basis_label):
-    with open(filename, "w", encoding="utf-8", newline="\n") as f:
+    with _atomic_open_text(filename) as f:
         f.write(
             f"# Basis: {basis_label} real-space fractional basis "
             "(a1, a2, a3).\n"
@@ -240,7 +241,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         if norm > 1e-10:
             axis = moment / norm
             break
-    with open(magmom_path, "w", encoding="utf-8", newline="\n") as f:
+    with _atomic_open_text(magmom_path) as f:
         f.write("# Magnetic primitive POSCAR atom order matches:\n")
         f.write(f"# {real_path}\n")
         f.write(f"# Species order: {' '.join(symbols)}\n")
@@ -599,14 +600,14 @@ def finalize_magnetic_setting_outputs(
                 shutil.move(path, os.path.join(temp_dir, os.path.basename(path)))
             else:
                 os.remove(path)
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"[Warning] Could not clean up the intermediate {path}: {exc}")
 
     if not verbose_output and temp_dir and os.path.isdir(temp_dir):
         try:
             shutil.rmtree(temp_dir)
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"[Warning] Could not remove {temp_dir}: {exc}")
 
     result = {
         "b_matrix_output": b_matrix_output,

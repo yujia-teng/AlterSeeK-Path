@@ -16,6 +16,9 @@ import os
 import re
 import sympy as sp
 import warnings
+from .atomic_write import _atomic_open_text
+from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
+
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
 # 1e-3 A, not spglib's own 1e-5 default. Deposited structures routinely carry
@@ -25,52 +28,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.c
 # is 0.02 A, twenty times larger -- and changes none of the 54 reference cases.
 # Override per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
-_MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
-
-
-def _cif_scalar(value):
-    if isinstance(value, (list, tuple)):
-        return value[0] if value else None
-    return value
-
-
-def _parent_hint_from_cif_block(block):
-    """Return the declared nonmagnetic parent-cell index and SG, if present."""
-    transform = _cif_scalar(block.get("_parent_space_group.child_transform_Pp_abc"))
-    if not transform:
-        return None
-    try:
-        from pymatgen.symmetry.settings import JonesFaithfulTransformation
-
-        parsed = JonesFaithfulTransformation.from_transformation_str(str(transform))
-        index = int(round(abs(float(np.linalg.det(np.asarray(parsed.P, dtype=float))))))
-    except Exception:
-        return None
-    if index <= 1:
-        return None
-
-    parent_number = _cif_scalar(block.get("_parent_space_group.IT_number"))
-    try:
-        parent_number = int(parent_number)
-    except (TypeError, ValueError):
-        parent_number = None
-    return {"index": index, "spacegroup_number": parent_number}
-
-
-def _declared_mcif_parent_hint(filename):
-    if not str(filename).lower().endswith(".mcif"):
-        return None
-    try:
-        from pymatgen.io.cif import CifParser
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            blocks = CifParser(filename).as_dict()
-        if not blocks:
-            return None
-        return _parent_hint_from_cif_block(next(iter(blocks.values())))
-    except Exception:
-        return None
 
 
 def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, numbers,
@@ -202,7 +159,7 @@ def write_operations_to_file(
     basis_label="input structure",
 ):
     """Writes all spin symmetry operations to a text file."""
-    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+    with _atomic_open_text(filename) as f:
         f.write(
             f"# Basis: {basis_label} real-space fractional basis "
             "(a1, a2, a3).\n"
@@ -325,7 +282,7 @@ def write_flip_ops_to_file(
             print("\n[WARNING] No spin-flipping operations found! File not created.")
         return 0
 
-    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+    with _atomic_open_text(filename) as f:
         f.write(
             f"# Basis: {basis_label} real-space fractional basis "
             "(a1, a2, a3).\n"
@@ -365,7 +322,7 @@ def write_preserve_ops_to_file(
     if not preserve_ops:
         return 0
 
-    with open(filename, 'w', encoding='utf-8', newline='\n') as f:
+    with _atomic_open_text(filename) as f:
         f.write(
             f"# Basis: {basis_label} real-space fractional basis "
             "(a1, a2, a3).\n"

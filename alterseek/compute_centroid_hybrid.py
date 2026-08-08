@@ -39,63 +39,14 @@ from pymatgen.core import Structure
 from pymatgen.core.periodic_table import Element
 import spglib
 
+from .atomic_write import _atomic_open_text
+from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
+
 plt.rcParams["mathtext.fontset"] = "stix"
 
 # See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 rather than spglib's
 # 1e-5. Override per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
-_MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
-
-
-def _cif_scalar(value):
-    if isinstance(value, (list, tuple)):
-        return value[0] if value else None
-    return value
-
-
-def _parent_hint_from_cif_block(block):
-    """Return the declared nonmagnetic parent-cell index and SG, if present."""
-    transform = _cif_scalar(block.get("_parent_space_group.child_transform_Pp_abc"))
-    if not transform:
-        return None
-    try:
-        from pymatgen.symmetry.settings import JonesFaithfulTransformation
-
-        parsed = JonesFaithfulTransformation.from_transformation_str(str(transform))
-        index = int(round(abs(float(np.linalg.det(np.asarray(parsed.P, dtype=float))))))
-    except Exception:
-        return None
-    if index <= 1:
-        return None
-
-    parent_number = _cif_scalar(block.get("_parent_space_group.IT_number"))
-    try:
-        parent_number = int(parent_number)
-    except (TypeError, ValueError):
-        parent_number = None
-    parent_symbol = _cif_scalar(block.get("_parent_space_group.name_H-M_alt"))
-    return {
-        "index": index,
-        "spacegroup_number": parent_number,
-        "spacegroup_symbol": str(parent_symbol) if parent_symbol else None,
-        "transform": str(transform),
-    }
-
-
-def _declared_mcif_parent_hint(filename):
-    if not str(filename).lower().endswith(".mcif"):
-        return None
-    try:
-        from pymatgen.io.cif import CifParser
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            blocks = CifParser(filename).as_dict()
-        if not blocks:
-            return None
-        return _parent_hint_from_cif_block(next(iter(blocks.values())))
-    except Exception:
-        return None
 
 
 def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
@@ -162,7 +113,7 @@ def _write_seekpath_standard_poscar(lattice, positions, types, output_path, sour
             frac = np.mod(pos, 1.0)
             lines.append("   " + " ".join(f"{x:22.16f}" for x in frac) + f" {symbol}")
 
-    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+    with _atomic_open_text(output_path) as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -213,7 +164,7 @@ def _write_seekpath_basis_mapping(
         _fmt_matrix(rotation_matrix),
         "",
     ]
-    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+    with _atomic_open_text(output_path) as f:
         f.write("\n".join(lines))
 
 
@@ -540,10 +491,15 @@ def run(
                         with open(os.path.join(output_dir, "spin_operations.txt"),
                                   "a", encoding="utf-8", newline="\n") as f:
                             f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    except OSError as exc:
+                        print("[Warning] Could not record the symbolic IBZ "
+                              f"centroid: {exc}")
+            except Exception as exc:
+                # The symbolic centroid is a convenience record; the numeric
+                # centroid the path is built from is computed above and is
+                # unaffected. Say so rather than discarding it silently -- a
+                # permanently broken symbolic route was invisible before.
+                print(f"[Warning] Symbolic IBZ centroid unavailable: {exc}")
 
     # ---- Plotting ----
     bz_loops = get_bz_loops(b_matrix)
