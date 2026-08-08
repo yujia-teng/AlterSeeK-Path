@@ -10,16 +10,11 @@ import os
 import uuid
 import numpy as np
 
-try:
-    from .find_sf_operations import (
-        fit_magmoms_to_structure,
-        parse_cartesian_spin_axis,
-        parse_magmoms,
-    )
-except ImportError:  # pragma: no cover
-    fit_magmoms_to_structure = None
-    parse_cartesian_spin_axis = None
-    parse_magmoms = None
+from .find_sf_operations import (
+    fit_magmoms_to_structure,
+    parse_cartesian_spin_axis,
+    parse_magmoms,
+)
 
 
 def _atomic_write_text(path, text):
@@ -407,9 +402,6 @@ def _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart):
     lattice = np.array(structure.get_cell(), dtype=float)
     positions = np.array(structure.get_scaled_positions(), dtype=float)
     elements = structure.get_chemical_symbols()
-    if (parse_cartesian_spin_axis is None or parse_magmoms is None
-            or fit_magmoms_to_structure is None):
-        raise RuntimeError("find_sf_operations magnetic input parsers are not available.")
     axis = parse_cartesian_spin_axis(spin_axis_cart)
     scalars = parse_magmoms(moments_str) if moments_str else []
     scalars = fit_magmoms_to_structure(scalars, len(elements))

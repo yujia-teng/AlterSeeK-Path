@@ -6,14 +6,7 @@ import os
 import shutil
 import numpy as np
 
-try:
-    from findspingroup import (
-        find_spin_group_acc_primitive_from_data,
-    )
-    FIND_SG_MAGNETIC_SETTING_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    find_spin_group_acc_primitive_from_data = None
-    FIND_SG_MAGNETIC_SETTING_AVAILABLE = False
+from findspingroup import find_spin_group_acc_primitive_from_data
 
 from .io import (
     _atomic_write_text, _group_poscar_sites, _write_poscar, _write_without_species,
@@ -186,9 +179,6 @@ def _magnetic_primitive_ssg_operations(result):
 
 def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_cart=None, output_dir="."):
     """Write real magnetic primitive POSCAR/MCIF files from FindSpinGroup."""
-    if not FIND_SG_MAGNETIC_SETTING_AVAILABLE:
-        raise RuntimeError("FindSpinGroup accurate primitive API is not available.")
-
     # Use the same pymatgen-backed MCIF loader as the rest of AlterSeeK-Path
     # before entering FindSpinGroup's public from-data ACC-primitive route.
     # Pymatgen restores near-special fractional coordinates (for example,

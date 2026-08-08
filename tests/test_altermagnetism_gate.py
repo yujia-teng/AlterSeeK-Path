@@ -238,7 +238,6 @@ def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
         raise AssertionError("parent-cell centroid generation must not run")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
     monkeypatch.setattr(
         kpoints_module, "prepare_magnetic_setting_files", fail_construction
@@ -289,8 +288,6 @@ def test_required_magnetic_finalization_failure_aborts(
         return {}
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
-    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
     monkeypatch.setattr(
         kpoints_module,
@@ -383,8 +380,6 @@ def test_output_basis_step_failure_aborts_instead_of_being_recorded(
     # Answers for the Step 1 manual-file prompt the old code fell through to.
     # Never consumed once the abort is in place.
     monkeypatch.setattr(sys, "stdin", io.StringIO("KPATH.in\n"))
-    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
-    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
     monkeypatch.setattr(
         kpoints_module,
@@ -480,8 +475,6 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
-    monkeypatch.setattr(kpoints_module, "FIND_SF_AVAILABLE", True)
-    monkeypatch.setattr(kpoints_module, "CENTROID_AVAILABLE", True)
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 

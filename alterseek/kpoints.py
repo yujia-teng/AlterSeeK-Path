@@ -7,46 +7,20 @@ import os
 from typing import List, Optional
 import numpy as np
 
-try:
-    from .find_sf_operations import run as find_sf_run
-    FIND_SF_AVAILABLE = True
-except ImportError as _exc:
-    print(f"[Warning] find_sf_operations unavailable ({_exc}); "
-          "Step 0 spin-operation detection is disabled.")
-    find_sf_run = None
-    FIND_SF_AVAILABLE = False
+import matplotlib.pyplot as plt
 
-try:
-    from .compute_centroid_hybrid import run as compute_centroid
-    from .symmetry import (no_altermagnetism_reason,
-                          laue_group_from_spacegroup_number,
-                          point_group_from_spacegroup_number,
-                          is_valid_2d_spin_flip_cartesian,
-                          slab_plane_normal_cartesian,
-                          describe_spinflip_op)
-    from .plotting_3d import (plot_spin_flip_figure,
-                             plot_spin_bz_figure,
-                             plot_spin_bz_top_view_figure)
-    from .plotting_2d import plot_2d_figures
-    import matplotlib.pyplot as plt
-    CENTROID_AVAILABLE = True
-except ImportError as _exc:
-    print(f"[Warning] compute_centroid_hybrid/matplotlib unavailable ({_exc}); "
-          "centroid and figure generation are disabled.")
-    CENTROID_AVAILABLE = False
-    compute_centroid = None
-    no_altermagnetism_reason = None
-    laue_group_from_spacegroup_number = None
-    point_group_from_spacegroup_number = None
-    is_valid_2d_spin_flip_cartesian = None
-    slab_plane_normal_cartesian = None
-    plot_spin_flip_figure = None
-    plot_spin_bz_figure = None
-    plot_spin_bz_top_view_figure = None
-    describe_spinflip_op = None
-    plot_2d_figures = None
-    plt = None
-
+from .find_sf_operations import run as find_sf_run
+from .compute_centroid_hybrid import run as compute_centroid
+from .symmetry import (no_altermagnetism_reason,
+                       laue_group_from_spacegroup_number,
+                       point_group_from_spacegroup_number,
+                       is_valid_2d_spin_flip_cartesian,
+                       slab_plane_normal_cartesian,
+                       describe_spinflip_op)
+from .plotting_3d import (plot_spin_flip_figure,
+                          plot_spin_bz_figure,
+                          plot_spin_bz_top_view_figure)
+from .plotting_2d import plot_2d_figures
 from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
@@ -81,8 +55,6 @@ def _fmt_coord(value):
     text = f"{value:.10f}"
     return text[1:] if text.startswith("-") and float(text) == 0.0 else text
 
-
-_NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
 
 # Width of the "Nonmagnetic parent:" / "Magnetic primitive cell (G0):" labels,
 # so the SG/PG/Laue fields line up and a difference between the two cells is
@@ -146,8 +118,6 @@ def _g0_symmetry(sf_result, sites=None):
     cell's own coordinates would instead describe the moment-stripped crystal,
     which for a supercell altermagnet is still the higher-symmetry parent.
     """
-    if laue_group_from_spacegroup_number is None:
-        return None
     number = sf_result.get('g0_number')
     laue_group = laue_group_from_spacegroup_number(number)
     if laue_group is None:
@@ -210,13 +180,7 @@ def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
     if working_cell_symmetry is not None:
         return no_altermagnetism_reason(
             spacegroup=working_cell_symmetry['spacegroup_number'])
-    point_group = sf_result.get('point_group')
-    laue_group = sf_result.get('laue_group')
-    if no_altermagnetism_reason is not None:
-        return no_altermagnetism_reason(point_group)
-    if laue_group in _NO_ALTERMAGNETISM_LAUE_GROUPS:
-        return {'laue_group': laue_group, 'reason': 'No altermagnetism'}
-    return None
+    return no_altermagnetism_reason(sf_result.get('point_group'))
 
 
 def _validate_input_config(config):
@@ -301,8 +265,6 @@ class KPointsModifier:
         if not self.mode_2d:
             self.plane_normal_cartesian = None
             return
-        if slab_plane_normal_cartesian is None:
-            raise RuntimeError("Cartesian 2D plane helpers are unavailable")
         if submitted_lattice is None:
             b_input = np.asarray(centroid_result["b_matrix_input"], dtype=float)
             submitted_lattice = 2 * np.pi * np.linalg.inv(b_input).T
@@ -315,8 +277,6 @@ class KPointsModifier:
 
     def _is_valid_2d_operation(self, operation, centroid_result):
         """Classify an operation in its source basis against the physical plane."""
-        if is_valid_2d_spin_flip_cartesian is None:
-            raise RuntimeError("Cartesian 2D operation helpers are unavailable")
         if self.plane_normal_cartesian is None:
             raise RuntimeError("Physical 2D plane has not been configured")
         operation_basis = np.asarray(
@@ -1047,7 +1007,7 @@ class KPointsModifier:
             # of the tilted 3D BZ plate.
             basename = (os.path.splitext(os.path.basename(struct_file))[0]
                         if struct_file else 'output')
-            if plot_2d_figures is not None and 'b_matrix' in centroid_result:
+            if 'b_matrix' in centroid_result:
                 try:
                     plot_2d_figures(
                         centroid_result, general_kpoint, R_for_kpts,
@@ -1073,7 +1033,7 @@ class KPointsModifier:
                 azim=centroid_result.get('azim', 20),
             )
             figure_specs = []
-            if plot_spin_flip_figure is not None and 'b_matrix' in centroid_result:
+            if 'b_matrix' in centroid_result:
                 figure_specs.append((
                     plot_spin_flip_figure, 'spin-flip',
                     os.path.join(OUTPUT_DIR, f'{basename}_spinflip_{sc_type}.png'),
@@ -1121,18 +1081,16 @@ class KPointsModifier:
                     z_max = float(np.abs(bz_pts[:, 2]).max())
                     z_frac = 0.5 if sc_type in ('hR1', 'hR2') else 0.25
                     top_view_z0 = z_frac * z_max
-                if plot_spin_bz_figure is not None:
-                    figure_specs.append((
-                        plot_spin_bz_figure, 'spin-BZ',
-                        os.path.join(OUTPUT_DIR, f'{basename}_spinbz_{sc_type}.png'),
-                        dict(z0=top_view_z0, **spin_bz_kwargs, **view_kwargs),
-                    ))
-                if plot_spin_bz_top_view_figure is not None:
-                    figure_specs.append((
-                        plot_spin_bz_top_view_figure, 'spin-BZ top-view',
-                        os.path.join(OUTPUT_DIR, f'{basename}_spinbz_top_{sc_type}.png'),
-                        dict(z0=top_view_z0, **spin_bz_kwargs),
-                    ))
+                figure_specs.append((
+                    plot_spin_bz_figure, 'spin-BZ',
+                    os.path.join(OUTPUT_DIR, f'{basename}_spinbz_{sc_type}.png'),
+                    dict(z0=top_view_z0, **spin_bz_kwargs, **view_kwargs),
+                ))
+                figure_specs.append((
+                    plot_spin_bz_top_view_figure, 'spin-BZ top-view',
+                    os.path.join(OUTPUT_DIR, f'{basename}_spinbz_top_{sc_type}.png'),
+                    dict(z0=top_view_z0, **spin_bz_kwargs),
+                ))
             for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
                 try:
                     fig = plot_fn(
@@ -1167,8 +1125,6 @@ class KPointsModifier:
         positive integer within range) before calling, so a preset always
         selects its numbered option directly."""
         def _op_name(op_input):
-            if describe_spinflip_op is None:
-                return ""
             try:
                 if centroid_result is not None and 'b_matrix' in centroid_result:
                     b_mat = np.array(centroid_result['b_matrix'], dtype=float)
@@ -1194,8 +1150,7 @@ class KPointsModifier:
         selected_transformation_label = None
         if flip_ops:
             print(f"Found {len(flip_ops)} spin-flip operations R.")
-            _names_available = (describe_spinflip_op is not None
-                                and centroid_result is not None
+            _names_available = (centroid_result is not None
                                 and 'b_matrix' in centroid_result)
             if _names_available:
                 print(
@@ -1463,7 +1418,7 @@ class KPointsModifier:
                 print("[Error] KPOINTS output was not written.")
                 return False
             print("\nDone.")
-            if display_figures and plt is not None:
+            if display_figures:
                 print('Displaying generated figure(s)...')
                 plt.show()
                 for fig in display_figures:
@@ -1476,10 +1431,6 @@ class KPointsModifier:
             print(f"[Error] Structure file '{struct_file}' not found. Aborting "
                   "(not falling back to a possibly stale spin_flip_operations.txt).")
             return False
-        elif not FIND_SF_AVAILABLE:
-            print("[Note] find_sf_operations.py not found. Skipping Step 0.")
-            struct_file = None
-            centroid_struct_file = None
         else:
             is_mcif = struct_file.lower().endswith('.mcif')
             spin_axis_cart = None
@@ -1571,25 +1522,24 @@ class KPointsModifier:
                             "the nonmagnetic reference path. Aborting."
                         )
                         return False
-                if CENTROID_AVAILABLE:
-                    try:
-                        centroid_result = compute_centroid(
-                            centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
-                            defer_show=True, verbose=False,
-                            seekpath_type_numbers=centroid_seekpath_type_numbers,
-                            mode_2d=self.mode_2d,
-                            input_vacuum_axis=self.input_vacuum_axis,
-                            view_elev=view_elev, view_azim=view_azim, symprec=symprec,
-                            figure_basename=_figure_basename(struct_file),
-                            save_pdf=save_pdf,
-                        )
-                    except Exception as e:
-                        # Only the centroid/path construction itself is
-                        # recoverable, and only by asking for a manual KPOINTS
-                        # file in Step 1. Everything after this call is handled
-                        # separately below, because failing there is not
-                        # recoverable at all.
-                        centroid_error = e
+                try:
+                    centroid_result = compute_centroid(
+                        centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
+                        defer_show=True, verbose=False,
+                        seekpath_type_numbers=centroid_seekpath_type_numbers,
+                        mode_2d=self.mode_2d,
+                        input_vacuum_axis=self.input_vacuum_axis,
+                        view_elev=view_elev, view_azim=view_azim, symprec=symprec,
+                        figure_basename=_figure_basename(struct_file),
+                        save_pdf=save_pdf,
+                    )
+                except Exception as e:
+                    # Only the centroid/path construction itself is
+                    # recoverable, and only by asking for a manual KPOINTS
+                    # file in Step 1. Everything after this call is handled
+                    # separately below, because failing there is not
+                    # recoverable at all.
+                    centroid_error = e
                 if centroid_result is not None:
                     try:
                         # This block decides the reciprocal basis KPOINTS is written
@@ -1825,7 +1775,10 @@ class KPointsModifier:
                           f"{sf_result['extended_spin_preserve_operations']} with translations)")
                     print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
-        if centroid_struct_file and CENTROID_AVAILABLE and centroid_error is None:
+        # centroid_struct_file is the submitted structure, or the marker helper
+        # in the magnetic route -- never empty, so only a failed centroid sends
+        # Step 1 to the manual-file prompt.
+        if centroid_error is None:
             try:
                 if centroid_result is None:
                     centroid_result = compute_centroid(
@@ -1968,7 +1921,7 @@ class KPointsModifier:
         no_altermag = None
         if centroid_result is not None:
             no_altermag = centroid_result.get('no_altermagnetism')
-            if no_altermag is None and no_altermagnetism_reason is not None:
+            if no_altermag is None:
                 no_altermag = no_altermagnetism_reason(
                     centroid_result.get('point_group'),
                     centroid_result.get('spacegroup'),
