@@ -791,22 +791,28 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig, ax=ax):
-            fig_save, ax_save = setup_3d_ax("Spin-flip path connections",
-                                            bz_loops, b_matrix, bz_center, bz_span,
-                                            elev=ax.elev, azim=ax.azim,
-                                            dashed_back=True)
-            _draw(ax_save)
-            plt.tight_layout()
-            saved_paths = _save_figure(
-                fig_save,
-                output_path,
-                extra_formats=("pdf",) if save_pdf else (),
-                dpi=300,
-                bbox_inches='tight',
-            )
-            plt.close(fig_save)
-            plt.close(fig)
-            _print_saved_paths(saved_paths)
+            save_figure = None
+            try:
+                save_figure, save_ax = setup_3d_ax(
+                    "Spin-flip path connections",
+                    bz_loops, b_matrix, bz_center, bz_span,
+                    elev=ax.elev, azim=ax.azim,
+                    dashed_back=True,
+                )
+                _draw(save_ax)
+                plt.tight_layout()
+                saved_paths = _save_figure(
+                    save_figure,
+                    output_path,
+                    extra_formats=("pdf",) if save_pdf else (),
+                    dpi=300,
+                    bbox_inches='tight',
+                )
+                _print_saved_paths(saved_paths)
+            finally:
+                if save_figure is not None:
+                    plt.close(save_figure)
+                plt.close(fig)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
@@ -918,22 +924,28 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig, ax=ax):
-            fig_save, ax_save = setup_3d_ax("Spin-up (red) / Spin-down (blue) BZ",
-                                            bz_loops, b_matrix, bz_center, bz_span,
-                                            elev=ax.elev, azim=ax.azim,
-                                            dashed_back=True)
-            _draw(ax_save)
-            plt.tight_layout()
-            saved_paths = _save_figure(
-                fig_save,
-                output_path,
-                extra_formats=("pdf",) if save_pdf else (),
-                dpi=300,
-                bbox_inches='tight',
-            )
-            plt.close(fig_save)
-            plt.close(fig)
-            _print_saved_paths(saved_paths)
+            save_figure = None
+            try:
+                save_figure, save_ax = setup_3d_ax(
+                    "Spin-up (red) / Spin-down (blue) BZ",
+                    bz_loops, b_matrix, bz_center, bz_span,
+                    elev=ax.elev, azim=ax.azim,
+                    dashed_back=True,
+                )
+                _draw(save_ax)
+                plt.tight_layout()
+                saved_paths = _save_figure(
+                    save_figure,
+                    output_path,
+                    extra_formats=("pdf",) if save_pdf else (),
+                    dpi=300,
+                    bbox_inches='tight',
+                )
+                _print_saved_paths(saved_paths)
+            finally:
+                if save_figure is not None:
+                    plt.close(save_figure)
+                plt.close(fig)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 
@@ -1167,15 +1179,17 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     display_fig = fig if show_plot and defer_show else None
     if display_fig is not None:
         def _save_after_show(fig=fig):
-            saved_paths = _save_figure(
-                fig,
-                output_path,
-                extra_formats=("pdf",) if save_pdf else (),
-                dpi=300,
-                bbox_inches='tight',
-            )
-            plt.close(fig)
-            _print_saved_paths(saved_paths)
+            try:
+                saved_paths = _save_figure(
+                    fig,
+                    output_path,
+                    extra_formats=("pdf",) if save_pdf else (),
+                    dpi=300,
+                    bbox_inches='tight',
+                )
+                _print_saved_paths(saved_paths)
+            finally:
+                plt.close(fig)
         display_fig._alterseek_save_after_show = _save_after_show
         return display_fig
 

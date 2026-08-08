@@ -501,12 +501,6 @@ def run(
                 # permanently broken symbolic route was invisible before.
                 print(f"[Warning] Symbolic IBZ centroid unavailable: {exc}")
 
-    # ---- Plotting ----
-    bz_loops = get_bz_loops(b_matrix)
-    all_bz_pts = np.vstack(bz_loops)
-    bz_center = np.mean(all_bz_pts, axis=0)
-    bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
-
     # Selected band path. For doubled-IBZ cases, copied vertices may either be
     # included in project-defined path segments or appended as isolated
     # general-point anchors when no nonredundant high-symmetry edge is needed.
@@ -637,9 +631,21 @@ def run(
     )
     elev1, azim1 = default_elev, default_azim
     fig1_path = os.path.join(output_dir, f'{fig_basename}_ibz_{sc_display}.png')
+    bz_loops = None
+    bz_center = None
+    bz_span = None
     fig1 = None
     fig1s = None
     try:
+        # The BZ wireframe is presentation data used only by Figures 1-4.
+        # Keep its construction inside the same optional boundary as Figure 1
+        # so a plotting-geometry failure cannot invalidate the already-computed
+        # centroid, path, or reciprocal-basis result.
+        bz_loops = get_bz_loops(b_matrix)
+        all_bz_pts = np.vstack(bz_loops)
+        bz_center = np.mean(all_bz_pts, axis=0)
+        bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
+
         if show_plot and not mode_2d:
             # Interactive mode: create the figure now. alterseek_path can defer
             # the actual plt.show() call until all prompts and file writes finish.
@@ -654,27 +660,31 @@ def run(
             plt.tight_layout()
             if defer_show:
                 def _save_fig1_after_show(fig=fig1, ax=ax1):
-                    fig1s, ax1s = setup_3d_ax(
-                        fig1_title,
-                        bz_loops, b_matrix, bz_center, bz_span,
-                        elev=ax.elev, azim=ax.azim,
-                        dashed_back=True,
-                    )
-                    plot_ibz(ax1s, kpoints_cart_plot, kpath_plot,
-                             display_labels_plot, hull, centroid_cart,
-                             hull_pts=points_arr, lattice_type=sc_type,
-                             hull_labels=labels_list)
-                    plt.tight_layout()
-                    saved_paths = _save_figure(
-                        fig1s,
-                        fig1_path,
-                        extra_formats=("pdf",) if save_pdf else (),
-                        dpi=300,
-                        bbox_inches='tight',
-                    )
-                    plt.close(fig1s)
-                    plt.close(fig)
-                    _print_saved_paths(saved_paths)
+                    save_figure = None
+                    try:
+                        save_figure, save_ax = setup_3d_ax(
+                            fig1_title,
+                            bz_loops, b_matrix, bz_center, bz_span,
+                            elev=ax.elev, azim=ax.azim,
+                            dashed_back=True,
+                        )
+                        plot_ibz(save_ax, kpoints_cart_plot, kpath_plot,
+                                 display_labels_plot, hull, centroid_cart,
+                                 hull_pts=points_arr, lattice_type=sc_type,
+                                 hull_labels=labels_list)
+                        plt.tight_layout()
+                        saved_paths = _save_figure(
+                            save_figure,
+                            fig1_path,
+                            extra_formats=("pdf",) if save_pdf else (),
+                            dpi=300,
+                            bbox_inches='tight',
+                        )
+                        _print_saved_paths(saved_paths)
+                    finally:
+                        if save_figure is not None:
+                            plt.close(save_figure)
+                        plt.close(fig)
                 fig1._alterseek_save_after_show = _save_fig1_after_show
                 display_figures.append(fig1)
                 elev1, azim1 = default_elev, default_azim

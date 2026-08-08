@@ -165,6 +165,61 @@ def test_optional_figure1_failure_does_not_block_kpoints(
     assert (tmp_path / "KPOINTS_alter").exists()
 
 
+def test_optional_bz_geometry_failure_does_not_block_kpoints(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import kpoints as kpoints_module
+
+    def fail_bz_geometry(*args, **kwargs):
+        raise RuntimeError("synthetic BZ geometry failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(centroid_module, "get_bz_loops", fail_bz_geometry)
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "[Warning] Could not generate Figure 1" in output
+    assert "synthetic BZ geometry failure" in output
+    assert "IBZ centroid construction failed" not in output
+    assert "Spin figures were skipped" in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_deferred_figure_failure_does_not_skip_later_saves_or_cleanup(
+    monkeypatch, capsys
+):
+    from alterseek import kpoints as kpoints_module
+
+    events = []
+    closed = []
+
+    class DeferredFigure:
+        def __init__(self, name, fail=False):
+            self.name = name
+
+            def save_after_show():
+                events.append(name)
+                if fail:
+                    raise RuntimeError(f"synthetic {name} save failure")
+
+            self._alterseek_save_after_show = save_after_show
+
+    first = DeferredFigure("first", fail=True)
+    second = DeferredFigure("second")
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: events.append("show"))
+    monkeypatch.setattr(kpoints_module.plt, "close", closed.append)
+
+    kpoints_module._display_and_save_figures([first, second])
+
+    assert events == ["show", "first", "second"]
+    assert closed == [first, second]
+    output = capsys.readouterr().out
+    assert "synthetic first save failure" in output
+
+
 def test_custom_path_conversion_error_reaches_workflow_boundary(
     tmp_path, monkeypatch, capsys
 ):

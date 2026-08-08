@@ -80,6 +80,41 @@ def _figure_basename(struct_file):
     return os.path.splitext(os.path.basename(struct_file))[0]
 
 
+def _display_and_save_figures(display_figures):
+    """Display deferred figures, save each independently, and always close it.
+
+    Figure display and persistence are optional after KPOINTS has been written.
+    One failed window or save must neither change that successful result nor
+    prevent later figures from being saved and released.
+    """
+    print('Displaying generated figure(s)...')
+    try:
+        plt.show()
+    except Exception as exc:
+        print(
+            "[Warning] Could not display/save generated figures: "
+            f"{exc}"
+        )
+
+    for fig in display_figures:
+        try:
+            save_after_show = getattr(
+                fig, '_alterseek_save_after_show', None
+            )
+            if save_after_show is not None:
+                save_after_show()
+        except Exception as exc:
+            print(
+                "[Warning] Could not display/save generated figures: "
+                f"{exc}"
+            )
+        finally:
+            try:
+                plt.close(fig)
+            except Exception as exc:
+                print(f"[Warning] Could not close generated figure: {exc}")
+
+
 def _cell_suffix(sites, lattice_tag):
     """Trailing size/lattice tag describing the cell on that line."""
     parts = []
@@ -1007,6 +1042,12 @@ class KPointsModifier:
                 except Exception as _e:
                     print(f"[Warning] Could not generate 2D figures: {_e}")
         elif centroid_result is not None:
+            if centroid_result.get('bz_loops') is None:
+                print(
+                    "[Warning] Spin figures were skipped because optional "
+                    "BZ figure geometry is unavailable."
+                )
+                return
             basename = (os.path.splitext(os.path.basename(struct_file))[0]
                         if struct_file else 'output')
             sc_type = centroid_result.get('sc_type', 'BZ')
@@ -1053,8 +1094,7 @@ class KPointsModifier:
                 # though the actual 3D BZ solid still spans real Cartesian
                 # kz range. Use the true kz half-extent of the BZ
                 # boundary itself instead, which is robust to orientation.
-                if (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')) \
-                        and 'bz_loops' in centroid_result:
+                if (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')):
                     # Rhombohedral (hR1/hR2) and cubic AM point groups
                     # (432/-43m/m-3m) reaching this branch have no vertical
                     # mirror, so a kz=0 (Gamma-centered) cut sits on a
@@ -1394,20 +1434,7 @@ class KPointsModifier:
                 return False
             print("\nDone.")
             if display_figures:
-                print('Displaying generated figure(s)...')
-                try:
-                    plt.show()
-                    for fig in display_figures:
-                        save_after_show = getattr(
-                            fig, '_alterseek_save_after_show', None
-                        )
-                        if save_after_show is not None:
-                            save_after_show()
-                except Exception as exc:
-                    print(
-                        "[Warning] Could not display/save generated figures: "
-                        f"{exc}"
-                    )
+                _display_and_save_figures(display_figures)
             return True
 
         if not os.path.exists(struct_file):
