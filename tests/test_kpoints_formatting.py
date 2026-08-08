@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from alterseek import kpoints as kpoints_module
 from alterseek.kpoints import KPointsModifier, _fmt_coord
 
 
@@ -138,6 +139,7 @@ def test_writers_record_the_operation_source_basis(tmp_path):
 def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
         tmp_path, monkeypatch):
     modifier = KPointsModifier()
+    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
     output = tmp_path / "KPOINTS_alter"
     output.write_text("keep me\n", encoding="utf-8")
     calls = 0
@@ -150,9 +152,10 @@ def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
         return point
 
     monkeypatch.setattr(modifier, "_kpoint_for_output_basis", fail_on_second_point)
-    assert not modifier.write_kpoints_file(
-        [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
-    )
+    with pytest.raises(RuntimeError, match="synthetic conversion failure"):
+        modifier.write_kpoints_file(
+            [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
+        )
     assert output.read_text(encoding="utf-8") == "keep me\n"
 
 
@@ -166,9 +169,37 @@ def test_qe_writer_does_not_damage_existing_file_on_conversion_failure(
         raise RuntimeError("synthetic conversion failure")
 
     monkeypatch.setattr(modifier, "_kpoint_for_output_basis", fail_conversion)
-    assert not modifier.write_kpoints_file_qe(
+    with pytest.raises(RuntimeError, match="synthetic conversion failure"):
+        modifier.write_kpoints_file_qe(
+            [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
+        )
+    assert output.read_text(encoding="utf-8") == "keep me\n"
+
+
+@pytest.mark.parametrize(
+    ("writer_name", "filename"),
+    [
+        ("write_kpoints_file", "KPOINTS_alter"),
+        ("write_kpoints_file_qe", "KPOINTS_alter_qe"),
+    ],
+)
+def test_writers_report_persistence_failure_without_damaging_existing_file(
+    tmp_path, monkeypatch, capsys, writer_name, filename
+):
+    modifier = KPointsModifier()
+    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
+    output = tmp_path / filename
+    output.write_text("keep me\n", encoding="utf-8")
+
+    def fail_persistence(path, text):
+        raise PermissionError("synthetic permission failure")
+
+    monkeypatch.setattr(kpoints_module, "_atomic_write_text", fail_persistence)
+    writer = getattr(modifier, writer_name)
+    assert not writer(
         [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
     )
+    assert "synthetic permission failure" in capsys.readouterr().out
     assert output.read_text(encoding="utf-8") == "keep me\n"
 
 

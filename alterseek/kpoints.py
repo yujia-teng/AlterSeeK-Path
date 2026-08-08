@@ -876,55 +876,55 @@ class KPointsModifier:
                            transformation_label: Optional[str] = None,
                            operation_basis_label: Optional[str] = None):
         """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
-        try:
-            if transformation_matrix is not None:
-                flat_matrix = np.array(transformation_matrix).flatten()
-                matrix_str = " ".join(f"{x:.8f}" for x in flat_matrix)
-                label = f" ({transformation_label})" if transformation_label else ""
-                # The recorded matrix is the raw Step-3 selection, so its basis
-                # is the operation source's -- the magnetic primitive cell in
-                # the magnetic route, not necessarily the submitted cell.
-                basis_name = operation_basis_label or "operation-source structure"
-                first_line = (
-                    f"Selected spin-flip operation{label} in {basis_name} "
-                    f"real-space fractional basis: {matrix_str}\n"
-                )
-            else:
-                first_line = f"{self.header_lines[0]}\n"
-
-            lines = [
-                first_line,
-                "   30\n",
-                f"{self.header_lines[2]}\n",
-                f"{self.header_lines[3]}\n",
-            ]
-
-            segments = self._valid_segment_pairs(new_kpoints)
-            for start_point_out, end_point_out, _break_before, i, end_raw_label in segments:
-                start_label = self._kpoints_label(start_point_out[3])
-                end_label = self._kpoints_label(end_point_out[3])
-                lines.append(
-                    f"   {_fmt_coord(start_point_out[0])}   {_fmt_coord(start_point_out[1])}   "
-                    f"{_fmt_coord(start_point_out[2])}     {start_label}\n"
-                )
-                lines.append(
-                    f"   {_fmt_coord(end_point_out[0])}   {_fmt_coord(end_point_out[1])}   "
-                    f"{_fmt_coord(end_point_out[2])}     {end_label}\n"
-                )
-                if end_raw_label == "k" or i < len(new_kpoints) - 2:
-                    lines.append("\n")
-
-            if not segments:
-                print("Error writing file: path contains no writable segments.")
-                return False
-            _atomic_write_text(output_file, "".join(lines))
-            
-            print(f"Modified KPOINTS file written to: {output_file}")
-            return True
-            
-        except Exception as e:
-            print(f"Error writing file: {e}")
+        segments = self._valid_segment_pairs(new_kpoints)
+        if not segments:
+            print("Error writing file: path contains no writable segments.")
             return False
+
+        if transformation_matrix is not None:
+            flat_matrix = np.array(transformation_matrix).flatten()
+            matrix_str = " ".join(f"{x:.8f}" for x in flat_matrix)
+            label = f" ({transformation_label})" if transformation_label else ""
+            # The recorded matrix is the raw Step-3 selection, so its basis
+            # is the operation source's -- the magnetic primitive cell in
+            # the magnetic route, not necessarily the submitted cell.
+            basis_name = operation_basis_label or "operation-source structure"
+            first_line = (
+                f"Selected spin-flip operation{label} in {basis_name} "
+                f"real-space fractional basis: {matrix_str}\n"
+            )
+        else:
+            first_line = f"{self.header_lines[0]}\n"
+
+        lines = [
+            first_line,
+            "   30\n",
+            f"{self.header_lines[2]}\n",
+            f"{self.header_lines[3]}\n",
+        ]
+
+        for start_point_out, end_point_out, _break_before, i, end_raw_label in segments:
+            start_label = self._kpoints_label(start_point_out[3])
+            end_label = self._kpoints_label(end_point_out[3])
+            lines.append(
+                f"   {_fmt_coord(start_point_out[0])}   {_fmt_coord(start_point_out[1])}   "
+                f"{_fmt_coord(start_point_out[2])}     {start_label}\n"
+            )
+            lines.append(
+                f"   {_fmt_coord(end_point_out[0])}   {_fmt_coord(end_point_out[1])}   "
+                f"{_fmt_coord(end_point_out[2])}     {end_label}\n"
+            )
+            if end_raw_label == "k" or i < len(new_kpoints) - 2:
+                lines.append("\n")
+
+        try:
+            _atomic_write_text(output_file, "".join(lines))
+        except (OSError, UnicodeError) as exc:
+            print(f"Error writing file: {exc}")
+            return False
+
+        print(f"Modified KPOINTS file written to: {output_file}")
+        return True
 
     def write_kpoints_file_qe(self, new_kpoints: List[List],
                               output_file: str = "KPOINTS_alter_qe",
@@ -933,12 +933,7 @@ class KPointsModifier:
                               ninterp: int = 30,
                               operation_basis_label: Optional[str] = None):
         """Write KPOINTS in QE K_POINTS crystal_b format."""
-        try:
-            valid_pairs = self._valid_segment_pairs(new_kpoints)
-        except Exception as exc:
-            print(f"Error writing QE KPOINTS: {exc}")
-            return False
-
+        valid_pairs = self._valid_segment_pairs(new_kpoints)
         if not valid_pairs:
             print("Error writing QE KPOINTS: path contains no writable segments.")
             return False
@@ -957,31 +952,33 @@ class KPointsModifier:
         final_point, _ = waypoints[-1]
         waypoints[-1] = (final_point, 1)
 
+        lines = ["K_POINTS crystal_b\n", f"  {len(waypoints)}\n"]
+        for pt_out, ni in waypoints:
+            lbl = self._kpoints_label(pt_out[3])
+            lines.append(
+                f"  {_fmt_coord(pt_out[0])}  {_fmt_coord(pt_out[1])}  "
+                f"{_fmt_coord(pt_out[2])}  {ni:3d}  ! {lbl}\n"
+            )
+        if transformation_matrix is not None:
+            flat = np.array(transformation_matrix).flatten()
+            mat_str = " ".join(f"{x:.8f}" for x in flat)
+            lbl = f" ({transformation_label})" if transformation_label else ""
+            # Same basis note as the VASP writer: the matrix is the raw
+            # Step-3 selection in the operation source's basis.
+            basis_name = operation_basis_label or "operation-source structure"
+            lines.append(
+                f"! Spin-flip operation{lbl} in {basis_name} "
+                f"real-space fractional basis: {mat_str}\n"
+            )
+
         try:
-            lines = ["K_POINTS crystal_b\n", f"  {len(waypoints)}\n"]
-            for pt_out, ni in waypoints:
-                lbl = self._kpoints_label(pt_out[3])
-                lines.append(
-                    f"  {_fmt_coord(pt_out[0])}  {_fmt_coord(pt_out[1])}  "
-                    f"{_fmt_coord(pt_out[2])}  {ni:3d}  ! {lbl}\n"
-                )
-            if transformation_matrix is not None:
-                flat = np.array(transformation_matrix).flatten()
-                mat_str = " ".join(f"{x:.8f}" for x in flat)
-                lbl = f" ({transformation_label})" if transformation_label else ""
-                # Same basis note as the VASP writer: the matrix is the raw
-                # Step-3 selection in the operation source's basis.
-                basis_name = operation_basis_label or "operation-source structure"
-                lines.append(
-                    f"! Spin-flip operation{lbl} in {basis_name} "
-                    f"real-space fractional basis: {mat_str}\n"
-                )
             _atomic_write_text(output_file, "".join(lines))
-            print(f"QE KPOINTS written to: {output_file}")
-            return True
-        except Exception as e:
-            print(f"Error writing QE KPOINTS: {e}")
+        except (OSError, UnicodeError) as exc:
+            print(f"Error writing QE KPOINTS: {exc}")
             return False
+
+        print(f"QE KPOINTS written to: {output_file}")
+        return True
 
     def _generate_spin_figures(self, centroid_result, struct_file, general_kpoint,
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
@@ -1403,11 +1400,19 @@ class KPointsModifier:
             print("\nDone.")
             if display_figures:
                 print('Displaying generated figure(s)...')
-                plt.show()
-                for fig in display_figures:
-                    save_after_show = getattr(fig, '_alterseek_save_after_show', None)
-                    if save_after_show is not None:
-                        save_after_show()
+                try:
+                    plt.show()
+                    for fig in display_figures:
+                        save_after_show = getattr(
+                            fig, '_alterseek_save_after_show', None
+                        )
+                        if save_after_show is not None:
+                            save_after_show()
+                except Exception as exc:
+                    print(
+                        "[Warning] Could not display/save generated figures: "
+                        f"{exc}"
+                    )
             return True
 
         if not os.path.exists(struct_file):
@@ -2081,22 +2086,20 @@ class KPointsModifier:
         k_prime = self.transform_kpoint(general_kpoint, R_for_kpts)
         print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")
 
-        try:
-            new_kpoints = self.insert_general_kpoints(
-                general_kpoint, R_for_kpts, self.extra_general_points
-            )
-
-            if new_kpoints:
-                self._generate_spin_figures(
-                    centroid_result, struct_file, general_kpoint, R_for_kpts,
-                    R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot,
-                    new_kpoints, display_figures, save_pdf=save_pdf)
-                # Step 5: Save modified file
-                return _save_and_finish(new_kpoints, R, selected_transformation_label)
-            else:
-                print("Error: Failed to process k-points.")
-                return False
-                
-        except Exception as e:
-            print(f"Error processing k-points: {e}")
+        new_kpoints = self.insert_general_kpoints(
+            general_kpoint, R_for_kpts, self.extra_general_points
+        )
+        if not new_kpoints:
+            print("[Error] Failed to build a nonempty altermagnetic path.")
             return False
+
+        try:
+            self._generate_spin_figures(
+                centroid_result, struct_file, general_kpoint, R_for_kpts,
+                R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot,
+                new_kpoints, display_figures, save_pdf=save_pdf)
+        except Exception as exc:
+            print(f"[Warning] Could not generate spin figures: {exc}")
+
+        # Step 5: Save modified file
+        return _save_and_finish(new_kpoints, R, selected_transformation_label)

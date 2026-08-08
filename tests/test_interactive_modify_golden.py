@@ -23,6 +23,10 @@ POSCAR = Path(__file__).parent / "references" / "case12_POSCAR"
 REFERENCE = Path(__file__).parent / "references" / "case12_golden_kpoints.txt"
 
 
+def _case12_answers():
+    return "\n".join([str(POSCAR), "0 0 1", "5 -5", "", "", ""]) + "\n"
+
+
 def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     try:
         from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
@@ -32,7 +36,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     # Canned answers: structure file, spin axis, moments, [Enter]=auto path,
     # [Enter]=Option 1 op, [Enter]=vasp. Output filename is fixed
     # (KPOINTS_alter), no longer prompted.
-    answers = "\n".join([str(POSCAR), "0 0 1", "5 -5", "", "", ""]) + "\n"
+    answers = _case12_answers()
     monkeypatch.chdir(tmp_path)               # side-effect files land in tmp
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
@@ -89,3 +93,70 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         and np.linalg.norm(site.properties["magmom"].moment) > 1e-8
     )
     assert np.allclose(moment_norms, [5.0, 5.0])
+
+
+def test_step4_path_construction_error_reaches_workflow_boundary(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import kpoints as kpoints_module
+
+    def fail_path_construction(*args, **kwargs):
+        raise RuntimeError("synthetic butterfly construction failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(
+        kpoints_module.KPointsModifier,
+        "insert_general_kpoints",
+        fail_path_construction,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic butterfly construction failure"):
+        kpoints_module.KPointsModifier().interactive_modify()
+
+    output = capsys.readouterr().out
+    assert "Error processing k-points" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_optional_spin_figure_failure_does_not_block_kpoints(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import kpoints as kpoints_module
+
+    def fail_spin_figures(*args, **kwargs):
+        raise RuntimeError("synthetic spin-figure failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(
+        kpoints_module.KPointsModifier,
+        "_generate_spin_figures",
+        fail_spin_figures,
+    )
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "[Warning] Could not generate spin figures" in output
+    assert "synthetic spin-figure failure" in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_display_failure_after_kpoints_write_remains_successful(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import kpoints as kpoints_module
+
+    def fail_display():
+        raise RuntimeError("synthetic display failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(kpoints_module.plt, "show", fail_display)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "[Warning] Could not display/save generated figures" in output
+    assert "synthetic display failure" in output
+    assert (tmp_path / "KPOINTS_alter").exists()
