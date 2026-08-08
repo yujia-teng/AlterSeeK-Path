@@ -68,7 +68,7 @@ def test_magnetic_primitive_loader_uses_the_same_count_validation(tmp_path):
     assert np.allclose(moments, [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])
 
 
-def test_spin_symmetry_route_reports_excess_count(tmp_path, monkeypatch, capsys):
+def test_spin_symmetry_route_reports_excess_count(tmp_path, monkeypatch):
     poscar = tmp_path / "POSCAR"
     _write_two_atom_poscar(poscar)
     monkeypatch.setattr(
@@ -84,16 +84,16 @@ def test_spin_symmetry_route_reports_excess_count(tmp_path, monkeypatch, capsys)
         },
     )
 
-    result = spin_ops.run(
-        str(poscar),
-        "1 -1 7",
-        verbose=False,
-        spin_axis_cart="0 0 1",
-        output_dir=str(tmp_path / "output"),
-    )
+    with pytest.raises(
+        spin_ops.SpinSymmetryError,
+        match="3 magnetic moments were provided for a 2-atom structure",
+    ):
+        spin_ops.run(
+            str(poscar),
+            "1 -1 7",
+            verbose=False,
+            spin_axis_cart="0 0 1",
+            output_dir=str(tmp_path / "output"),
+        )
 
-    assert result is False
-    assert "3 magnetic moments were provided for a 2-atom structure" in (
-        capsys.readouterr().out
-    )
     assert not (tmp_path / "output" / "spin_operations.txt").exists()

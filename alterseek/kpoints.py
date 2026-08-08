@@ -9,7 +9,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-from .find_sf_operations import run as find_sf_run
+from .find_sf_operations import SpinSymmetryError, run as find_sf_run
 from .compute_centroid_hybrid import run as compute_centroid
 from .symmetry import (no_altermagnetism_reason,
                        laue_group_from_spacegroup_number,
@@ -1354,7 +1354,6 @@ class KPointsModifier:
         standard_path_reason = None
         standard_path_reason_reported = False
         centroid_result = None
-        centroid_error = None
         centroid_struct_file = struct_file
         centroid_seekpath_type_numbers = None
         operation_basis_label = (
@@ -1376,14 +1375,6 @@ class KPointsModifier:
                     print(f"[Error] {exc}")
                     return False
             return True
-
-        def _prompt_manual_path():
-            """Step 1 fallback: ask for a KPOINTS/KPATH.in file and load it."""
-            print("Enter KPOINTS file name (default: KPATH.in): ", end='', flush=True)
-            filename = input().strip()
-            if not filename:
-                filename = "KPATH.in"
-            return _load_custom_path(filename)
 
         def _save_and_finish(path_points, R_matrix, R_label):
             """Step 5: choose the output code, write the KPOINTS file (plus
@@ -1453,14 +1444,11 @@ class KPointsModifier:
                         symprec=symprec,
                         output_dir=OUTPUT_DIR,
                     )
-                except Exception as e:
+                except SpinSymmetryError as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
                     return False
-                if not isinstance(sf_result, dict):
-                    print("[Error] Spin-symmetry analysis failed. Aborting.")
-                    return False
-            # Either a validated dict from the branch above, or None because the
-            # no-moments branch never ran the analysis.
+            # Either a result dictionary from the branch above, or None because
+            # the no-moments branch never ran the analysis.
             if sf_result is not None:
                 magnetic_setting_counts = None
                 magnetic_setting_outputs = None
@@ -1528,12 +1516,11 @@ class KPointsModifier:
                         save_pdf=save_pdf,
                     )
                 except Exception as e:
-                    # Only the centroid/path construction itself is
-                    # recoverable, and only by asking for a manual KPOINTS
-                    # file in Step 1. Everything after this call is handled
-                    # separately below, because failing there is not
-                    # recoverable at all.
-                    centroid_error = e
+                    print(
+                        "[Error] IBZ centroid construction failed: "
+                        f"{e} Aborting."
+                    )
+                    return False
                 if centroid_result is not None:
                     try:
                         # This block decides the reciprocal basis KPOINTS is written
@@ -1770,143 +1757,132 @@ class KPointsModifier:
                     print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
         # centroid_struct_file is the submitted structure, or the marker helper
-        # in the magnetic route -- never empty, so only a failed centroid sends
-        # Step 1 to the manual-file prompt.
-        if centroid_error is None:
+        # in the magnetic route -- never empty. A failure to analyze that cell
+        # cannot be repaired by supplying a different path file, because the
+        # same analysis establishes the required reciprocal-basis mappings.
+        if centroid_result is None:
             try:
-                if centroid_result is None:
-                    centroid_result = compute_centroid(
-                        centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
-                        defer_show=True, verbose=False,
-                        seekpath_type_numbers=centroid_seekpath_type_numbers,
-                        mode_2d=self.mode_2d,
-                        input_vacuum_axis=self.input_vacuum_axis,
-                        view_elev=view_elev, view_azim=view_azim, symprec=symprec,
-                        figure_basename=_figure_basename(struct_file),
-                        save_pdf=save_pdf,
-                    )
-                    display_figures.extend(centroid_result.get('display_figures', []))
-                    print(
-                        "Lattice type: "
-                        f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
-                    )
-                if self.mode_2d:
-                    try:
-                        self._configure_2d_plane(
-                            centroid_result,
-                            submitted_lattice=submitted_lattice_for_2d,
-                        )
-                    except Exception as exc:
-                        print(
-                            "[Error] Could not establish the physical 2D slab "
-                            f"plane: {exc} Aborting."
-                        )
-                        return False
-                print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-                sp_path   = centroid_result['sp_path']
-                sp_coords = centroid_result['sp_point_coords']
-                displayed_path = centroid_result.get(
+                centroid_result = compute_centroid(
+                    centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
+                    defer_show=True, verbose=False,
+                    seekpath_type_numbers=centroid_seekpath_type_numbers,
+                    mode_2d=self.mode_2d,
+                    input_vacuum_axis=self.input_vacuum_axis,
+                    view_elev=view_elev, view_azim=view_azim, symprec=symprec,
+                    figure_basename=_figure_basename(struct_file),
+                    save_pdf=save_pdf,
+                )
+            except Exception as exc:
+                print(
+                    "[Error] IBZ centroid construction failed: "
+                    f"{exc} Aborting."
+                )
+                return False
+            display_figures.extend(centroid_result.get('display_figures', []))
+            print(
+                "Lattice type: "
+                f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
+            )
+        if self.mode_2d:
+            try:
+                self._configure_2d_plane(
+                    centroid_result,
+                    submitted_lattice=submitted_lattice_for_2d,
+                )
+            except Exception as exc:
+                print(
+                    "[Error] Could not establish the physical 2D slab "
+                    f"plane: {exc} Aborting."
+                )
+                return False
+        print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
+        sp_path   = centroid_result['sp_path']
+        sp_coords = centroid_result['sp_point_coords']
+        displayed_path = centroid_result.get(
+            'band_kpath',
+            centroid_result.get('ibz_kpath', sp_path)
+        )
+        print(f"Path: {self._format_path(displayed_path)}")
+        path_choice = _ask(
+            "Press [Enter] to use this path, or type a filename to load your own: ",
+            "path",
+        )
+        if not path_choice:
+            # Build kpoints_data in the same HPKOT/SeeK-path convention
+            # as Figure 1.  lattice_kpoints.py may include curated
+            # closure vertices for the hull, but ibz_kpath contains only
+            # the public band-path labels.  path_kpoints_frac keeps
+            # optional path-only labels such as H_2 available without
+            # adding them to the centroid hull.
+            self.kpoints_data = []
+            sc_type_auto = centroid_result.get('sc_type', '')
+            if (
+                ('band_kpath' in centroid_result and 'band_kpoints_frac' in centroid_result)
+                or ('ibz_kpath' in centroid_result and 'ibz_kpoints_frac' in centroid_result)
+            ):
+                self.header_lines = [f'K-Path generated by AlterSeeK-Path (HPKOT {sc_type_auto})',
+                                     '20', 'Line-Mode', 'Reciprocal']
+                self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
+                self.kpoints_basis_rotation = np.array(
+                    centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                    dtype=float,
+                )
+                self.output_basis_matrix = np.array(
+                    centroid_result.get(
+                        'b_matrix_output',
+                        centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
+                    ),
+                    dtype=float,
+                )
+                # Prefer the selected band path when present. This
+                # keeps the prompt, Figure 1 path overlay, and KPOINTS
+                # path consistent.
+                auto_path = centroid_result.get(
                     'band_kpath',
-                    centroid_result.get('ibz_kpath', sp_path)
+                    centroid_result['ibz_kpath']
                 )
-                print(f"Path: {self._format_path(displayed_path)}")
-                path_choice = _ask(
-                    "Press [Enter] to use this path, or type a filename to load your own: ",
-                    "path",
+                ibz_coords = centroid_result.get(
+                    'band_kpoints_frac',
+                    centroid_result.get(
+                        'path_kpoints_frac',
+                        centroid_result['ibz_kpoints_frac']
+                    )
                 )
-                if not path_choice:
-                    # Build kpoints_data in the same HPKOT/SeeK-path convention
-                    # as Figure 1.  lattice_kpoints.py may include curated
-                    # closure vertices for the hull, but ibz_kpath contains only
-                    # the public band-path labels.  path_kpoints_frac keeps
-                    # optional path-only labels such as H_2 available without
-                    # adding them to the centroid hull.
-                    self.kpoints_data = []
-                    sc_type_auto = centroid_result.get('sc_type', '')
-                    if (
-                        ('band_kpath' in centroid_result and 'band_kpoints_frac' in centroid_result)
-                        or ('ibz_kpath' in centroid_result and 'ibz_kpoints_frac' in centroid_result)
-                    ):
-                        self.header_lines = [f'K-Path generated by AlterSeeK-Path (HPKOT {sc_type_auto})',
-                                             '20', 'Line-Mode', 'Reciprocal']
-                        self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
-                        self.kpoints_basis_rotation = np.array(
-                            centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
-                            dtype=float,
-                        )
-                        self.output_basis_matrix = np.array(
-                            centroid_result.get(
-                                'b_matrix_output',
-                                centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
-                            ),
-                            dtype=float,
-                        )
-                        # Prefer the selected band path when present. This
-                        # keeps the prompt, Figure 1 path overlay, and KPOINTS
-                        # path consistent.
-                        auto_path = centroid_result.get(
-                            'band_kpath',
-                            centroid_result['ibz_kpath']
-                        )
-                        ibz_coords = centroid_result.get(
-                            'band_kpoints_frac',
-                            centroid_result.get(
-                                'path_kpoints_frac',
-                                centroid_result['ibz_kpoints_frac']
-                            )
-                        )
-                        for seg_start, seg_end in auto_path:
-                            for label in (seg_start, seg_end):
-                                coords = ibz_coords[label]
-                                self.kpoints_data.append([coords[0], coords[1], coords[2], label])
-                        extra_vertices = centroid_result.get('extra_general_vertices', [])
-                        self.extra_general_points = []
-                        for label in extra_vertices:
-                            if label in ibz_coords:
-                                coords = ibz_coords[label]
-                                self.extra_general_points.append([coords[0], coords[1], coords[2], label])
-                        print(f"Using HPKOT {sc_type_auto} path ({len(auto_path)} segments, {len(self.kpoints_data)} k-points)")
-                        if self.extra_general_points:
-                            labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
-                            print(f"Extra doubled-IBZ general anchors: {labels}")
-                    else:
-                        self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
-                        self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
-                        self.kpoints_basis_rotation = np.array(
-                            centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
-                            dtype=float,
-                        )
-                        self.output_basis_matrix = np.array(
-                            centroid_result.get(
-                                'b_matrix_output',
-                                centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
-                            ),
-                            dtype=float,
-                        )
-                        for seg_start, seg_end in sp_path:
-                            for label in (seg_start, seg_end):
-                                coords = sp_coords[label]
-                                self.kpoints_data.append([coords[0], coords[1], coords[2], label])
-                        print(f"Using auto-generated path ({len(sp_path)} segments, {len(self.kpoints_data)} k-points)")
-                else:
-                    if not _load_custom_path(path_choice):
-                        return False
-            except Exception as e:
-                print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-                print(f"[Warning] Auto path generation failed: {e}")
-                print("Falling back to manual file input.")
-                if not _prompt_manual_path():
-                    return False
+                for seg_start, seg_end in auto_path:
+                    for label in (seg_start, seg_end):
+                        coords = ibz_coords[label]
+                        self.kpoints_data.append([coords[0], coords[1], coords[2], label])
+                extra_vertices = centroid_result.get('extra_general_vertices', [])
+                self.extra_general_points = []
+                for label in extra_vertices:
+                    if label in ibz_coords:
+                        coords = ibz_coords[label]
+                        self.extra_general_points.append([coords[0], coords[1], coords[2], label])
+                print(f"Using HPKOT {sc_type_auto} path ({len(auto_path)} segments, {len(self.kpoints_data)} k-points)")
+                if self.extra_general_points:
+                    labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
+                    print(f"Extra doubled-IBZ general anchors: {labels}")
+            else:
+                self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
+                self.kpoints_basis_matrix = np.array(centroid_result['b_matrix'], dtype=float)
+                self.kpoints_basis_rotation = np.array(
+                    centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
+                    dtype=float,
+                )
+                self.output_basis_matrix = np.array(
+                    centroid_result.get(
+                        'b_matrix_output',
+                        centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
+                    ),
+                    dtype=float,
+                )
+                for seg_start, seg_end in sp_path:
+                    for label in (seg_start, seg_end):
+                        coords = sp_coords[label]
+                        self.kpoints_data.append([coords[0], coords[1], coords[2], label])
+                print(f"Using auto-generated path ({len(sp_path)} segments, {len(self.kpoints_data)} k-points)")
         else:
-            print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-            if centroid_error is not None:
-                # Reported here, at the step that has to work around it, rather
-                # than re-raised into the handler above -- that reported every
-                # centroid failure under the wrong headline ("Auto path
-                # generation failed") and discarded the original traceback.
-                print(f"[Warning] IBZ centroid construction failed: {centroid_error}")
-                print("Falling back to manual file input.")
-            if not _prompt_manual_path():
+            if not _load_custom_path(path_choice):
                 return False
 
         # Laue groups -1, -3, and m-3 do not have a one-dimensional,

@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from alterseek.kpoints import KPointsModifier, _read_input_config
+from alterseek.find_sf_operations import SpinSymmetryError
 
 
 @pytest.mark.parametrize(
@@ -42,10 +43,14 @@ def test_spin_symmetry_failure_aborts_workflow(tmp_path, monkeypatch, capsys):
     structure.write_text("placeholder\n", encoding="utf-8")
     answers = f"{structure}\n0 0 1\n1 -1\n"
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
-    monkeypatch.setattr("alterseek.kpoints.find_sf_run", lambda *args, **kwargs: None)
+    def fail_spin_symmetry(*args, **kwargs):
+        raise SpinSymmetryError("synthetic spin-symmetry failure")
+
+    monkeypatch.setattr("alterseek.kpoints.find_sf_run", fail_spin_symmetry)
     assert KPointsModifier().interactive_modify() is False
     output = capsys.readouterr().out
     assert "Spin-symmetry analysis failed" in output
+    assert "synthetic spin-symmetry failure" in output
     assert "Step 1" not in output
 
 

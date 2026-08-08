@@ -571,13 +571,38 @@ def format_msg_without_soc(msg_type):
 # ==========================================
 # MAIN FUNCTION
 # ==========================================
+class SpinSymmetryError(RuntimeError):
+    """A required spin-symmetry analysis or output step failed."""
+
+
 def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=None,
         output_dir='.'):
     """
     Run spin-flip operations analysis.
     Called by the interactive workflow (alterseek/kpoints.py) or used standalone.
-    Returns a results dict on success, False on failure.
+    Return a results dictionary on success and raise SpinSymmetryError on
+    failure.
     """
+    try:
+        return _run(
+            structure_file,
+            moments_str,
+            verbose=verbose,
+            spin_axis_cart=spin_axis_cart,
+            symprec=symprec,
+            output_dir=output_dir,
+        )
+    except SpinSymmetryError:
+        raise
+    except Exception as exc:
+        raise SpinSymmetryError(
+            f"Unexpected spin-symmetry analysis failure: {exc}"
+        ) from exc
+
+
+def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
+         symprec=None, output_dir='.'):
+    """Internal implementation for :func:`run`; failures raise exceptions."""
     # 1. Structure Loading
     if verbose:
         print("="*40)
@@ -613,12 +638,14 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
             pmg_struct = None
             if verbose:
                 print(f"Successfully loaded '{structure_file}' containing {num_atoms} atoms.")
-    except FileNotFoundError:
-        print(f"Error: File '{structure_file}' not found.")
-        return False
-    except Exception as e:
-        print(f"Error reading file: {e}")
-        return False
+    except FileNotFoundError as exc:
+        raise SpinSymmetryError(
+            f"Structure file '{structure_file}' was not found."
+        ) from exc
+    except Exception as exc:
+        raise SpinSymmetryError(
+            f"Could not read structure file '{structure_file}': {exc}"
+        ) from exc
 
     # --- PART 2: Non-Magnetic Space Group (SPG) ---
     if verbose:
@@ -655,9 +682,11 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
             ])
             if verbose:
                 print(f"Read moments from mcif:\n{magmoms}")
-        except Exception as e:
-            if verbose:
-                print(f"[Warning] Could not read moments from mcif: {e}. Falling back to manual input.")
+        except Exception as exc:
+            raise SpinSymmetryError(
+                f"Could not read magnetic moments from MCIF '{structure_file}': "
+                f"{exc}"
+            ) from exc
 
     if magmoms is None:
         if verbose:
@@ -670,12 +699,11 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
                 user_mags = parse_magmoms(moments_str)
             user_mags = fit_magmoms_to_structure(user_mags, num_atoms)
         except ValueError as exc:
-            print(
-                "Error: Invalid manual magnetic input. Enter a nonzero Cartesian "
+            raise SpinSymmetryError(
+                "Invalid manual magnetic input. Enter a nonzero Cartesian "
                 "axis such as '0 0 1' and moments such as '4*0 2*1'. "
                 f"({exc})"
-            )
-            return False
+            ) from exc
         magmoms = np.asarray(user_mags, dtype=float)[:, None] * manual_axis[None, :]
         if verbose:
             print(f"Cartesian spin axis: {manual_axis}")
@@ -728,9 +756,10 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
         rotations, translations, spin_rotations = _deduplicate_collinear_operations(
             rotations, translations, spin_rotations, spin_axis
         )
-    except Exception as e:
-        print(f"Error running FindSpinGroup: {e}")
-        return False
+    except Exception as exc:
+        raise SpinSymmetryError(
+            f"FindSpinGroup analysis failed: {exc}"
+        ) from exc
 
     sog = f"{fsg_basic.get('conf', 'Unknown')}(axis={np.array2string(spin_axis, precision=6)})"
     magnetic_phase = fsg_basic.get("magnetic_phase", "Unknown")
@@ -896,6 +925,8 @@ if __name__ == "__main__":
         print("Enter magnetic moments along this axis (space-separated, e.g., '1 -1'):")
         moments_input = input("Moments: ").strip()
 
-    success = run(filename, moments_input, spin_axis_cart=spin_axis_input)
-    if not success:
+    try:
+        run(filename, moments_input, spin_axis_cart=spin_axis_input)
+    except SpinSymmetryError as exc:
+        print(f"Error: {exc}")
         sys.exit(1)

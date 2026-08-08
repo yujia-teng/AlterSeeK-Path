@@ -66,7 +66,17 @@ def main():
         mode_2d=args.mode_2d,
         input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],
     )
-    return 0 if modifier.interactive_modify() else 1
+    try:
+        success = modifier.interactive_modify()
+    except Exception as exc:
+        # This is the command-line workflow's final safety boundary. Required
+        # calculations raise to here; expected input failures and optional
+        # output warnings remain the responsibility of their own subsystems.
+        # Never continue after an unexpected failure or reinterpret it as a
+        # request for different scientific input.
+        print(f"[Error] AlterSeeK-Path failed: {exc}", file=sys.stderr)
+        return 1
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

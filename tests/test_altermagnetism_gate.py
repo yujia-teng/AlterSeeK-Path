@@ -408,31 +408,10 @@ def test_output_basis_step_failure_aborts_instead_of_being_recorded(
 def test_centroid_failure_is_reported_once_under_its_own_headline(
     tmp_path, monkeypatch, capsys
 ):
-    """A centroid failure is reported where it happened, and not retried.
-
-    Two defects used to compound here. The failure was stashed in
-    ``centroid_error``, re-raised inside the Step 1 ``try``, and caught again,
-    so every centroid failure reached the user as ``Auto path generation
-    failed`` -- the wrong headline, with the original traceback discarded.
-    Then Step 2 called ``compute_centroid()`` a third time, with identical
-    arguments, for the same structure that had just failed; that call could
-    only fail again, and reported the same problem a second time in different
-    words.
-    """
+    """A required centroid/basis failure is reported once and aborts."""
     from alterseek import kpoints as kpoints_module
 
     (tmp_path / "POSCAR").write_text("test structure placeholder\n", encoding="utf-8")
-    # A valid line-mode path, so Step 1's manual fallback succeeds and the run
-    # reaches Step 2 -- where the redundant third call used to live.
-    (tmp_path / "KPATH.in").write_text(
-        "manual path\n"
-        "  20\n"
-        "Line-Mode\n"
-        "Reciprocal\n"
-        "  0.0000000000  0.0000000000  0.0000000000     GAMMA\n"
-        "  0.5000000000  0.0000000000  0.0000000000     X\n",
-        encoding="utf-8",
-    )
     (tmp_path / "alterseek_input.toml").write_text(
         'structure = "POSCAR"\n'
         'spin_axis = "0 0 1"\n'
@@ -468,26 +447,106 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
         calls.append(args[0] if args else None)
         raise RuntimeError("synthetic seekpath failure")
 
-    answers = (
-        "KPATH.in\n"      # Step 1 manual file
-        "0.1 0.2 0.3\n"   # Step 2 general k-point, entered by hand
-        "vasp\n"          # Step 5 output code
-    )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
-    kpoints_module.KPointsModifier(magnetic_setting=False).interactive_modify()
+    result = kpoints_module.KPointsModifier(
+        magnetic_setting=False
+    ).interactive_modify()
     output = capsys.readouterr().out
 
-    # Exactly one attempt for this structure -- the retry in Step 2 is gone.
+    assert result is False
     assert len(calls) == 1, f"compute_centroid called {len(calls)} times"
     assert "IBZ centroid construction failed" in output
     assert "synthetic seekpath failure" in output
-    # The old, misleading headline and the old duplicate second report.
+    assert "Aborting" in output
+    assert "Falling back to manual file input" not in output
     assert "Auto path generation failed" not in output
     assert "Centroid computation failed" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_centroid_failure_without_spin_analysis_also_aborts(
+    tmp_path, monkeypatch, capsys
+):
+    """The ordinary no-moments route has the same required-analysis policy."""
+    from alterseek import kpoints as kpoints_module
+
+    (tmp_path / "POSCAR").write_text(
+        "test structure placeholder\n", encoding="utf-8"
+    )
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = ""\n',
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def failing_centroid(*args, **kwargs):
+        calls.append(args[0] if args else None)
+        raise RuntimeError("synthetic ordinary seekpath failure")
+
+    def forbid_spin_analysis(*args, **kwargs):
+        raise AssertionError("no-moments route must not run spin analysis")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    monkeypatch.setattr(kpoints_module, "find_sf_run", forbid_spin_analysis)
+    monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
+
+    result = kpoints_module.KPointsModifier().interactive_modify()
+    output = capsys.readouterr().out
+
+    assert result is False
+    assert calls == ["POSCAR"]
+    assert "IBZ centroid construction failed" in output
+    assert "synthetic ordinary seekpath failure" in output
+    assert "Aborting" in output
+    assert "Falling back to manual file input" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_step1_internal_error_propagates_without_manual_fallback(
+    tmp_path, monkeypatch, capsys
+):
+    """Malformed required path data reaches the final workflow boundary."""
+    from alterseek import kpoints as kpoints_module
+
+    (tmp_path / "POSCAR").write_text(
+        "test structure placeholder\n", encoding="utf-8"
+    )
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = ""\n',
+        encoding="utf-8",
+    )
+
+    def forbid_spin_analysis(*args, **kwargs):
+        raise AssertionError("no-moments route must not run spin analysis")
+
+    input_stream = io.StringIO("")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", input_stream)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", forbid_spin_analysis)
+    monkeypatch.setattr(
+        kpoints_module,
+        "compute_centroid",
+        lambda *args, **kwargs: {"display_figures": []},
+    )
+
+    with pytest.raises(KeyError, match="sp_path"):
+        kpoints_module.KPointsModifier().interactive_modify()
+    output = capsys.readouterr().out
+
+    assert input_stream.tell() == 0
+    assert "Auto path generation failed" not in output
+    assert "Falling back to manual file input" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
 
 
 def test_missing_standardized_diagnostic_does_not_skip_required_basis_finalization(
