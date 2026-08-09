@@ -107,7 +107,7 @@ Found 12 spin-flip operations R.
   Note: R is in the submitted structure 'POSCAR' fractional basis;
   rotation axis/mirror plane indices are in the reciprocal (b1,b2,b3) basis.
 Default R: Option 1
-Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': 1
+Press [Enter] to use default, type a number, or 'list' to show matrices: 1
 Selected: Option 1  (C6+ [0 0 1])
 
 >>> Step 4: Build altermagnetic path

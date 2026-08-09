@@ -436,9 +436,9 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
         "ssg_index": "61.1.1.1.L",
         "ssg_symbol": "test",
         "magnetic_space_group_without_soc": "Pb'c'a (BNS 61.436)",
-        "actual_spin_flip_point_operations": 0,
-        "actual_spin_preserve_point_operations": 8,
-        "spin_flip_operations": 0,
+        "actual_spin_flip_point_operations": 4,
+        "actual_spin_preserve_point_operations": 4,
+        "spin_flip_operations": 1,
     }
 
     calls = []
@@ -465,6 +465,76 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
     assert "Falling back to manual file input" not in output
     assert "Auto path generation failed" not in output
     assert "Centroid computation failed" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_altermagnet_with_no_available_spin_flip_operation_aborts(
+    tmp_path, monkeypatch, capsys
+):
+    """An internally inconsistent altermagnetic result must not look successful."""
+    from alterseek import kpoints as kpoints_module
+
+    (tmp_path / "POSCAR").write_text(
+        "test structure placeholder\n", encoding="utf-8"
+    )
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = "1 -1"\n'
+        'path = ""\n'
+        'output_code = "vasp"\n',
+        encoding="utf-8",
+    )
+    sf_result = {
+        "structure_file": "POSCAR",
+        "g0_number": 61,
+        "g0_symbol": "Pbca",
+        "nonmagnetic_spacegroup_number": 61,
+        "nonmagnetic_sites": 2,
+        "nonmagnetic_lattice": "oP1",
+        "num_atoms": 2,
+        "space_group": "Pbca (61)",
+        "point_group": "mmm",
+        "laue_group": "mmm",
+        "magnetic_phase": "AFM(Altermagnet)",
+        "ssg_index": "61.1.1.1.L",
+        "ssg_symbol": "test",
+        "magnetic_space_group_without_soc": "Pb'c'a (BNS 61.436)",
+        "actual_spin_flip_point_operations": 0,
+        "actual_spin_preserve_point_operations": 8,
+        "spin_flip_operations": 0,
+    }
+    centroid_result = {
+        "display_figures": [],
+        "sp_path": [("GAMMA", "X")],
+        "sp_point_coords": {
+            "GAMMA": [0.0, 0.0, 0.0],
+            "X": [0.5, 0.0, 0.0],
+        },
+        "b_matrix": np.eye(3),
+        "b_matrix_input": np.eye(3),
+        "centroid_frac": [0.1, 0.2, 0.3],
+        "sc_type": "oP1",
+        "point_group": "mmm",
+        "spacegroup": 61,
+    }
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
+    monkeypatch.setattr(
+        kpoints_module, "compute_centroid", lambda *a, **k: centroid_result
+    )
+
+    assert (
+        kpoints_module.KPointsModifier(magnetic_setting=False).interactive_modify()
+        is False
+    )
+    output = capsys.readouterr().out
+    assert "Phase: AFM(Altermagnet)" in output
+    assert "no detected spin-flip point operation is available" in output
+    assert "inconsistent" in output
+    assert "Aborting" in output
+    assert "Writing ordinary k-path" not in output
     assert not (tmp_path / "KPOINTS_alter").exists()
 
 

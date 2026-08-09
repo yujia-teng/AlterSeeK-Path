@@ -1145,8 +1145,8 @@ class KPointsModifier:
         preset_choice=None,
         operation_basis_label="operation-source structure",
     ):
-        """Step 3: choose the spin-flip operation R (default Option 1 /
-        numbered / 'list' / 'manual').  Returns (R, selected_transformation_label).
+        """Step 3: choose a detected spin-flip operation R (default Option 1 /
+        numbered / 'list').  Returns (R, selected_transformation_label).
         Extracted from interactive_modify (phase 5). `preset_choice`, if given
         (from alterseek_input.toml's `flip_option`), supplies the answer for
         the first prompt instead of reading stdin; run() validates it (a
@@ -1189,7 +1189,7 @@ class KPointsModifier:
             print("Default R: Option 1")
             _preset_pending = preset_choice is not None
             while R is None:
-                print("Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual': ", end='', flush=True)
+                print("Press [Enter] to use default, type a number, or 'list' to show matrices: ", end='', flush=True)
                 if _preset_pending:
                     choice = str(preset_choice).strip().lower()
                     _preset_pending = False
@@ -1208,8 +1208,6 @@ class KPointsModifier:
                         print(f"\n  Option {i+1}:" + (f"  {_nm}" if _nm else ""))
                         print(self._format_matrix(op))
                     print()
-                elif choice == 'manual':
-                    break
                 else:
                     try:
                         idx = int(choice) - 1
@@ -1220,27 +1218,9 @@ class KPointsModifier:
                             print(f"Selected: Option {idx+1}"
                                   + (f"  ({_nm})" if _nm else ""))
                         else:
-                            print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
+                            print(f"Please choose 1-{len(flip_ops)} or 'list'.")
                     except ValueError:
-                        print(f"Please choose 1-{len(flip_ops)}, 'list', or 'manual'.")
-
-        if R is None:
-            print("Enter custom transformation matrix R.")
-            print("Enter row by row (3 numbers per row, space-separated):")
-            transformation_matrix = []
-            for i in range(3):
-                while True:
-                    try:
-                        print(f"Row {i+1}: ", end='', flush=True)
-                        row_input = input().strip().split()
-                        if len(row_input) == 3:
-                            transformation_matrix.append([float(x) for x in row_input])
-                            break
-                        print("Please enter exactly 3 numbers.")
-                    except ValueError:
-                        print("Please enter 3 numbers.")
-            R = np.array(transformation_matrix)
-            selected_transformation_label = "manual"
+                        print(f"Please choose 1-{len(flip_ops)} or 'list'.")
         return R, selected_transformation_label
 
     def _convert_operation_to_primitive_basis(
@@ -1994,7 +1974,7 @@ class KPointsModifier:
                 standard_path_reason, standard_path_reason_reported
             )
 
-        # Step 3: Input transformation matrix
+        # Step 3: Select a detected spin-flip operation
         print(f"\n{BOLD}>>> Step 3: Spin-flip operation{RESET}")
         if _step0_wrote_flip_file is False:
             # Step 0 ran but found no flip ops for this structure.
@@ -2051,15 +2031,24 @@ class KPointsModifier:
                 _flip_ops_emptied_2d = True
 
         if not flip_ops:
-            # No candidate spin-flip point operation survived (structural
-            # symmetry search found none, or the 2D in-plane filter emptied
-            # the list) -- this means "not altermagnetic" for this
-            # configuration, same as the Laue-group/no-moments cases handled
-            # above. Do not fall through to manual 3x3 matrix entry.
-            return _write_ordinary_path_and_stop(
-                "No spin-flip point operation available: not altermagnetic.",
-                _flip_ops_emptied_2d,
+            if _flip_ops_emptied_2d:
+                return _write_ordinary_path_and_stop(
+                    "No in-plane spin-flip point operation available: not a "
+                    "2D altermagnet.",
+                    True,
+                )
+            # Expected non-altermagnetic cases were classified above and
+            # returned before Step 3. Reaching this point in the ordinary 3D
+            # route means the analysis and its operation output disagree, or
+            # the required operation file is missing/corrupt. Do not hide that
+            # inconsistency by writing a successful ordinary path.
+            print(
+                "[Error] Spin-symmetry analysis reached the altermagnetic path, "
+                "but no detected spin-flip point operation is available. "
+                "The symmetry result or operation output is inconsistent. "
+                "Aborting."
             )
+            return False
 
         preset_flip_choice = input_config.get('flip_option')
         if preset_flip_choice is not None and preset_flip_choice > len(flip_ops):

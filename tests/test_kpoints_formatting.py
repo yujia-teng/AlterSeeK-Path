@@ -7,6 +7,24 @@ from alterseek import kpoints as kpoints_module
 from alterseek.kpoints import KPointsModifier, _fmt_coord
 
 
+def test_manual_spin_flip_matrix_is_rejected(monkeypatch, capsys):
+    modifier = KPointsModifier()
+    detected_ops = [np.eye(3), np.diag([-1.0, -1.0, 1.0])]
+    answers = iter(["manual", "2"])
+    monkeypatch.setattr("builtins.input", lambda: next(answers))
+
+    selected, label = modifier._select_spin_flip_operation(
+        detected_ops, centroid_result=None
+    )
+
+    assert np.array_equal(selected, detected_ops[1])
+    assert label == "Option 2"
+    output = capsys.readouterr().out
+    assert "Please choose 1-2 or 'list'." in output
+    assert "custom transformation matrix" not in output
+    assert "or 'manual'" not in output
+
+
 def test_signed_zero_is_normalized():
     """-0.0 and 0.0 are the same k-point and must render identically.
 

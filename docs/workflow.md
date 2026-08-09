@@ -15,7 +15,7 @@ writing.
 | **0** | Finds spin-flip symmetry operations and prints a compact symmetry summary | Structure file; Cartesian spin axis and magnetic moments for non-mcif inputs |
 | **1** | Builds or reads the high-symmetry IBZ path | Press Enter for auto path, or enter a KPOINTS-style file |
 | **2** | Chooses the general k point | Automatic IBZ centroid by default |
-| **3** | Selects the spin-flip operation | Press Enter for default, enter a number, type `list`, or type `manual` |
+| **3** | Selects a detected spin-flip operation | Press Enter for default, enter a number, or type `list` |
 | **4** | Builds the altermagnetic path | Automatic |
 | **5** | Saves the output | Output code (`vasp` or `qe`); filenames are fixed |
 
@@ -52,9 +52,9 @@ symmetry lines/planes. No prompt in the normal case.
 
 ## Step 3: Spin-Flip Operation
 
-Lists available spin-flip operations with a default. Accept the default,
-pick another by number, `list` the matrices, or `manual` for a custom
-transformation.
+Lists the detected spin-flip operations with a default. Accept the default,
+pick another by number, or `list` the matrices. Every selectable operation
+comes from the detected symmetry set.
 
 ## Step 4: Build The Altermagnetic Path
 
@@ -105,10 +105,13 @@ record files go into `alterseek_output/`.
 | `*_seekpath_basis_mapping.txt` | Analysis input, internal primitive path, standardized conventional, and final KPOINTS output lattices |
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
-The workflow prints a note and writes the ordinary default path. The same
-happens whenever no spin-flip point operation survives for other reasons
-(e.g. every candidate is trivial in-plane in 2D mode) -- it means "not
-altermagnetic" for this configuration, not a request for a manual matrix.
+The workflow prints a note and writes the ordinary default path without an
+operation-selection step. The same expected fallback applies when spin-symmetry
+analysis classifies the configuration as non-altermagnetic, or when every
+candidate is trivial in-plane in 2D mode. If analysis instead reaches the
+altermagnetic Step 3 path but no detected operation is available, the results
+are inconsistent; the workflow reports an error and aborts rather than writing
+a misleading ordinary path. There is no custom-matrix fallback.
 
 ## Skipping Repeated Prompts With `alterseek_input.toml`
 
@@ -132,7 +135,7 @@ save_pdf = true
 | `spin_axis` | Step 0 spin-axis prompt | ignored for `.mcif` input |
 | `moments` | Step 0 magnetic-moments prompt | the one field that changes every run |
 | `path` | Step 1 path-choice prompt | `""` (or omit) uses the auto-generated path; a filename loads a custom `KPATH.in`/KPOINTS-style path |
-| `flip_option` | Step 3 spin-flip operation prompt | plain integer, picks that numbered option; omit for the interactive numbered menu (`list`/`manual` still available) |
+| `flip_option` | Step 3 spin-flip operation prompt | plain integer, picks that numbered detected operation; omit for the interactive numbered menu (`list` remains available) |
 | `output_code` | Step 5 output-code prompt | `"vasp"` or `"qe"` |
 | `save_pdf` | BZ figure output format | `true`/`false` (default `false`); when true, also saves a vector PDF alongside each BZ figure's default PNG output |
 | `symprec` | symmetry-detection tolerance | positive number in angstrom (default `1e-3`); applies to every input format |
