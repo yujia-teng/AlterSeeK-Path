@@ -60,7 +60,10 @@ for the full field reference.
 ## Inputs
 
 - Structure file: `POSCAR` / `.vasp` / `.cif` (moments entered manually) or
-  `.mcif` (moments read from the file).
+  `.mcif` (moments read from the file). MCIF input must be collinear: all
+  nonzero vector moments must be parallel or antiparallel within an absolute
+  transverse-moment tolerance of `0.02` in the MCIF moment units (normally
+  Bohr magnetons); noncollinear MCIFs are rejected.
 - Spin axis + moments: Cartesian axis (default `0 0 1`) and VASP
   `MAGMOM`-style scalar moments (e.g. `5*0 2*1.0`); missing trailing values
   default to `0`, while excess values are rejected.

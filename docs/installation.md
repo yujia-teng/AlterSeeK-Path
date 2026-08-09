@@ -60,3 +60,7 @@ file such as:
 
 For `POSCAR`, `.vasp`, and `.cif` inputs, magnetic moments are entered manually.
 For `.mcif` inputs, magnetic moments are read from the file when available.
+Only collinear magnetic structures are currently supported: nonzero MCIF
+moments must be parallel or antiparallel within an absolute transverse-moment
+tolerance of `0.02` in the MCIF moment units (normally Bohr magnetons);
+noncollinear MCIF input is rejected.

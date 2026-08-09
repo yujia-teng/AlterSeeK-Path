@@ -17,7 +17,11 @@ import re
 import sympy as sp
 import warnings
 from .atomic_write import _atomic_open_text
-from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
+from .mcif import (
+    _MCIF_PARENT_SYMPREC_CANDIDATES,
+    _declared_mcif_parent_hint,
+    _validate_collinear_moments,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
@@ -680,13 +684,17 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
                 if 'magmom' in site.properties else np.zeros(3)
                 for site in pmg_struct
             ])
-            if verbose:
-                print(f"Read moments from mcif:\n{magmoms}")
         except Exception as exc:
             raise SpinSymmetryError(
                 f"Could not read magnetic moments from MCIF '{structure_file}': "
                 f"{exc}"
             ) from exc
+        try:
+            _validate_collinear_moments(magmoms)
+        except ValueError as exc:
+            raise SpinSymmetryError(str(exc)) from exc
+        if verbose:
+            print(f"Read moments from mcif:\n{magmoms}")
 
     if magmoms is None:
         if verbose:

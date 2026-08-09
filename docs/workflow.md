@@ -26,6 +26,14 @@ identify the altermagnetic phase, oriented spin space group, and spin-flip/
 spin-preserving operations. Supported formats: `POSCAR`, `.vasp`, `.cif`
 (moments entered manually), `.mcif` (moments read from the file).
 
+The current workflow supports collinear magnetism only. For `.mcif` input,
+zero moments are ignored and every nonzero vector moment must be parallel or
+antiparallel to one common axis within an absolute transverse-moment tolerance
+of `0.02` in the MCIF moment units (normally Bohr magnetons). This matches
+FindSpinGroup's default moment-tolerance scale and accommodates rounded
+deposited values. A noncollinear MCIF is rejected instead of projecting its
+moments onto a collinear axis.
+
 For non-`.mcif` input, enter a Cartesian spin axis (default `0 0 1`) and
 scalar moments along it in atom order, VASP `MAGMOM`-style (`1 -1` or
 `5*0 2*1.0`). Missing trailing values default to `0`; providing more moments

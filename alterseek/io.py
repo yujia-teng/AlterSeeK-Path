@@ -10,6 +10,7 @@ import os
 import numpy as np
 
 from .atomic_write import _atomic_write_text, _atomic_open_text
+from .mcif import _validate_collinear_moments
 
 from .find_sf_operations import (
     fit_magmoms_to_structure,
@@ -356,6 +357,7 @@ def _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart):
             if "magmom" in site.properties else np.zeros(3)
             for site in structure
         ])
+        _validate_collinear_moments(moments)
         return lattice, positions, elements, moments, "cartesian"
 
     from ase.io import read

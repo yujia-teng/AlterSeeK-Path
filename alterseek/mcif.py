@@ -20,6 +20,38 @@ import numpy as np
 # reproduces the structure's own declared parent, so a genuinely
 # lower-symmetry structure is never over-symmetrized.
 _MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
+_MCIF_COLLINEAR_MOMENT_TOLERANCE = 0.02
+
+
+def _validate_collinear_moments(
+    moments,
+    moment_tolerance=_MCIF_COLLINEAR_MOMENT_TOLERANCE,
+):
+    """Reject MCIF moments that do not share one collinear spin axis.
+
+    Zero moments are ignored. For each nonzero Cartesian moment, compare the
+    absolute norm of its component transverse to the first nonzero moment's
+    normalized axis. The 0.02 tolerance is in the MCIF moment units (normally
+    Bohr magnetons), matching FindSpinGroup's default moment-tolerance scale
+    and accommodating rounded deposited moment components. Parallel and
+    antiparallel directions are treated equivalently.
+    """
+    moments = np.asarray(moments, dtype=float)
+    norms = np.linalg.norm(moments, axis=1)
+    nonzero = moments[norms > 1e-10]
+    if len(nonzero) < 2:
+        return
+
+    axis = nonzero[0] / np.linalg.norm(nonzero[0])
+    transverse = np.linalg.norm(
+        np.cross(nonzero, axis),
+        axis=1,
+    )
+    if np.any(transverse > moment_tolerance):
+        raise ValueError(
+            "Only collinear magnetic structures are supported; noncollinear "
+            "moment directions were detected in the MCIF."
+        )
 
 
 def _cif_scalar(value):
