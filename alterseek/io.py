@@ -85,11 +85,6 @@ def _write_without_species(source_path, target_path, species_to_remove, title):
     _write_poscar_from_sites(target_path, title, lattice, list(kept_elements), list(kept_positions))
 
 
-def _reciprocal_from_poscar(path):
-    lattice, _, _ = _read_grouped_poscar(path)
-    return 2 * np.pi * np.linalg.inv(np.array(lattice, dtype=float)).T
-
-
 def _dedupe_frac_positions(positions, tol=1e-7):
     unique = []
     for pos in positions:

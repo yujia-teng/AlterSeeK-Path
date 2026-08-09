@@ -7,12 +7,8 @@ import argparse
 from functools import wraps
 import math
 from pathlib import Path
+import tomllib
 from typing import Any
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 fallback
-    tomllib = None
 
 import matplotlib as mpl
 
@@ -82,46 +78,14 @@ GREEK_LABELS = {
 }
 
 
-def _parse_simple_toml_value(value: str) -> Any:
-    value = value.strip()
-    if value.lower() in {"true", "false"}:
-        return value.lower() == "true"
-    if value.lower() in {"none", "null"}:
-        return None
-    if (value.startswith('"') and value.endswith('"')) or (
-        value.startswith("'") and value.endswith("'")
-    ):
-        return value[1:-1]
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError as exc:
-        raise ValueError(f"Unsupported TOML value: {value}") from exc
-
-
 def _read_plot_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    if tomllib is not None:
-        with path.open("rb") as f:
-            data = tomllib.load(f)
-        if not isinstance(data, dict):
-            raise ValueError(f"Config file must contain key-value settings: {path}")
-        return data
-    config: dict[str, Any] = {}
-    with path.open(encoding="utf-8-sig") as f:
-        for raw_line in f:
-            line = raw_line.split("#", 1)[0].strip()
-            if not line or line.startswith("["):
-                continue
-            if "=" not in line:
-                raise ValueError(f"Invalid config line in {path}: {raw_line.rstrip()}")
-            key, value = line.split("=", 1)
-            config[key.strip()] = _parse_simple_toml_value(value)
-    return config
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file must contain key-value settings: {path}")
+    return data
 
 
 # Keep this function's body identical to the copy in plot_alterband.py;
