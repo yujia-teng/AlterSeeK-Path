@@ -174,6 +174,74 @@ def _write_magnetic_mcif(path, title, lattice, elements, positions, moments_cart
             f.write(f"{label} {moment[0]:.10f} {moment[1]:.10f} {moment[2]:.10f}\n")
 
 
+def _basis_change_candidates(magnetic_lattice, target_lattice, max_extent=6):
+    """Integer basis changes carrying the magnetic cell onto the target cell.
+
+    Two standardizations of one crystal share a lattice but may express it
+    with different axes.  A valid basis change is any integer matrix that
+    reproduces the target's three lengths and three angles, which is a finite
+    set: each row must match one prescribed length, and a lattice holds only
+    finitely many vectors that short.
+
+    Signed axis permutations are emitted first because they are the ordinary
+    answer; callers break ties by order, so every pair that already aligned
+    keeps selecting exactly the transform it selected before.  The remaining
+    candidates matter for triclinic pairs, where a row can be a genuine
+    combination -- real MnO2 aligns only under [[0,1,0],[1,0,0],[-1,-1,-1]].
+    """
+    gram = np.asarray(magnetic_lattice, dtype=float)
+    gram = gram @ gram.T
+    target = np.asarray(target_lattice, dtype=float)
+    target_gram = target @ target.T
+    tolerance = 1e-5 * max(1.0, float(np.abs(target_gram).max()))
+
+    candidates = []
+    seen = set()
+
+    def _add(rows):
+        key = tuple(int(value) for row in rows for value in row)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(np.array(rows, dtype=float))
+
+    for permutation in itertools.permutations(range(3)):
+        for signs in itertools.product((-1, 1), repeat=3):
+            rows = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+            for row, column in enumerate(permutation):
+                rows[row][column] = signs[row]
+            _add(rows)
+
+    smallest = float(np.min(np.linalg.eigvalsh(gram)))
+    if smallest <= 1e-12:
+        return candidates
+
+    # |c|^2 * smallest <= c.G.c, so a row matching a prescribed squared length
+    # cannot be longer than this.
+    axis_options = []
+    for index in range(3):
+        extent = int(np.floor(np.sqrt(max(target_gram[index, index], 0.0) / smallest)))
+        extent = min(extent + 1, max_extent)
+        options = []
+        for entries in itertools.product(range(-extent, extent + 1), repeat=3):
+            row = np.array(entries, dtype=float)
+            if abs(row @ gram @ row - target_gram[index, index]) <= tolerance:
+                options.append(row)
+        axis_options.append(options)
+
+    for first in axis_options[0]:
+        for second in axis_options[1]:
+            if abs(first @ gram @ second - target_gram[0, 1]) > tolerance:
+                continue
+            for third in axis_options[2]:
+                if abs(first @ gram @ third - target_gram[0, 2]) > tolerance:
+                    continue
+                if abs(second @ gram @ third - target_gram[1, 2]) > tolerance:
+                    continue
+                _add([first, second, third])
+    return candidates
+
+
 def _match_periodic_standard_sites(
     target_positions,
     target_types,
@@ -292,34 +360,34 @@ def _write_seekpath_standard_mcif(
     # Prefer proper transformations so axial moments rotate like ordinary
     # vectors and no artificial reflection of the spin pattern is introduced.
     best = None
-    for permutation in itertools.permutations(range(3)):
-        for signs in itertools.product((-1.0, 1.0), repeat=3):
-            basis_change = np.zeros((3, 3), dtype=float)
-            for row, column in enumerate(permutation):
-                basis_change[row, column] = signs[row]
-            if np.linalg.det(basis_change) < 0.0:
-                continue
-            reindexed_lattice = basis_change @ magnetic_lattice
-            rotation = np.linalg.solve(reindexed_lattice, target_lattice)
-            if np.linalg.det(rotation) < 0.0:
-                continue
-            if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-5):
-                continue
-            reindexed_positions = np.mod(
-                magnetic_positions @ np.linalg.inv(basis_change), 1.0
-            )
-            matched = _match_periodic_standard_sites(
-                target_positions,
-                target_types,
-                reindexed_positions,
-                magnetic_types,
-                target_lattice,
-            )
-            if matched is None:
-                continue
-            mapping, max_distance = matched
-            if best is None or max_distance < best[0]:
-                best = (max_distance, mapping, rotation)
+    for basis_change in _basis_change_candidates(
+        magnetic_lattice, target_lattice
+    ):
+        if np.linalg.det(basis_change) < 0.0:
+            continue
+        reindexed_lattice = basis_change @ magnetic_lattice
+        rotation = np.linalg.solve(reindexed_lattice, target_lattice)
+        if np.linalg.det(rotation) < 0.0:
+            continue
+        if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-5):
+            continue
+        reindexed_positions = np.mod(
+            magnetic_positions @ np.linalg.inv(basis_change), 1.0
+        )
+        matched = _match_periodic_standard_sites(
+            target_positions,
+            target_types,
+            reindexed_positions,
+            magnetic_types,
+            target_lattice,
+        )
+        if matched is None:
+            continue
+        mapping, max_distance = matched
+        # Strictly-less keeps the earliest candidate on a tie, so the signed
+        # permutations emitted first still win wherever they already aligned.
+        if best is None or max_distance < best[0]:
+            best = (max_distance, mapping, rotation)
     if best is None:
         raise RuntimeError(
             "could not align the magnetic standard cell with the SeeK-path cell"
