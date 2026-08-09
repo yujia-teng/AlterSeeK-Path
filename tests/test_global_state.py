@@ -163,6 +163,49 @@ def test_kspace_analysis_restores_warning_filters_on_repeated_runs():
         assert warnings.filters == before
 
 
+def test_seekpath_lattice_tag_suppresses_only_the_third_party_deprecation():
+    """The second seekpath call site was left unscoped by the Point 9 pass.
+
+    Removing the process-global filters surfaced SeeK-path 2.1's use of
+    spglib's deprecated dict interface, which this project cannot fix
+    upstream, so it is suppressed locally like the other call site.
+    """
+    from alterseek.find_sf_operations import _seekpath_lattice_tag
+
+    lattice = [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]
+    positions = [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]
+
+    before = list(warnings.filters)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        tag = _seekpath_lattice_tag(lattice, positions, [1, 1], 1e-3)
+
+    assert tag == "cI1"
+    assert not [
+        entry for entry in caught
+        if "dict interface is deprecated" in str(entry.message)
+    ]
+    # Suppression must be scoped: the caller's own filters survive the call.
+    assert warnings.filters == before
+
+
+def test_seekpath_lattice_tag_still_reports_unrelated_warnings():
+    """Scoping must not turn into a blanket mute of the whole call."""
+    from alterseek.find_sf_operations import _seekpath_lattice_tag
+
+    lattice = [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warnings.warn("caller-owned sentinel", UserWarning)
+        _seekpath_lattice_tag(lattice, [[0.0, 0.0, 0.0]], [1], 1e-3)
+
+    assert [
+        entry for entry in caught
+        if "caller-owned sentinel" in str(entry.message)
+    ]
+
+
 def test_band_plotters_restore_caller_style_on_repeated_runs(tmp_path):
     from plot_alterband import plot_alterband
     from plot_alterband_qe import plot_alterband_qe

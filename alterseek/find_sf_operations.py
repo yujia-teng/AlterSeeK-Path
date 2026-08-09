@@ -94,14 +94,29 @@ def _seekpath_lattice_tag(lattice, positions, numbers, symprec):
     """HPKOT/SeeK-path key (hP2, cP1, ...) of the moment-free cell, or None."""
     try:
         import seekpath
+        import warnings
 
-        result = seekpath.get_path(
-            (np.asarray(lattice, dtype=float).tolist(),
-             np.asarray(positions, dtype=float).tolist(),
-             [int(n) for n in numbers]),
-            with_time_reversal=False,
-            symprec=symprec,
-        )
+        # SeeK-path 2.1 still reads spglib's dataset through its deprecated
+        # dict interface, so spglib warns from inside third-party code that
+        # this project cannot fix.  Suppress it only around this call, exactly
+        # as the other seekpath call site does, leaving caller filters intact.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*dict interface is deprecated.*",
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"seekpath\.hpkot(\..*)?",
+            )
+            result = seekpath.get_path(
+                (np.asarray(lattice, dtype=float).tolist(),
+                 np.asarray(positions, dtype=float).tolist(),
+                 [int(n) for n in numbers]),
+                with_time_reversal=False,
+                symprec=symprec,
+            )
         return result.get('bravais_lattice_extended')
     except Exception:
         return None
