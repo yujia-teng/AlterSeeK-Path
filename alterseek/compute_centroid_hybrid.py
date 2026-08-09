@@ -487,39 +487,47 @@ def _write_optional_diagnostics(
     spin_log_current_run,
 ):
     """Write optional standardization and symbolic-centroid diagnostics."""
-    standardized_structure_path = os.path.join(
+    standardized_structure_output = os.path.join(
         output_dir, f"{basename}_seekpath_standard.vasp"
     )
-    standard_mapping_path = os.path.join(
+    standard_mapping_output = os.path.join(
         output_dir, f"{basename}_seekpath_basis_mapping.txt"
     )
+    input_dataset = analysis['input_dataset']
+    sp_result = analysis['sp_result']
+
+    standardized_structure_path = None
     try:
         os.makedirs(output_dir, exist_ok=True)
-        input_dataset = analysis['input_dataset']
-        sp_result = analysis['sp_result']
         _write_seekpath_standard_poscar(
             np.array(input_dataset.std_lattice),
             np.array(input_dataset.std_positions),
             list(input_dataset.std_types),
-            standardized_structure_path,
+            standardized_structure_output,
             os.path.basename(filename),
         )
+        standardized_structure_path = standardized_structure_output
+        if verbose:
+            print(f"Saved standardized structure: {standardized_structure_path}")
+    except Exception as exc:
+        print(f"[Warning] Could not write SeeK-path standardized structure: {exc}")
+
+    standard_mapping_path = None
+    try:
+        os.makedirs(output_dir, exist_ok=True)
         _write_seekpath_basis_mapping(
             analysis['a_matrix'],
             np.array(sp_result['primitive_lattice']),
             np.array(input_dataset.std_lattice),
             np.array(sp_result['rotation_matrix']),
-            standard_mapping_path,
+            standard_mapping_output,
             os.path.basename(filename),
         )
+        standard_mapping_path = standard_mapping_output
         if verbose:
-            print(f"Saved standardized structure: {standardized_structure_path}")
             print(f"Saved SeeK-path basis mapping: {standard_mapping_path}")
     except Exception as exc:
-        standardized_structure_path = None
-        standard_mapping_path = None
-        print(f"[Warning] Could not write SeeK-path standardization "
-              f"files: {exc}")
+        print(f"[Warning] Could not write SeeK-path basis mapping: {exc}")
 
     if spin_log_current_run and centroid['hull_matches_labels']:
         try:

@@ -188,7 +188,7 @@ def test_optional_bz_geometry_failure_does_not_block_kpoints(
     assert (tmp_path / "KPOINTS_alter").exists()
 
 
-def test_optional_standardization_diagnostic_failure_does_not_block_kpoints(
+def test_optional_standardized_poscar_failure_keeps_basis_mapping(
     tmp_path, monkeypatch, capsys
 ):
     from alterseek import compute_centroid_hybrid as centroid_module
@@ -208,8 +208,41 @@ def test_optional_standardization_diagnostic_failure_does_not_block_kpoints(
 
     assert kpoints_module.KPointsModifier().interactive_modify() is True
     output = capsys.readouterr().out
-    assert "Could not write SeeK-path standardization files" in output
+    assert "Could not write SeeK-path standardized structure" in output
     assert "synthetic standardization diagnostic failure" in output
+    output_dir = tmp_path / kpoints_module.OUTPUT_DIR
+    assert not (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
+    assert (output_dir / f"{POSCAR.stem}_seekpath_basis_mapping.txt").exists()
+    assert "IBZ centroid construction failed" not in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_optional_basis_mapping_failure_keeps_standardized_structure(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import kpoints as kpoints_module
+
+    def fail_mapping(*args, **kwargs):
+        raise OSError("synthetic basis-mapping diagnostic failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(
+        centroid_module,
+        "_write_seekpath_basis_mapping",
+        fail_mapping,
+    )
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "Could not write SeeK-path basis mapping" in output
+    assert "synthetic basis-mapping diagnostic failure" in output
+    output_dir = tmp_path / kpoints_module.OUTPUT_DIR
+    assert (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
+    assert (output_dir / f"{POSCAR.stem}_seekpath_standard.mcif").exists()
+    assert not (output_dir / f"{POSCAR.stem}_seekpath_basis_mapping.txt").exists()
     assert "IBZ centroid construction failed" not in output
     assert (tmp_path / "KPOINTS_alter").exists()
 
