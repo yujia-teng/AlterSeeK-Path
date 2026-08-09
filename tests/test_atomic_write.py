@@ -9,13 +9,25 @@ import os
 
 import pytest
 
-from alterseek.atomic_write import _atomic_open_text, _atomic_write_text
+from alterseek.atomic_write import (
+    _atomic_open_text,
+    _atomic_write_text,
+    _atomic_write_text_set,
+)
 
 
 def _temp_siblings(directory):
     """Leftover temp files use a leading dot and a .tmp suffix."""
     return [n for n in os.listdir(directory)
             if n.startswith(".") and n.endswith(".tmp")]
+
+
+def _transaction_siblings(directory):
+    return [
+        name for name in os.listdir(directory)
+        if name.startswith(".")
+        and (name.endswith(".stage") or name.endswith(".backup"))
+    ]
 
 
 def test_buffered_write_commits_on_clean_exit(tmp_path):
@@ -87,3 +99,87 @@ def test_replacing_an_existing_file_is_all_or_nothing(tmp_path):
     _atomic_write_text(str(target), "new contents\n")
     assert target.read_bytes() == b"new contents\n"
     assert _temp_siblings(tmp_path) == []
+
+
+def test_multi_file_commit_replaces_the_complete_set(tmp_path):
+    targets = [
+        tmp_path / "case_magnetic_primitive.vasp",
+        tmp_path / "case_magnetic_primitive_MAGMOM.txt",
+        tmp_path / "KPOINTS_alter",
+    ]
+    for index, target in enumerate(targets):
+        target.write_bytes(f"old {index}\n".encode())
+
+    _atomic_write_text_set({
+        target: f"new {index}\n"
+        for index, target in enumerate(targets)
+    })
+
+    assert [target.read_bytes() for target in targets] == [
+        b"new 0\n", b"new 1\n", b"new 2\n"
+    ]
+    assert _transaction_siblings(tmp_path) == []
+
+
+@pytest.mark.parametrize("failed_replace", [4, 5, 6])
+def test_multi_file_promotion_failure_restores_existing_set(
+    tmp_path, monkeypatch, failed_replace
+):
+    targets = [
+        tmp_path / "case_magnetic_primitive.vasp",
+        tmp_path / "case_magnetic_primitive_MAGMOM.txt",
+        tmp_path / "KPOINTS_alter",
+    ]
+    originals = [b"old cell\n", b"old moments\n", b"old kpoints\n"]
+    for target, contents in zip(targets, originals):
+        target.write_bytes(contents)
+
+    real_replace = os.replace
+    calls = 0
+
+    def fail_at_boundary(source, target):
+        nonlocal calls
+        calls += 1
+        if calls == failed_replace:
+            raise PermissionError("synthetic promotion failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_at_boundary)
+    with pytest.raises(PermissionError, match="synthetic promotion failure"):
+        _atomic_write_text_set({
+            target: f"new {index}\n"
+            for index, target in enumerate(targets)
+        })
+
+    assert [target.read_bytes() for target in targets] == originals
+    assert _transaction_siblings(tmp_path) == []
+
+
+@pytest.mark.parametrize("failed_replace", [1, 2, 3])
+def test_multi_file_promotion_failure_removes_new_set(
+    tmp_path, monkeypatch, failed_replace
+):
+    targets = [
+        tmp_path / "case_magnetic_primitive.vasp",
+        tmp_path / "case_magnetic_primitive_MAGMOM.txt",
+        tmp_path / "KPOINTS_alter",
+    ]
+    real_replace = os.replace
+    calls = 0
+
+    def fail_at_boundary(source, target):
+        nonlocal calls
+        calls += 1
+        if calls == failed_replace:
+            raise PermissionError("synthetic promotion failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_at_boundary)
+    with pytest.raises(PermissionError, match="synthetic promotion failure"):
+        _atomic_write_text_set({
+            target: f"new {index}\n"
+            for index, target in enumerate(targets)
+        })
+
+    assert not any(target.exists() for target in targets)
+    assert _transaction_siblings(tmp_path) == []

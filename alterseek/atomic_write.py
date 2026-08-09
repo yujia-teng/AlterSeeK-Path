@@ -54,6 +54,102 @@ def _atomic_write_text(path, text):
         raise
 
 
+def _atomic_write_text_set(outputs):
+    """Commit several UTF-8 text files as one rollback-protected set.
+
+    All new contents are staged beside their targets before any public file is
+    changed. Existing targets are then moved to private backups and the staged
+    files are promoted in insertion order. If an ordinary filesystem exception
+    interrupts either phase, every target is restored to its original bytes (or
+    removed when it did not previously exist) before the exception is reraised.
+
+    This protects caught failures; it is not crash- or power-loss atomicity.
+    """
+    entries = []
+    seen_targets = set()
+    transaction_id = uuid.uuid4().hex
+    preserve_failed_backups = False
+
+    try:
+        for path, text in outputs.items():
+            target = os.path.abspath(os.fspath(path))
+            if target in seen_targets:
+                raise ValueError(f"duplicate transaction target: {target}")
+            seen_targets.add(target)
+            parent = os.path.dirname(target)
+            basename = os.path.basename(target)
+            staged = os.path.join(
+                parent, f".{basename}.{transaction_id}.stage"
+            )
+            backup = os.path.join(
+                parent, f".{basename}.{transaction_id}.backup"
+            )
+            entry = {
+                "target": target,
+                "staged": staged,
+                "backup": backup,
+                "existed": os.path.exists(target),
+                "backed_up": False,
+                "promoted": False,
+            }
+            entries.append(entry)
+            flags = (
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_BINARY", 0)
+            )
+            fd = os.open(staged, flags, 0o666)
+            try:
+                handle = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
+            except Exception:
+                os.close(fd)
+                raise
+            with handle:
+                handle.write(text)
+            try:
+                os.chmod(staged, os.stat(target).st_mode & 0o7777)
+            except OSError:
+                pass
+
+        for entry in entries:
+            if entry["existed"]:
+                os.replace(entry["target"], entry["backup"])
+                entry["backed_up"] = True
+        for entry in entries:
+            os.replace(entry["staged"], entry["target"])
+            entry["promoted"] = True
+    except Exception as exc:
+        rollback_errors = []
+        for entry in reversed(entries):
+            try:
+                if entry["backed_up"]:
+                    os.replace(entry["backup"], entry["target"])
+                    entry["backed_up"] = False
+                elif entry["promoted"] and os.path.exists(entry["target"]):
+                    os.remove(entry["target"])
+            except OSError as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        if rollback_errors:
+            preserve_failed_backups = True
+            raise RuntimeError(
+                "multi-file output failed and rollback was incomplete: "
+                + "; ".join(rollback_errors)
+            ) from exc
+        raise
+    finally:
+        for entry in entries:
+            for key in ("staged", "backup"):
+                if (
+                    key == "backup"
+                    and preserve_failed_backups
+                    and entry["backed_up"]
+                ):
+                    continue
+                try:
+                    os.remove(entry[key])
+                except OSError:
+                    pass
+
+
 @contextlib.contextmanager
 def _atomic_open_text(path):
     """Collect `.write()` calls and commit them atomically on a clean exit.

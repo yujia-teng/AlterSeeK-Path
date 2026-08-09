@@ -27,7 +27,11 @@ from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
 )
-from .atomic_write import _atomic_write_text, _atomic_open_text
+from .atomic_write import (
+    _atomic_write_text,
+    _atomic_write_text_set,
+    _atomic_open_text,
+)
 from .io import (
     _load_magnetic_input_data,
     _write_seekpath_standard_mcif,
@@ -917,7 +921,8 @@ class KPointsModifier:
     def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
                            transformation_matrix: Optional[np.ndarray] = None,
                            transformation_label: Optional[str] = None,
-                           operation_basis_label: Optional[str] = None):
+                           operation_basis_label: Optional[str] = None,
+                           companion_outputs=None):
         """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
         segments = self._valid_segment_pairs(new_kpoints)
         if not segments:
@@ -961,7 +966,12 @@ class KPointsModifier:
                 lines.append("\n")
 
         try:
-            _atomic_write_text(output_file, "".join(lines))
+            if companion_outputs:
+                output_set = dict(companion_outputs)
+                output_set[output_file] = "".join(lines)
+                _atomic_write_text_set(output_set)
+            else:
+                _atomic_write_text(output_file, "".join(lines))
         except (OSError, UnicodeError) as exc:
             print(f"Error writing file: {exc}")
             return False
@@ -974,7 +984,8 @@ class KPointsModifier:
                               transformation_matrix: Optional[np.ndarray] = None,
                               transformation_label: Optional[str] = None,
                               ninterp: int = 30,
-                              operation_basis_label: Optional[str] = None):
+                              operation_basis_label: Optional[str] = None,
+                              companion_outputs=None):
         """Write KPOINTS in QE K_POINTS crystal_b format."""
         valid_pairs = self._valid_segment_pairs(new_kpoints)
         if not valid_pairs:
@@ -1015,7 +1026,12 @@ class KPointsModifier:
             )
 
         try:
-            _atomic_write_text(output_file, "".join(lines))
+            if companion_outputs:
+                output_set = dict(companion_outputs)
+                output_set[output_file] = "".join(lines)
+                _atomic_write_text_set(output_set)
+            else:
+                _atomic_write_text(output_file, "".join(lines))
         except (OSError, UnicodeError) as exc:
             print(f"Error writing QE KPOINTS: {exc}")
             return False
@@ -1393,6 +1409,8 @@ class KPointsModifier:
         submitted_lattice_for_2d = None
         display_figures = []
         self.extra_general_points = []
+        pending_calculation_outputs = None
+        magnetic_setting_outputs = None
 
         def _load_custom_path(custom_filename):
             """Read a custom KPATH.in/KPOINTS path and convert it from the
@@ -1411,6 +1429,7 @@ class KPointsModifier:
                 write_ok = self.write_kpoints_file_qe(
                     path_points, "KPOINTS_alter_qe", R_matrix, R_label,
                     operation_basis_label=operation_basis_label,
+                    companion_outputs=pending_calculation_outputs,
                 )
                 if write_ok:
                     write_qe_bandplot_config()
@@ -1418,6 +1437,7 @@ class KPointsModifier:
                 write_ok = self.write_kpoints_file(
                     path_points, "KPOINTS_alter", R_matrix, R_label,
                     operation_basis_label=operation_basis_label,
+                    companion_outputs=pending_calculation_outputs,
                 )
                 if write_ok and centroid_result is not None:
                     write_bandplot_lattice_config(
@@ -1426,6 +1446,33 @@ class KPointsModifier:
             if not write_ok:
                 print("[Error] KPOINTS output was not written.")
                 return False
+            if (
+                magnetic_setting_outputs
+                and magnetic_setting_outputs.get("cell_changed")
+            ):
+                calc_cell = magnetic_setting_outputs.get(
+                    "calculation_cell_path"
+                )
+                calc_magmom = magnetic_setting_outputs.get(
+                    "calculation_magmom_path"
+                )
+                species_order = magnetic_setting_outputs.get(
+                    "calculation_species_order"
+                )
+                print(
+                    "[Cell] The magnetic order changes the cell; the path "
+                    "is written in the magnetic primitive cell's basis."
+                )
+                if calc_cell:
+                    print(f"[Cell] Run the band calculation with {calc_cell}")
+                if calc_magmom:
+                    print(f"[Cell] Matching magnetic moments: {calc_magmom}")
+                if species_order:
+                    print(
+                        "[Cell] Species order: "
+                        f"{' '.join(species_order)} "
+                        "(match POTCAR and species-indexed settings)."
+                    )
             print("\nDone.")
             if display_figures:
                 _display_and_save_figures(display_figures)
@@ -1573,6 +1620,7 @@ class KPointsModifier:
                                     centroid_result,
                                     output_dir=OUTPUT_DIR,
                                     verbose_output=self.output_verbose,
+                                    defer_calculation_inputs=True,
                                 )
                             except Exception as exc:
                                 print(
@@ -1594,36 +1642,11 @@ class KPointsModifier:
                             centroid_result["b_matrix_output"] = magnetic_setting_outputs[
                                 "b_matrix_output"
                             ]
-                            # Say something only when the user has to act.
-                            # The analysis running in the magnetic cell is
-                            # not itself news; a changed calculation cell
-                            # is, because their own POSCAR no longer matches
-                            # the path.
-                            if magnetic_setting_outputs.get("cell_changed"):
-                                calc_cell = magnetic_setting_outputs.get(
-                                    "calculation_cell_path")
-                                calc_magmom = magnetic_setting_outputs.get(
-                                    "calculation_magmom_path")
-                                species_order = magnetic_setting_outputs.get(
-                                    "calculation_species_order")
-                                print(
-                                    "[Cell] The magnetic order changes the cell; the path "
-                                    "is written in the magnetic primitive cell's basis."
+                            pending_calculation_outputs = (
+                                magnetic_setting_outputs.get(
+                                    "calculation_output_texts"
                                 )
-                                if calc_cell:
-                                    print(
-                                        f"[Cell] Run the band calculation with {calc_cell}"
-                                    )
-                                if calc_magmom:
-                                    print(
-                                        f"[Cell] Matching magnetic moments: {calc_magmom}"
-                                    )
-                                if species_order:
-                                    print(
-                                        "[Cell] Species order: "
-                                        f"{' '.join(species_order)} "
-                                        "(match POTCAR and species-indexed settings)."
-                                    )
+                            )
                             if self.output_verbose:
                                 print(
                                     "[SSG setting] Kept intermediates in "

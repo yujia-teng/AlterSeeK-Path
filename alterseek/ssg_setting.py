@@ -8,7 +8,11 @@ import numpy as np
 
 from findspingroup import find_spin_group_acc_primitive_from_data
 
-from .atomic_write import _atomic_write_text, _atomic_open_text
+from .atomic_write import (
+    _atomic_write_text,
+    _atomic_write_text_set,
+    _atomic_open_text,
+)
 from .io import (
     _group_poscar_sites, _write_poscar, _write_without_species,
     _dedupe_frac_positions,
@@ -388,6 +392,7 @@ def finalize_magnetic_setting_outputs(
     output_dir=".",
     verbose_output=False,
     calculation_cell_dir=".",
+    defer_calculation_inputs=False,
 ):
     helper_source = centroid_result.get("standardized_structure_path")
     basename = mag_setting["basename"]
@@ -513,6 +518,7 @@ def finalize_magnetic_setting_outputs(
     # it only appears when the cell genuinely changed.
     calculation_cell_path = None
     calculation_magmom_path = None
+    calculation_output_texts = None
     source = mag_setting.get("real_poscar_path") if cell_changed else None
     magmom_source = mag_setting.get("magmom_path") if cell_changed else None
     if cell_changed:
@@ -541,7 +547,7 @@ def finalize_magnetic_setting_outputs(
         )
 
         with open(source, "r", encoding="utf-8") as f:
-            _atomic_write_text(calculation_cell_path, f.read())
+            calculation_cell_text = f.read()
 
         with open(magmom_source, "r", encoding="utf-8") as f:
             magmom_lines = f.read().splitlines()
@@ -554,10 +560,12 @@ def finalize_magnetic_setting_outputs(
                 f"# {os.path.basename(calculation_cell_path)}",
                 *magmom_lines,
             ]
-        _atomic_write_text(
-            calculation_magmom_path,
-            "\n".join(magmom_lines) + "\n",
-        )
+        calculation_output_texts = {
+            calculation_cell_path: calculation_cell_text,
+            calculation_magmom_path: "\n".join(magmom_lines) + "\n",
+        }
+        if not defer_calculation_inputs:
+            _atomic_write_text_set(calculation_output_texts)
 
     if mapping_final:
         try:
@@ -621,6 +629,8 @@ def finalize_magnetic_setting_outputs(
         result["calculation_cell_path"] = calculation_cell_path
     if calculation_magmom_path:
         result["calculation_magmom_path"] = calculation_magmom_path
+    if defer_calculation_inputs and calculation_output_texts:
+        result["calculation_output_texts"] = calculation_output_texts
     if mag_setting.get("magnetic_symbols"):
         result["calculation_species_order"] = list(
             mag_setting["magnetic_symbols"])
