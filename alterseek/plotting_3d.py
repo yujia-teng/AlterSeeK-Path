@@ -215,7 +215,7 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
 def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
              hull_pts=None, lattice_type=None, hull_labels=None):
     points_list = list(kpoints_cart.values())
-    # Draw IBZ faces (skip for triclinic where hull is None)
+    # Draw IBZ faces (skipped only when no hull could be built)
     if hull is not None:
         face_points = np.array(hull_pts) if hull_pts is not None else np.array(points_list)
         _draw_ibz_faces_by_sector(

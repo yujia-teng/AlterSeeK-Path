@@ -2,6 +2,9 @@
 
 Extracted from compute_centroid_hybrid.py (restructuring phase 3).
 """
+import itertools
+from fractions import Fraction
+
 import numpy as np
 from scipy.spatial import ConvexHull, HalfspaceIntersection, Voronoi
 import sympy as sp
@@ -350,6 +353,103 @@ def _dedupe_points(points, decimals=10):
     if len(points) == 0:
         return np.empty((0, 3))
     return np.unique(np.round(np.array(points, dtype=float), decimals), axis=0)
+
+
+def _selected_path_points(lattice_key):
+    """Non-Gamma endpoints actually used by a curated band path."""
+    data = LATTICE_DATA[lattice_key]
+    selected = {}
+    for start, end in data["kpath"]:
+        for label in (start, end):
+            coords = np.array(
+                [float(Fraction(value)) for value in data["points_def"][label]]
+            )
+            if np.allclose(coords, 0.0):
+                continue  # Gamma is the cut's own origin, never a side test
+            selected[label] = coords
+    return selected
+
+
+def triclinic_halfspace_normal(lattice_key, search_limit=4):
+    """Fractional normal of the plane whose positive side is the triclinic IBZ.
+
+    Laue group -1 has two operations, so the fundamental domain is half the
+    Brillouin zone and *any* plane through Gamma cuts an admissible half.  The
+    choice is therefore a convention.  This applies the axis-containing rule:
+    walk the reciprocal axes in order and keep the first one that admits a
+    plane containing it, on whose boundary that axis's own path point may lie
+    while every other selected path point stays strictly on the positive side.
+
+    Among the admissible integer normals the simplest is selected (smallest
+    coefficient sum, then lexicographic); the family is not equivalent, so this
+    tie-break is what fixes the convention.  aP2 resolves on b1 to ``k2+k3=0``
+    and aP3 -- for which no b1-containing plane exists, because Y and V_2 then
+    require opposite signs -- resolves on b2 to ``k1+2*k3=0``.
+
+    Returns the integer normal as a tuple, or None if no axis admits one.
+    """
+    points = _selected_path_points(lattice_key)
+    for axis in range(3):
+        axial = np.zeros(3)
+        axial[axis] = 0.5
+        axial_label = next(
+            (label for label, point in points.items()
+             if np.allclose(point, axial)),
+            None,
+        )
+        if axial_label is None:
+            continue
+        admissible = []
+        for normal in itertools.product(
+            range(-search_limit, search_limit + 1), repeat=3
+        ):
+            if normal[axis] != 0 or not any(normal):
+                continue
+            values = {
+                label: float(np.dot(normal, point))
+                for label, point in points.items()
+            }
+            if abs(values[axial_label]) > 1e-12:
+                continue
+            if all(value > 1e-12
+                   for label, value in values.items() if label != axial_label):
+                admissible.append(normal)
+        if admissible:
+            return min(
+                admissible, key=lambda c: (sum(abs(v) for v in c), c)
+            )
+    return None
+
+
+def triclinic_half_bz_cell(b_matrix, normal_frac):
+    """Clip the Wigner-Seitz BZ to the closed halfspace ``normal_frac . k >= 0``.
+
+    Returns ``(vertices, hull)`` in Cartesian k coordinates.
+    """
+    b_matrix = np.array(b_matrix, dtype=float)
+    # k_frac = k_cart @ inv(B), so normal_frac . k_frac = k_cart . (inv(B) @ n).
+    cart_normal = np.linalg.inv(b_matrix) @ np.array(normal_frac, dtype=float)
+    norm = np.linalg.norm(cart_normal)
+    if norm < 1e-12:
+        raise ValueError("triclinic halfspace normal is degenerate")
+    cart_normal = cart_normal / norm
+
+    bz_halfspaces = _bz_halfspaces(b_matrix)
+    halfspaces = np.vstack([bz_halfspaces, np.r_[-cart_normal, 0.0]])
+
+    # Seed just inside the cut plane, close enough to Gamma to stay well within
+    # every BZ face.
+    scale = float(np.min(np.linalg.norm(bz_halfspaces[:, :3], axis=1)))
+    interior = cart_normal * (1e-3 * scale)
+    if np.max(halfspaces[:, :3] @ interior + halfspaces[:, 3]) >= 0.0:
+        raise RuntimeError("could not seed the triclinic half-BZ interior")
+
+    vertices = _dedupe_points(
+        HalfspaceIntersection(halfspaces, interior).intersections
+    )
+    if len(vertices) < 4:
+        raise RuntimeError("triclinic half-BZ clip produced a degenerate cell")
+    return vertices, ConvexHull(vertices)
 
 
 def _spin_bz_cells(b_matrix, unique_ops, centroid_cart):

@@ -177,6 +177,8 @@ from .geometry import (
     compute_symbolic_centroid,
     get_bz_loops,
     build_symmetry_ibz_cell,
+    triclinic_halfspace_normal,
+    triclinic_half_bz_cell,
 )
 from .plotting_common import (
     GAMMA_LABEL,
@@ -567,6 +569,20 @@ def _write_optional_diagnostics(
     }
 
 
+def _format_plane(normal_frac):
+    """Render an integer fractional normal as a readable plane equation."""
+    terms = []
+    for index, coefficient in enumerate(normal_frac):
+        if not coefficient:
+            continue
+        axis = f"k{index + 1}"
+        magnitude = abs(coefficient)
+        term = axis if magnitude == 1 else f"{magnitude}*{axis}"
+        sign = "-" if coefficient < 0 else ("+" if terms else "")
+        terms.append(f"{sign}{term}")
+    return f"{''.join(terms)}=0"
+
+
 def _compute_ibz_centroid(
     *,
     mode_2d,
@@ -617,16 +633,36 @@ def _compute_ibz_centroid(
                   f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, "
                   f"{centroid_frac[2]:.6f}]  area={ibz_volume:.6f}")
     elif sg in (1, 2):
-        # Triclinic: IBZ boundary is hard to define on the Wigner-Seitz BZ.
+        # Triclinic: the curated points are not a closed IBZ hull, so the
+        # domain is taken from the Wigner-Seitz BZ instead.  Laue group -1
+        # applies to both P1 and P-1, so the nonmagnetic IBZ is half the BZ;
+        # the axis-containing plane below fixes which half.
         hull = None
-        centroid_cart = np.mean(points_arr, axis=0)
+        normal_frac = triclinic_halfspace_normal(sc_type)
+        if normal_frac is not None:
+            try:
+                points_arr, hull = triclinic_half_bz_cell(b_matrix, normal_frac)
+                labels_list = []
+                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+            except Exception as exc:
+                hull = None
+                print("[Warning] Could not build the triclinic half-BZ "
+                      f"({exc}); using the mean of the curated k-points.")
+        if hull is None:
+            centroid_cart = np.mean(points_arr, axis=0)
+            ibz_volume = 0.0
         centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-        ibz_volume = 0.0
         if verbose:
-            print(f"\n[Note] Triclinic: IBZ shading skipped "
-                  f"(IBZ = {'full BZ' if sg == 1 else 'half BZ'})")
-            print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, "
-                  f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
+            if hull is not None:
+                print(f"\n[Note] Triclinic: IBZ = half BZ cut by "
+                      f"{_format_plane(normal_frac)} (Laue -1)")
+                print(f"IBZ centroid: [{centroid_frac[0]:.6f}, "
+                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]  "
+                      f"volume={ibz_volume:.6f}")
+            else:
+                print("\n[Note] Triclinic: IBZ shading skipped")
+                print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, "
+                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
     else:
         hull = ConvexHull(points_arr)
         centroid_cart, ibz_volume = calculate_volume_centroid(hull)
@@ -690,7 +726,8 @@ def _generate_figure1(
     labels_list = centroid['labels_list']
 
     fig1_title = (
-        f"BZ: {fig_basename} ({sc_display})" if sg in (1, 2)
+        f"BZ: {fig_basename} ({sc_display})"
+        if sg in (1, 2) and hull is None
         else f"IBZ + BZ: {fig_basename} ({sc_display})"
     )
     display_figures = []
@@ -946,17 +983,19 @@ def run(
         'band_kpoints_frac': analysis_result['band_kpoints_frac'],
         'band_kpath': analysis_result['band_kpath'],
         'extra_general_vertices': analysis_result['extra_general_vertices'],
+        # The triclinic hull is the clipped half-BZ rather than the curated
+        # label hull, so it is published without labels.
         'hull_pts': (
             centroid_result['points_arr']
-            if analysis_result['sg'] not in (1, 2)
+            if (
+                analysis_result['sg'] not in (1, 2)
+                or centroid_result['hull'] is not None
+            )
             else None
         ),
         'hull_simplices': (
             centroid_result['hull'].simplices.tolist()
-            if (
-                analysis_result['sg'] not in (1, 2)
-                and centroid_result['hull'] is not None
-            )
+            if centroid_result['hull'] is not None
             else None
         ),
         'hull_labels': (
