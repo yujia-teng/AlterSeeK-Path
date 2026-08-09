@@ -1366,6 +1366,11 @@ class KPointsModifier:
         )
         if not struct_file: struct_file = "POSCAR"
 
+        # The full operation log exists only after this run successfully
+        # completes spin analysis. Keep its ownership separate from the flip
+        # count: a magnetic non-altermagnet can write the full log with zero
+        # detected spin-flip operations.
+        _step0_wrote_operation_log = False
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
         standard_path_reason = None
@@ -1451,6 +1456,7 @@ class KPointsModifier:
                         symprec=symprec,
                         output_dir=OUTPUT_DIR,
                     )
+                    _step0_wrote_operation_log = True
                 except SpinSymmetryError as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
                     return False
@@ -1521,6 +1527,7 @@ class KPointsModifier:
                         view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                         figure_basename=_figure_basename(struct_file),
                         save_pdf=save_pdf,
+                        spin_log_current_run=_step0_wrote_operation_log,
                     )
                 except Exception as e:
                     print(
@@ -1778,6 +1785,7 @@ class KPointsModifier:
                     view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                     figure_basename=_figure_basename(struct_file),
                     save_pdf=save_pdf,
+                    spin_log_current_run=_step0_wrote_operation_log,
                 )
             except Exception as exc:
                 print(
@@ -1925,7 +1933,9 @@ class KPointsModifier:
         # differently worded report of the same failure. Step 2 asks for the
         # k-point manually instead, which is what it does anyway.
 
-        # Append centroid to spin_operations.txt for reference
+        # Append centroid to the operation log only when Step 0 created that
+        # log for this run. Append mode otherwise creates a misleading
+        # centroid-only file or contaminates a previous structure's stale log.
         if general_kpoint is not None:
             out_k = self._general_kpoint_output_basis(general_kpoint)
             if out_k is not None:
@@ -1933,17 +1943,18 @@ class KPointsModifier:
                     "IBZ centroid (KPOINTS output basis): "
                     f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]"
                 )
-            try:
-                with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
-                          "a", encoding="utf-8", newline="\n") as f:
-                    f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
-                            f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
-                    if out_k is not None:
-                        f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
-                                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
-            except OSError as exc:
-                print("[Warning] Could not append the general k-point to "
-                      f"spin_operations.txt: {exc}")
+            if _step0_wrote_operation_log:
+                try:
+                    with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
+                              "a", encoding="utf-8", newline="\n") as f:
+                        f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
+                                f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
+                        if out_k is not None:
+                            f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
+                                    f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
+                except OSError as exc:
+                    print("[Warning] Could not append the general k-point to "
+                          f"spin_operations.txt: {exc}")
 
         if general_kpoint is None:
             print("Format: kx ky kz (space-separated)")

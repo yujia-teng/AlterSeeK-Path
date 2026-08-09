@@ -103,7 +103,7 @@ record files go into `alterseek_output/`.
 | `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
-| `spin_operations.txt` | Full spin-symmetry operation log |
+| `spin_operations.txt` | Full spin-symmetry operation log, written only when the current run performs spin analysis; a no-moments run neither creates nor changes it |
 | `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
 | `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
 | `*_magnetic_primitive.mcif` | Magnetic primitive cell with its vector moments (default route) |

@@ -16,7 +16,7 @@ import pytest
 from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
 from alterseek import symmetry
-from alterseek.kpoints import KPointsModifier
+from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import _figure_output_paths
 
 
@@ -259,9 +259,16 @@ def test_compute_centroid_2d_differs_from_3d(tmp_path):
     assert abs(r2["centroid_frac"][2]) < 1e-12
 
 
-def test_interactive_2d_output_stays_in_physical_plane(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stale_spin_log", [None, "old structure sentinel\n"])
+def test_interactive_2d_output_stays_in_physical_plane(
+    tmp_path, monkeypatch, stale_spin_log
+):
     poscar = tmp_path / "POSCAR"
     _write_tetragonal_slab(poscar)
+    spin_log = tmp_path / OUTPUT_DIR / "spin_operations.txt"
+    if stale_spin_log is not None:
+        spin_log.parent.mkdir()
+        spin_log.write_text(stale_spin_log, encoding="utf-8")
     (tmp_path / "alterseek_input.toml").write_text(
         'structure = "POSCAR"\n'
         'spin_axis = "0 0 1"\n'
@@ -281,6 +288,10 @@ def test_interactive_2d_output_stays_in_physical_plane(tmp_path, monkeypatch):
     ]
     assert coordinate_rows
     assert all(float(row[2]) == 0.0 for row in coordinate_rows)
+    if stale_spin_log is None:
+        assert not spin_log.exists()
+    else:
+        assert spin_log.read_text(encoding="utf-8") == stale_spin_log
 
 
 def test_save_pdf_adds_pdf_without_leaking_to_next_run(monkeypatch):

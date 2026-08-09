@@ -51,9 +51,8 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     assert produced.splitlines() == expected.splitlines()
 
     output_dir = tmp_path / OUTPUT_DIR
-    full_header = (output_dir / "spin_operations.txt").read_text(
-        encoding="utf-8"
-    ).splitlines()[0]
+    full_text = (output_dir / "spin_operations.txt").read_text(encoding="utf-8")
+    full_header = full_text.splitlines()[0]
     flip_headers = (output_dir / "spin_flip_operations.txt").read_text(
         encoding="utf-8"
     ).splitlines()[:3]
@@ -61,6 +60,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3)."
     )
+    assert "General k-point (IBZ centroid, standardized primitive basis)" in full_text
     assert flip_headers == [
         "# Left basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3).",

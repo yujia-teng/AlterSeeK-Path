@@ -484,6 +484,7 @@ def _write_optional_diagnostics(
     output_dir,
     basename,
     verbose,
+    spin_log_current_run,
 ):
     """Write optional standardization and symbolic-centroid diagnostics."""
     standardized_structure_path = os.path.join(
@@ -520,7 +521,7 @@ def _write_optional_diagnostics(
         print(f"[Warning] Could not write SeeK-path standardization "
               f"files: {exc}")
 
-    if centroid['hull_matches_labels']:
+    if spin_log_current_run and centroid['hull_matches_labels']:
         try:
             sym_centroid, _ = compute_symbolic_centroid(
                 analysis['kpoints_frac_centroid'],
@@ -834,6 +835,7 @@ def run(
     symprec=None,
     figure_basename=None,
     save_pdf=False,
+    spin_log_current_run=False,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -877,6 +879,7 @@ def run(
         output_dir=output_dir,
         basename=basename,
         verbose=verbose,
+        spin_log_current_run=spin_log_current_run,
     )
 
     figure_result = _generate_figure1(
