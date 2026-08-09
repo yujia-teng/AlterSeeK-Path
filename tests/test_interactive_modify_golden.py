@@ -188,6 +188,58 @@ def test_optional_bz_geometry_failure_does_not_block_kpoints(
     assert (tmp_path / "KPOINTS_alter").exists()
 
 
+def test_optional_standardization_diagnostic_failure_does_not_block_kpoints(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import kpoints as kpoints_module
+
+    def fail_standardization(*args, **kwargs):
+        raise OSError("synthetic standardization diagnostic failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(
+        centroid_module,
+        "_write_seekpath_standard_poscar",
+        fail_standardization,
+    )
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "Could not write SeeK-path standardization files" in output
+    assert "synthetic standardization diagnostic failure" in output
+    assert "IBZ centroid construction failed" not in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
+def test_optional_symbolic_diagnostic_failure_does_not_block_kpoints(
+    tmp_path, monkeypatch, capsys
+):
+    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import kpoints as kpoints_module
+
+    def fail_symbolic_centroid(*args, **kwargs):
+        raise RuntimeError("synthetic symbolic diagnostic failure")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
+    monkeypatch.setattr(
+        centroid_module,
+        "compute_symbolic_centroid",
+        fail_symbolic_centroid,
+    )
+    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    output = capsys.readouterr().out
+    assert "Symbolic IBZ centroid unavailable" in output
+    assert "synthetic symbolic diagnostic failure" in output
+    assert "IBZ centroid construction failed" not in output
+    assert (tmp_path / "KPOINTS_alter").exists()
+
+
 def test_deferred_figure_failure_does_not_skip_later_saves_or_cleanup(
     monkeypatch, capsys
 ):

@@ -196,46 +196,28 @@ from .plotting_common import (
 from .plotting_3d import setup_3d_ax, plot_ibz
 
 
-def run(
+def _analyze_kspace(
     filename,
-    output_dir=None,
-    show_plot=True,
-    defer_show=False,
-    verbose=True,
-    seekpath_type_numbers=None,
-    mode_2d=False,
-    input_vacuum_axis=2,
-    view_elev=None,
-    view_azim=None,
-    symprec=None,
-    figure_basename=None,
-    save_pdf=False,
+    *,
+    seekpath_type_numbers,
+    mode_2d,
+    input_vacuum_axis,
+    symprec,
+    verbose,
 ):
-    if output_dir is None:
-        output_dir = os.path.dirname(os.path.abspath(filename))
-    basename = os.path.splitext(os.path.basename(filename))[0]
-    # Figures are named for the structure the user submitted, not for whatever
-    # intermediate cell they were computed from. Without this the magnetic
-    # route names Figure 1 after its internal helper file, so it alone carries
-    # an extra token that Figures 2-4 do not.
-    fig_basename = figure_basename or basename
-
-    if verbose:
-        print("=" * 60)
-        print(f"Processing: {filename}")
-        print("=" * 60)
-
+    """Perform the required structure, symmetry, IBZ, and path analysis."""
     struct = Structure.from_file(filename)
     a_matrix = struct.lattice.matrix
     cell = a_matrix.tolist()
     positions = struct.frac_coords.tolist()
     if seekpath_type_numbers is None:
-        numbers = [s.Z for s in struct.species]
+        numbers = [site.Z for site in struct.species]
     else:
-        numbers = [int(n) for n in seekpath_type_numbers]
+        numbers = [int(number) for number in seekpath_type_numbers]
         if len(numbers) != len(positions):
             raise ValueError(
-                "seekpath_type_numbers length must match the number of structure sites."
+                "seekpath_type_numbers length must match the number of "
+                "structure sites."
             )
 
     requested_symprec = _DEFAULT_SYMPREC if symprec is None else float(symprec)
@@ -243,11 +225,11 @@ def run(
         filename, cell, positions, numbers, fallback=requested_symprec
     )
 
-    # ---- seekpath: lattice detection & standardization ----
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            message=r".*dict interface is deprecated.*Use attribute interface instead.*",
+            message=(r".*dict interface is deprecated.*"
+                     r"Use attribute interface instead.*"),
         )
         warnings.filterwarnings(
             "ignore",
@@ -263,34 +245,6 @@ def run(
         (cell, positions, numbers),
         symprec=symprec,
     )
-    os.makedirs(output_dir, exist_ok=True)
-    standardized_structure_path = os.path.join(output_dir, f"{basename}_seekpath_standard.vasp")
-    standard_mapping_path = os.path.join(output_dir, f"{basename}_seekpath_basis_mapping.txt")
-    try:
-        _write_seekpath_standard_poscar(
-            np.array(input_dataset.std_lattice),
-            np.array(input_dataset.std_positions),
-            list(input_dataset.std_types),
-            standardized_structure_path,
-            os.path.basename(filename),
-        )
-        _write_seekpath_basis_mapping(
-            a_matrix,
-            np.array(sp_result["primitive_lattice"]),
-            np.array(input_dataset.std_lattice),
-            np.array(sp_result["rotation_matrix"]),
-            standard_mapping_path,
-            os.path.basename(filename),
-        )
-        if verbose:
-            print(f"Saved standardized structure: {standardized_structure_path}")
-            print(f"Saved SeeK-path basis mapping: {standard_mapping_path}")
-    except Exception as exc:
-        standardized_structure_path = None
-        standard_mapping_path = None
-        if verbose:
-            print(f"[Warning] Could not write SeeK-path standardization files: {exc}")
-
     spg_cell = (
         np.array(sp_result['primitive_lattice']),
         np.array(sp_result['primitive_positions']),
@@ -298,34 +252,27 @@ def run(
     )
     dataset = spglib.get_symmetry_dataset(spg_cell, symprec=symprec)
     b_matrix = np.array(sp_result['reciprocal_primitive_lattice'])
-    # Reciprocal lattice of the structure passed to SeeK-path. This is the
-    # submitted structure in the ordinary route and the magnetic marker input
-    # (with the magnetic primitive lattice) in the magnetic-cell route.
     b_matrix_input = 2 * np.pi * np.linalg.inv(np.array(a_matrix)).T
-
-    # Conventional-cell reciprocal lattice (no 2pi needed -- cancels in formula).
-    # Used to correctly convert seed flip operations written in the analysis
-    # input structure's fractional basis.
-    _conv_lat = np.array(sp_result.get('conv_lattice', sp_result['primitive_lattice']))
-    b_matrix_conv = np.linalg.inv(_conv_lat).T
+    conventional_lattice = np.array(
+        sp_result.get('conv_lattice', sp_result['primitive_lattice'])
+    )
+    b_matrix_conv = np.linalg.inv(conventional_lattice).T
     b1, b2, b3 = b_matrix
 
-    # ---- 2D / slab mode setup ----
-    # Detect the vacuum axis in the *standardized* frame (seekpath may permute
-    # axes, e.g. monoclinic -> unique axis b), and sanity-check the input cell.
     vacuum_axis = None
     if mode_2d:
-        vacuum_axis, vac_info = detect_vacuum_axis_2d(b_matrix)
+        vacuum_axis, vacuum_info = detect_vacuum_axis_2d(b_matrix)
         if verbose:
             print(f"\n[2D mode] vacuum axis (standardized frame): "
                   f"{vacuum_axis} ('{'abc'[vacuum_axis]}'); reciprocal norms "
-                  f"{[round(x, 4) for x in vac_info['reciprocal_norms']]}")
-        if not (vac_info['separated'] and vac_info['orthogonal']):
+                  f"{[round(value, 4) for value in vacuum_info['reciprocal_norms']]}")
+        if not (vacuum_info['separated'] and vacuum_info['orthogonal']):
             print("[2D mode][Warning] vacuum-axis detection is ambiguous "
-                  f"(separated={vac_info['separated']}, orthogonal={vac_info['orthogonal']}); "
-                  "verify the structure is a proper slab.")
-        for w in check_input_slab(a_matrix, input_vacuum_axis):
-            print(f"[2D mode][Warning] {w}")
+                  f"(separated={vacuum_info['separated']}, "
+                  f"orthogonal={vacuum_info['orthogonal']}); verify the "
+                  "structure is a proper slab.")
+        for warning_text in check_input_slab(a_matrix, input_vacuum_axis):
+            print(f"[2D mode][Warning] {warning_text}")
 
     sg = dataset.number
     laue_group = laue_group_from_point_group(dataset.pointgroup)
@@ -333,20 +280,16 @@ def run(
     if verbose:
         print(f"\nSpace Group: {sg} ({dataset.international})")
         print(f"Point Group: {dataset.pointgroup}")
-        print(f"Laue Group: {laue_group if laue_group is not None else 'Unknown'}")
+        print(f"Laue Group: "
+              f"{laue_group if laue_group is not None else 'Unknown'}")
         if no_altermag:
-            print(f"[Note] {no_altermag['reason']} for Laue group {no_altermag['laue_group']}")
+            print(f"[Note] {no_altermag['reason']} for Laue group "
+                  f"{no_altermag['laue_group']}")
         print(f"Seekpath Bravais: {sp_result['bravais_lattice_extended']}")
 
-    # ---- Map to SeeK-path/HPKOT extended Bravais key ----
     sc_type, conv_params = seekpath_to_hpkot_type(sp_result)
     sc_display = sc_type
     centroid_type = sc_type
-
-    # ---- Get SeeK-path band path plus curated HPKOT/project hull points ----
-    # SeeK-path is the source of the ordinary band path.  The local HPKOT table
-    # is still used for project-curated IBZ hull vertices and copied-sector
-    # points that SeeK-path does not define.
     kpath = [
         (_normalize_label(start), _normalize_label(end))
         for start, end in sp_result['path']
@@ -355,174 +298,61 @@ def run(
         _normalize_label(label): list(coords)
         for label, coords in sp_result['point_coords'].items()
     }
-    kpoints_frac = get_kpoints(sc_type,
-                               conv_params['a'], conv_params.get('b'),
-                               conv_params.get('c'), conv_params.get('alpha'))
+    kpoints_frac = get_kpoints(
+        sc_type,
+        conv_params['a'],
+        conv_params.get('b'),
+        conv_params.get('c'),
+        conv_params.get('alpha'),
+    )
     path_kpoints_frac = {
         label: seekpath_point_coords[label]
         for label in {label for segment in kpath for label in segment}
         if label in seekpath_point_coords
     }
-    kpoints_frac_centroid = get_hull_kpoints(sc_type,
-                                             conv_params['a'], conv_params.get('b'),
-                                             conv_params.get('c'), conv_params.get('alpha'),
-                                             spacegroup_number=sg)
+    kpoints_frac_centroid = get_hull_kpoints(
+        sc_type,
+        conv_params['a'],
+        conv_params.get('b'),
+        conv_params.get('c'),
+        conv_params.get('alpha'),
+        spacegroup_number=sg,
+    )
     hull_kpath = get_hull_kpath(sc_type, spacegroup_number=sg)
     display_labels = get_display_labels(sc_type)
-    params = get_params(sc_type,
-                        conv_params['a'], conv_params.get('b'),
-                        conv_params.get('c'), conv_params.get('alpha'))
+    params = get_params(
+        sc_type,
+        conv_params['a'],
+        conv_params.get('b'),
+        conv_params.get('c'),
+        conv_params.get('alpha'),
+    )
     if params and verbose:
-        print(f"Parameters: {', '.join(f'{k}={v:.6f}' for k, v in params.items())}")
+        print(f"Parameters: "
+              f"{', '.join(f'{key}={value:.6f}' for key, value in params.items())}")
 
     path_kpoints_cart = {
-        k: v[0]*b1 + v[1]*b2 + v[2]*b3
-        for k, v in path_kpoints_frac.items()
+        key: value[0] * b1 + value[1] * b2 + value[2] * b3
+        for key, value in path_kpoints_frac.items()
     }
     kpoints_cart_centroid = {
-        k: v[0]*b1 + v[1]*b2 + v[2]*b3
-        for k, v in kpoints_frac_centroid.items()
+        key: value[0] * b1 + value[1] * b2 + value[2] * b3
+        for key, value in kpoints_frac_centroid.items()
     }
-
     if sc_type == 'mP1':
-        # HPKOT mP1 includes Y and C as path labels, but they are not vertices
-        # of the selected simple-monoclinic IBZ hull.
         for label in ('Y', 'C'):
             kpoints_frac_centroid.pop(label, None)
             kpoints_cart_centroid.pop(label, None)
-    elif sc_type == 'mC1':
-        # Keep project-only hidden closure vertices for the mC1 hull. They are
-        # present in kpoints_frac_centroid but absent from display labels/path.
-        pass
 
-    # ---- Symmetry operations ----
     sym_ops_cart, unique_ops = get_symmetry_operations(b_matrix, dataset)
     if verbose:
         print(f"\nSymmetry operations: {len(sym_ops_cart)}")
         print(f"With time-reversal: {len(unique_ops)}")
 
-    # ---- Convex Hull & Centroid ----
-    # Use the project-curated HPKOT hull point set.  This is distinct from the
-    # public HPKOT band path: lower-symmetry classes can add copied boundary
-    # vertices (e.g. M_A/L_A for hexagonal 6/m) to preserve the standard doubled
-    # IBZ wedge used by the project.
-    labels_list = list(kpoints_cart_centroid.keys())
-    points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
-
-    ibz_polygon_frac = None
-    if mode_2d:
-        # 2D slab: the physical IBZ is the k[vacuum_axis]=0 cross-section.
-        # Restrict the curated hull points to that plane and take the 2D area
-        # centroid (the 3D volume centroid/ConvexHull are meaningless here and
-        # ConvexHull crashes on coplanar input).
-        in_plane_labels = [
-            lab for lab in labels_list
-            if abs(kpoints_frac_centroid[lab][vacuum_axis]) < 1e-4
-        ]
-        # A "<base>_2" HPKOT point that is genuinely a distinct 3D hull
-        # vertex (e.g. mP1's B_2/D_2, needed for the real 3D IBZ volume) can
-        # still be a redundant mirror-image duplicate once sliced to this 2D
-        # plane, if both "<base>" and "<base>_2" happen to survive the
-        # in-plane filter. Keeping both would double the in-plane hull's
-        # extent along whichever coordinate differs between them, pushing
-        # Gamma off being a hull corner and skewing the 2D area centroid.
-        # This is a 2D-only reduction -- the curated 3D hull table itself is
-        # untouched, since 3D genuinely needs both points.
-        base_labels = {lab for lab in in_plane_labels if not lab.endswith('_2')}
-        in_plane_labels = [
-            lab for lab in in_plane_labels
-            if not (lab.endswith('_2') and lab[:-2] in base_labels)
-        ]
-        frac_pts = np.array([kpoints_frac_centroid[lab] for lab in in_plane_labels])
-        hull = None
-        centroid_frac, centroid_cart, ibz_vol = area_centroid_2d(
-            frac_pts, vacuum_axis, b_matrix)
-        ibz_polygon_frac = ordered_2d_polygon_frac(frac_pts, vacuum_axis)
-        if verbose:
-            print(f"[2D mode] in-plane hull labels: {len(in_plane_labels)} / "
-                  f"{len(labels_list)} ({', '.join(in_plane_labels)})")
-            print(f"[2D mode] area centroid (frac): "
-                  f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]"
-                  f"  area={ibz_vol:.6f}")
-    elif sg in (1, 2):
-        # Triclinic: IBZ boundary is hard to define on Wigner-Seitz BZ.
-        # Skip hull/centroid --not needed (no altermagnetic splitting).
-        hull = None
-        centroid_cart = np.mean(points_arr, axis=0)
-        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-        ibz_vol = 0.0
-        if verbose:
-            print(f"\n[Note] Triclinic: IBZ shading skipped (IBZ = {'full BZ' if sg == 1 else 'half BZ'})")
-            print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
-    else:
-        hull = ConvexHull(points_arr)
-        centroid_cart, ibz_vol = calculate_volume_centroid(hull)
-        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-
-        # The mC2/mC3 HPKOT tables include distinctive boundary labels whose
-        # convex hull is slightly larger than the true C2/m fundamental domain.
-        # For these branches only, keep the labels/path from HPKOT but shade and
-        # use the centroid of the symmetry/Voronoi IBZ cell so four images tile
-        # the BZ without overlap.
-        hull_matches_labels = True
-        if sc_type in {'mC2', 'mC3'}:
-            mono_pts, mono_simplices = build_symmetry_ibz_cell(
-                b_matrix, unique_ops, centroid_cart)
-            if mono_pts is not None and mono_simplices is not None:
-                points_arr = np.array(mono_pts, dtype=float)
-                hull = ConvexHull(points_arr)
-                centroid_cart, ibz_vol = calculate_volume_centroid(hull)
-                centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-                hull_matches_labels = False
-                if verbose:
-                    print("[Note] Using symmetry/Voronoi IBZ cell for monoclinic hull.")
-
-        # ---- Symbolic Centroid (saved to file, not printed) ----
-        if hull_matches_labels:
-            try:
-                sym_centroid, param_syms = compute_symbolic_centroid(
-                    kpoints_frac_centroid, hull, labels_list, centroid_type, conv_params)
-                if sym_centroid is not None:
-                    sym_lines = "\n".join(
-                        f"  {ax_name} = {sym_centroid[i]}"
-                        for i, ax_name in enumerate(['k1', 'k2', 'k3'])
-                    )
-                    try:
-                        with open(os.path.join(output_dir, "spin_operations.txt"),
-                                  "a", encoding="utf-8", newline="\n") as f:
-                            f.write(f"\nSymbolic IBZ centroid (fractional):\n{sym_lines}\n")
-                    except OSError as exc:
-                        print("[Warning] Could not record the symbolic IBZ "
-                              f"centroid: {exc}")
-            except Exception as exc:
-                # The symbolic centroid is a convenience record; the numeric
-                # centroid the path is built from is computed above and is
-                # unaffected. Say so rather than discarding it silently -- a
-                # permanently broken symbolic route was invisible before.
-                print(f"[Warning] Symbolic IBZ centroid unavailable: {exc}")
-
-    # Selected band path. For doubled-IBZ cases, copied vertices may either be
-    # included in project-defined path segments or appended as isolated
-    # general-point anchors when no nonredundant high-symmetry edge is needed.
-    #
-    # The doubled-IBZ construction (SG 75-88 tP1/tI1/tI2, SG 168-176 hP2)
-    # doubles the wedge because the *actual* point group (4, -4, 4/m, 6, -6,
-    # 6/m, 3, -3) has no vertical mirrors -- that deficiency is an in-plane
-    # fact, not a k_z/bulk-only one, so it still applies in 2D. The curated
-    # hull (kpoints_frac_centroid, from get_hull_kpoints below) always
-    # includes the doubled _A points regardless of mode_2d, and the 2D-mode
-    # centroid/ibz_polygon_frac block further down already uses that doubled
-    # hull. So band_kpath must also use the doubled hull_kpath in 2D mode --
-    # otherwise the *displayed* wedge is only half of what the (correctly
-    # doubled) centroid was computed from, and the plotted k point ends up
-    # looking off-center/outside a too-small triangle.
-    doubled_ibz_case = (75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}) or (
-        168 <= sg <= 176 and sc_type == 'hP2'
-    )
-    if doubled_ibz_case:
-        band_kpath = list(hull_kpath)
-    else:
-        band_kpath = list(kpath)
+    doubled_ibz_case = (
+        75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}
+    ) or (168 <= sg <= 176 and sc_type == 'hP2')
+    band_kpath = list(hull_kpath if doubled_ibz_case else kpath)
     band_kpoints_frac = dict(path_kpoints_frac)
     extra_general_vertices = []
     if sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163}:
@@ -555,82 +385,313 @@ def run(
 
     path_labels = {label for segment in band_kpath for label in segment}
     extra_general_vertices = [
-        label for label in extra_general_vertices
-        if label not in path_labels
+        label for label in extra_general_vertices if label not in path_labels
     ]
-
     if mode_2d:
-        # Keep only path segments and anchors that live in the physical plane
-        # (both endpoints have fractional k[vacuum_axis] ~ 0). Out-of-plane
-        # high-symmetry points (e.g. Z, A, R) are the same in-plane points
-        # raised along the dead vacuum reciprocal direction and are dropped.
-        def _in_plane_label(lbl):
-            v = (band_kpoints_frac.get(lbl)
-                 or kpoints_frac_centroid.get(lbl)
-                 or path_kpoints_frac.get(lbl))
-            return v is not None and abs(v[vacuum_axis]) < 1e-4
+        def _in_plane_label(label):
+            value = (
+                band_kpoints_frac.get(label)
+                or kpoints_frac_centroid.get(label)
+                or path_kpoints_frac.get(label)
+            )
+            return value is not None and abs(value[vacuum_axis]) < 1e-4
+
         band_kpath = [
-            seg for seg in band_kpath if all(_in_plane_label(l) for l in seg)
+            segment for segment in band_kpath
+            if all(_in_plane_label(label) for label in segment)
         ]
         extra_general_vertices = [
-            l for l in extra_general_vertices if _in_plane_label(l)
+            label for label in extra_general_vertices
+            if _in_plane_label(label)
         ]
-        path_labels = {label for segment in band_kpath for label in segment}
-
+        path_labels = {
+            label for segment in band_kpath for label in segment
+        }
         if doubled_ibz_case:
-            # The 3D doubled-IBZ chain (e.g. tP1's A-R_A-X_A-M) only reaches
-            # its copied _A vertex via out-of-plane anchors (A, R_A, ...),
-            # which the plane filter above just dropped. That leaves the
-            # surviving in-plane tail (e.g. X_A-M) as a disconnected stub
-            # with no edge back to Gamma, even though X_A is a genuine
-            # vertex of the physical in-plane doubled wedge (Gamma-X-M-X_A).
-            # Close the loop explicitly: any doubled _A/_B-style vertex that
-            # is in-plane but not directly connected to Gamma gets a new
-            # Gamma-<vertex> segment.
-            def _is_doubled_label(lbl):
-                base = lbl[1:] if lbl.startswith('_') else lbl
-                return '_A' in base or '_B' in base or base.endswith('_0A')
+            def _is_doubled_label(label):
+                base = label[1:] if label.startswith('_') else label
+                return (
+                    '_A' in base
+                    or '_B' in base
+                    or base.endswith('_0A')
+                )
 
             connected_to_gamma = {
-                seg[1] if seg[0] == GAMMA_LABEL else seg[0]
-                for seg in band_kpath if GAMMA_LABEL in seg
+                segment[1] if segment[0] == GAMMA_LABEL else segment[0]
+                for segment in band_kpath if GAMMA_LABEL in segment
             }
-            doubled_labels = [l for l in path_labels if _is_doubled_label(l)]
+            doubled_labels = [
+                label for label in path_labels if _is_doubled_label(label)
+            ]
             for label in doubled_labels:
                 if label not in connected_to_gamma:
                     band_kpath.append((GAMMA_LABEL, label))
-            path_labels = {label for segment in band_kpath for label in segment}
-
+            path_labels = {
+                label for segment in band_kpath for label in segment
+            }
         if verbose:
-            print(f"[2D mode] in-plane band path: {len(band_kpath)} segments, "
-                  f"labels {sorted(path_labels)}")
+            print(f"[2D mode] in-plane band path: {len(band_kpath)} "
+                  f"segments, labels {sorted(path_labels)}")
 
-    # For plotting: draw the selected band path on top of the project IBZ hull.
-    # Add path-only optional points (e.g. H_2) only when the selected path
-    # actually uses them; do not let them affect the hull or centroid.
     kpath_plot = band_kpath
-    display_labels_plot = display_labels
     kpoints_cart_plot = dict(kpoints_cart_centroid)
-    for label in {lbl for segment in kpath_plot for lbl in segment}:
+    for label in {label for segment in kpath_plot for label in segment}:
         if label in path_kpoints_cart:
             kpoints_cart_plot[label] = path_kpoints_cart[label]
-
     kpoints_frac_for_output = dict(path_kpoints_frac)
-    for label in {lbl for segment in kpath_plot for lbl in segment}:
+    for label in {label for segment in kpath_plot for label in segment}:
         if label in kpoints_frac_centroid:
             kpoints_frac_for_output[label] = kpoints_frac_centroid[label]
 
-    # ---- Plotting ----
-    fig1_title = (f"BZ: {fig_basename} ({sc_display})" if sg in (1, 2)
-                  else f"IBZ + BZ: {fig_basename} ({sc_display})")
+    return {
+        'a_matrix': a_matrix,
+        'input_dataset': input_dataset,
+        'sp_result': sp_result,
+        'dataset': dataset,
+        'b_matrix': b_matrix,
+        'b_matrix_input': b_matrix_input,
+        'b_matrix_conv': b_matrix_conv,
+        'vacuum_axis': vacuum_axis,
+        'sg': sg,
+        'laue_group': laue_group,
+        'no_altermagnetism': no_altermag,
+        'sc_type': sc_type,
+        'sc_display': sc_display,
+        'centroid_type': centroid_type,
+        'conv_params': conv_params,
+        'kpoints_frac': kpoints_frac,
+        'kpoints_frac_centroid': kpoints_frac_centroid,
+        'kpoints_cart_centroid': kpoints_cart_centroid,
+        'sym_ops_cart': sym_ops_cart,
+        'unique_ops': unique_ops,
+        'band_kpath': band_kpath,
+        'band_kpoints_frac': band_kpoints_frac,
+        'extra_general_vertices': extra_general_vertices,
+        'kpath_plot': kpath_plot,
+        'display_labels_plot': display_labels,
+        'kpoints_cart_plot': kpoints_cart_plot,
+        'kpoints_frac_for_output': kpoints_frac_for_output,
+        'symprec': symprec,
+        'mcif_parent_recovery': mcif_parent_recovery,
+    }
 
+
+def _write_optional_diagnostics(
+    analysis,
+    centroid,
+    *,
+    filename,
+    output_dir,
+    basename,
+    verbose,
+):
+    """Write optional standardization and symbolic-centroid diagnostics."""
+    standardized_structure_path = os.path.join(
+        output_dir, f"{basename}_seekpath_standard.vasp"
+    )
+    standard_mapping_path = os.path.join(
+        output_dir, f"{basename}_seekpath_basis_mapping.txt"
+    )
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        input_dataset = analysis['input_dataset']
+        sp_result = analysis['sp_result']
+        _write_seekpath_standard_poscar(
+            np.array(input_dataset.std_lattice),
+            np.array(input_dataset.std_positions),
+            list(input_dataset.std_types),
+            standardized_structure_path,
+            os.path.basename(filename),
+        )
+        _write_seekpath_basis_mapping(
+            analysis['a_matrix'],
+            np.array(sp_result['primitive_lattice']),
+            np.array(input_dataset.std_lattice),
+            np.array(sp_result['rotation_matrix']),
+            standard_mapping_path,
+            os.path.basename(filename),
+        )
+        if verbose:
+            print(f"Saved standardized structure: {standardized_structure_path}")
+            print(f"Saved SeeK-path basis mapping: {standard_mapping_path}")
+    except Exception as exc:
+        standardized_structure_path = None
+        standard_mapping_path = None
+        print(f"[Warning] Could not write SeeK-path standardization "
+              f"files: {exc}")
+
+    if centroid['hull_matches_labels']:
+        try:
+            sym_centroid, _ = compute_symbolic_centroid(
+                analysis['kpoints_frac_centroid'],
+                centroid['hull'],
+                centroid['labels_list'],
+                analysis['centroid_type'],
+                analysis['conv_params'],
+            )
+            if sym_centroid is not None:
+                sym_lines = "\n".join(
+                    f"  {axis_name} = {sym_centroid[index]}"
+                    for index, axis_name in enumerate(['k1', 'k2', 'k3'])
+                )
+                try:
+                    with open(
+                        os.path.join(output_dir, "spin_operations.txt"),
+                        "a",
+                        encoding="utf-8",
+                        newline="\n",
+                    ) as stream:
+                        stream.write(
+                            "\nSymbolic IBZ centroid (fractional):\n"
+                            f"{sym_lines}\n"
+                        )
+                except OSError as exc:
+                    print("[Warning] Could not record the symbolic IBZ "
+                          f"centroid: {exc}")
+        except Exception as exc:
+            print(f"[Warning] Symbolic IBZ centroid unavailable: {exc}")
+
+    return {
+        'standardized_structure_path': standardized_structure_path,
+        'standard_mapping_path': standard_mapping_path,
+    }
+
+
+def _compute_ibz_centroid(
+    *,
+    mode_2d,
+    vacuum_axis,
+    sg,
+    sc_type,
+    b_matrix,
+    unique_ops,
+    kpoints_frac_centroid,
+    kpoints_cart_centroid,
+    verbose,
+):
+    """Compute the required numerical centroid from analyzed IBZ geometry."""
+    labels_list = list(kpoints_cart_centroid.keys())
+    points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
+    ibz_polygon_frac = None
+    hull_matches_labels = False
+
+    if mode_2d:
+        # 2D slab: the physical IBZ is the k[vacuum_axis]=0 cross-section.
+        # Restrict the curated hull points to that plane and take the 2D area
+        # centroid (the 3D volume centroid/ConvexHull are meaningless here and
+        # ConvexHull crashes on coplanar input).
+        in_plane_labels = [
+            lab for lab in labels_list
+            if abs(kpoints_frac_centroid[lab][vacuum_axis]) < 1e-4
+        ]
+        # A "<base>_2" HPKOT point that is genuinely a distinct 3D hull
+        # vertex can still be a redundant mirror-image duplicate once sliced
+        # to this 2D plane. This reduction is 2D-only.
+        base_labels = {lab for lab in in_plane_labels if not lab.endswith('_2')}
+        in_plane_labels = [
+            lab for lab in in_plane_labels
+            if not (lab.endswith('_2') and lab[:-2] in base_labels)
+        ]
+        frac_pts = np.array([
+            kpoints_frac_centroid[lab] for lab in in_plane_labels
+        ])
+        hull = None
+        centroid_frac, centroid_cart, ibz_volume = area_centroid_2d(
+            frac_pts, vacuum_axis, b_matrix
+        )
+        ibz_polygon_frac = ordered_2d_polygon_frac(frac_pts, vacuum_axis)
+        if verbose:
+            print(f"[2D mode] in-plane hull labels: {len(in_plane_labels)} / "
+                  f"{len(labels_list)} ({', '.join(in_plane_labels)})")
+            print(f"[2D mode] area centroid (frac): "
+                  f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, "
+                  f"{centroid_frac[2]:.6f}]  area={ibz_volume:.6f}")
+    elif sg in (1, 2):
+        # Triclinic: IBZ boundary is hard to define on the Wigner-Seitz BZ.
+        hull = None
+        centroid_cart = np.mean(points_arr, axis=0)
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        ibz_volume = 0.0
+        if verbose:
+            print(f"\n[Note] Triclinic: IBZ shading skipped "
+                  f"(IBZ = {'full BZ' if sg == 1 else 'half BZ'})")
+            print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, "
+                  f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
+    else:
+        hull = ConvexHull(points_arr)
+        centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        hull_matches_labels = True
+
+        # The mC2/mC3 HPKOT tables include distinctive boundary labels whose
+        # convex hull is slightly larger than the true C2/m fundamental domain.
+        if sc_type in {'mC2', 'mC3'}:
+            mono_pts, mono_simplices = build_symmetry_ibz_cell(
+                b_matrix, unique_ops, centroid_cart
+            )
+            if mono_pts is not None and mono_simplices is not None:
+                points_arr = np.array(mono_pts, dtype=float)
+                hull = ConvexHull(points_arr)
+                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+                centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+                hull_matches_labels = False
+                if verbose:
+                    print("[Note] Using symmetry/Voronoi IBZ cell for "
+                          "monoclinic hull.")
+
+    return {
+        'labels_list': labels_list,
+        'points_arr': points_arr,
+        'hull': hull,
+        'centroid_cart': centroid_cart,
+        'centroid_frac': centroid_frac,
+        'ibz_volume': ibz_volume,
+        'ibz_polygon_frac': ibz_polygon_frac,
+        'hull_matches_labels': hull_matches_labels,
+    }
+
+
+def _generate_figure1(
+    analysis,
+    centroid,
+    *,
+    output_dir,
+    fig_basename,
+    show_plot,
+    defer_show,
+    mode_2d,
+    view_elev,
+    view_azim,
+    save_pdf,
+    verbose,
+):
+    """Generate optional BZ geometry and the ordinary 3D Figure 1."""
+    sg = analysis['sg']
+    sc_type = analysis['sc_type']
+    sc_display = analysis['sc_display']
+    b_matrix = analysis['b_matrix']
+    kpath_plot = analysis['kpath_plot']
+    display_labels_plot = analysis['display_labels_plot']
+    kpoints_cart_plot = analysis['kpoints_cart_plot']
+    hull = centroid['hull']
+    centroid_cart = centroid['centroid_cart']
+    points_arr = centroid['points_arr']
+    labels_list = centroid['labels_list']
+
+    fig1_title = (
+        f"BZ: {fig_basename} ({sc_display})" if sg in (1, 2)
+        else f"IBZ + BZ: {fig_basename} ({sc_display})"
+    )
     display_figures = []
     default_elev, default_azim = (
-        (view_elev, view_azim) if view_elev is not None and view_azim is not None
+        (view_elev, view_azim)
+        if view_elev is not None and view_azim is not None
         else (14, 20)
     )
     elev1, azim1 = default_elev, default_azim
-    fig1_path = os.path.join(output_dir, f'{fig_basename}_ibz_{sc_display}.png')
+    fig1_path = os.path.join(
+        output_dir, f'{fig_basename}_ibz_{sc_display}.png'
+    )
     bz_loops = None
     bz_center = None
     bz_span = None
@@ -638,25 +699,32 @@ def run(
     fig1s = None
     try:
         # The BZ wireframe is presentation data used only by Figures 1-4.
-        # Keep its construction inside the same optional boundary as Figure 1
-        # so a plotting-geometry failure cannot invalidate the already-computed
-        # centroid, path, or reciprocal-basis result.
         bz_loops = get_bz_loops(b_matrix)
         all_bz_pts = np.vstack(bz_loops)
         bz_center = np.mean(all_bz_pts, axis=0)
         bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
         if show_plot and not mode_2d:
-            # Interactive mode: create the figure now. alterseek_path can defer
-            # the actual plt.show() call until all prompts and file writes finish.
-            # Opens at (default_elev, default_azim) so a fixed camera angle (e.g.
-            # matched across cases) is used unless the user rotates it manually.
-            fig1, ax1 = setup_3d_ax(fig1_title,
-                                    bz_loops, b_matrix, bz_center, bz_span,
-                                    elev=default_elev, azim=default_azim)
-            plot_ibz(ax1, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                     hull, centroid_cart, hull_pts=points_arr, lattice_type=sc_type,
-                     hull_labels=labels_list)
+            fig1, ax1 = setup_3d_ax(
+                fig1_title,
+                bz_loops,
+                b_matrix,
+                bz_center,
+                bz_span,
+                elev=default_elev,
+                azim=default_azim,
+            )
+            plot_ibz(
+                ax1,
+                kpoints_cart_plot,
+                kpath_plot,
+                display_labels_plot,
+                hull,
+                centroid_cart,
+                hull_pts=points_arr,
+                lattice_type=sc_type,
+                hull_labels=labels_list,
+            )
             plt.tight_layout()
             if defer_show:
                 def _save_fig1_after_show(fig=fig1, ax=ax1):
@@ -664,14 +732,25 @@ def run(
                     try:
                         save_figure, save_ax = setup_3d_ax(
                             fig1_title,
-                            bz_loops, b_matrix, bz_center, bz_span,
-                            elev=ax.elev, azim=ax.azim,
+                            bz_loops,
+                            b_matrix,
+                            bz_center,
+                            bz_span,
+                            elev=ax.elev,
+                            azim=ax.azim,
                             dashed_back=True,
                         )
-                        plot_ibz(save_ax, kpoints_cart_plot, kpath_plot,
-                                 display_labels_plot, hull, centroid_cart,
-                                 hull_pts=points_arr, lattice_type=sc_type,
-                                 hull_labels=labels_list)
+                        plot_ibz(
+                            save_ax,
+                            kpoints_cart_plot,
+                            kpath_plot,
+                            display_labels_plot,
+                            hull,
+                            centroid_cart,
+                            hull_pts=points_arr,
+                            lattice_type=sc_type,
+                            hull_labels=labels_list,
+                        )
                         plt.tight_layout()
                         saved_paths = _save_figure(
                             save_figure,
@@ -687,25 +766,32 @@ def run(
                         plt.close(fig)
                 fig1._alterseek_save_after_show = _save_fig1_after_show
                 display_figures.append(fig1)
-                elev1, azim1 = default_elev, default_azim
             else:
                 plt.show()
                 elev1, azim1 = ax1.elev, ax1.azim
-        else:
-            # Automated mode (called from alterseek_path): use default angles,
-            # no window.
-            elev1, azim1 = default_elev, default_azim
 
-        # Render with dashed back-edges and save unless deferred post-show
-        # saving is active. Skipped in 2D mode, whose figures are generated by
-        # the separate 2D plotting route.
         if not (show_plot and defer_show) and not mode_2d:
-            fig1s, ax1s = setup_3d_ax(fig1_title,
-                                      bz_loops, b_matrix, bz_center, bz_span,
-                                      elev=elev1, azim=azim1, dashed_back=True)
-            plot_ibz(ax1s, kpoints_cart_plot, kpath_plot, display_labels_plot,
-                     hull, centroid_cart, hull_pts=points_arr,
-                     lattice_type=sc_type, hull_labels=labels_list)
+            fig1s, ax1s = setup_3d_ax(
+                fig1_title,
+                bz_loops,
+                b_matrix,
+                bz_center,
+                bz_span,
+                elev=elev1,
+                azim=azim1,
+                dashed_back=True,
+            )
+            plot_ibz(
+                ax1s,
+                kpoints_cart_plot,
+                kpath_plot,
+                display_labels_plot,
+                hull,
+                centroid_cart,
+                hull_pts=points_arr,
+                lattice_type=sc_type,
+                hull_labels=labels_list,
+            )
             plt.tight_layout()
             saved_paths = _save_figure(
                 fig1s,
@@ -717,9 +803,6 @@ def run(
             _print_saved_paths(saved_paths, verbose=verbose)
             plt.close(fig1s)
     except Exception as exc:
-        # Figure 1 is the ordinary BZ/IBZ view, not part of the numerical
-        # centroid, path, or basis result. A Matplotlib or image-write failure
-        # must not turn valid analysis into a reported centroid failure.
         display_figures.clear()
         for figure in (fig1s, fig1):
             if figure is not None:
@@ -728,48 +811,162 @@ def run(
         print(f"[Warning] Could not generate Figure 1: {exc}")
 
     return {
-        'sc_type': sc_display,
-        'lattice_key': sc_type,
-        'seekpath_bravais': sp_result['bravais_lattice_extended'],
-        'spacegroup': sg,
-        'sg_symbol': dataset.international,
-        'point_group': dataset.pointgroup,
-        'laue_group': laue_group,
-        'no_altermagnetism': no_altermag,
-        'kpoints_frac': kpoints_frac,
-        'centroid_cart': centroid_cart,
-        'centroid_frac': centroid_frac,
-        'ibz_volume': ibz_vol,
-        'n_symmetry_ops': len(unique_ops),
-        'sp_path': sp_result['path'],
-        'sp_point_coords': sp_result['point_coords'],
-        'b_matrix': b_matrix,
         'bz_loops': bz_loops,
         'bz_center': bz_center,
         'bz_span': bz_span,
         'elev': elev1,
         'azim': azim1,
-        'ibz_kpoints_frac': kpoints_frac_centroid if sg not in (1, 2) else kpoints_frac,
-        'path_kpoints_frac': kpoints_frac_for_output,
-        'ibz_kpath': kpath_plot,
-        'band_kpoints_frac': band_kpoints_frac,
-        'band_kpath': band_kpath,
-        'extra_general_vertices': extra_general_vertices,
-        'hull_pts': points_arr if sg not in (1, 2) else None,
-        'hull_simplices': hull.simplices.tolist() if (sg not in (1, 2) and hull is not None) else None,
-        'hull_labels': labels_list if sg not in (1, 2) else None,
-        'sym_ops_cart': sym_ops_cart,
-        'unique_ops': unique_ops,
-        'b_matrix_conv': b_matrix_conv,
-        'b_matrix_input': b_matrix_input,
+        'display_figures': display_figures,
+    }
+
+
+def run(
+    filename,
+    output_dir=None,
+    show_plot=True,
+    defer_show=False,
+    verbose=True,
+    seekpath_type_numbers=None,
+    mode_2d=False,
+    input_vacuum_axis=2,
+    view_elev=None,
+    view_azim=None,
+    symprec=None,
+    figure_basename=None,
+    save_pdf=False,
+):
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(filename))
+    basename = os.path.splitext(os.path.basename(filename))[0]
+    # Figures are named for the structure the user submitted, not for whatever
+    # intermediate cell they were computed from. Without this the magnetic
+    # route names Figure 1 after its internal helper file, so it alone carries
+    # an extra token that Figures 2-4 do not.
+    fig_basename = figure_basename or basename
+
+    if verbose:
+        print("=" * 60)
+        print(f"Processing: {filename}")
+        print("=" * 60)
+
+    analysis_result = _analyze_kspace(
+        filename,
+        seekpath_type_numbers=seekpath_type_numbers,
+        mode_2d=mode_2d,
+        input_vacuum_axis=input_vacuum_axis,
+        symprec=symprec,
+        verbose=verbose,
+    )
+
+    centroid_result = _compute_ibz_centroid(
+        mode_2d=mode_2d,
+        vacuum_axis=analysis_result['vacuum_axis'],
+        sg=analysis_result['sg'],
+        sc_type=analysis_result['sc_type'],
+        b_matrix=analysis_result['b_matrix'],
+        unique_ops=analysis_result['unique_ops'],
+        kpoints_frac_centroid=analysis_result['kpoints_frac_centroid'],
+        kpoints_cart_centroid=analysis_result['kpoints_cart_centroid'],
+        verbose=verbose,
+    )
+
+    diagnostic_result = _write_optional_diagnostics(
+        analysis_result,
+        centroid_result,
+        filename=filename,
+        output_dir=output_dir,
+        basename=basename,
+        verbose=verbose,
+    )
+
+    figure_result = _generate_figure1(
+        analysis_result,
+        centroid_result,
+        output_dir=output_dir,
+        fig_basename=fig_basename,
+        show_plot=show_plot,
+        defer_show=defer_show,
+        mode_2d=mode_2d,
+        view_elev=view_elev,
+        view_azim=view_azim,
+        save_pdf=save_pdf,
+        verbose=verbose,
+    )
+    bz_loops = figure_result['bz_loops']
+    bz_center = figure_result['bz_center']
+    bz_span = figure_result['bz_span']
+    elev1 = figure_result['elev']
+    azim1 = figure_result['azim']
+    display_figures = figure_result['display_figures']
+
+    return {
+        'sc_type': analysis_result['sc_display'],
+        'lattice_key': analysis_result['sc_type'],
+        'seekpath_bravais': analysis_result[
+            'sp_result'
+        ]['bravais_lattice_extended'],
+        'spacegroup': analysis_result['sg'],
+        'sg_symbol': analysis_result['dataset'].international,
+        'point_group': analysis_result['dataset'].pointgroup,
+        'laue_group': analysis_result['laue_group'],
+        'no_altermagnetism': analysis_result['no_altermagnetism'],
+        'kpoints_frac': analysis_result['kpoints_frac'],
+        'centroid_cart': centroid_result['centroid_cart'],
+        'centroid_frac': centroid_result['centroid_frac'],
+        'ibz_volume': centroid_result['ibz_volume'],
+        'n_symmetry_ops': len(analysis_result['unique_ops']),
+        'sp_path': analysis_result['sp_result']['path'],
+        'sp_point_coords': analysis_result['sp_result']['point_coords'],
+        'b_matrix': analysis_result['b_matrix'],
+        'bz_loops': bz_loops,
+        'bz_center': bz_center,
+        'bz_span': bz_span,
+        'elev': elev1,
+        'azim': azim1,
+        'ibz_kpoints_frac': (
+            analysis_result['kpoints_frac_centroid']
+            if analysis_result['sg'] not in (1, 2)
+            else analysis_result['kpoints_frac']
+        ),
+        'path_kpoints_frac': analysis_result['kpoints_frac_for_output'],
+        'ibz_kpath': analysis_result['kpath_plot'],
+        'band_kpoints_frac': analysis_result['band_kpoints_frac'],
+        'band_kpath': analysis_result['band_kpath'],
+        'extra_general_vertices': analysis_result['extra_general_vertices'],
+        'hull_pts': (
+            centroid_result['points_arr']
+            if analysis_result['sg'] not in (1, 2)
+            else None
+        ),
+        'hull_simplices': (
+            centroid_result['hull'].simplices.tolist()
+            if (
+                analysis_result['sg'] not in (1, 2)
+                and centroid_result['hull'] is not None
+            )
+            else None
+        ),
+        'hull_labels': (
+            centroid_result['labels_list']
+            if analysis_result['sg'] not in (1, 2)
+            else None
+        ),
+        'sym_ops_cart': analysis_result['sym_ops_cart'],
+        'unique_ops': analysis_result['unique_ops'],
+        'b_matrix_conv': analysis_result['b_matrix_conv'],
+        'b_matrix_input': analysis_result['b_matrix_input'],
         'mode_2d': mode_2d,
-        'vacuum_axis': vacuum_axis,
-        'ibz_polygon_frac': ibz_polygon_frac,
-        'seekpath_rotation_matrix': np.array(sp_result['rotation_matrix']),
-        'standardized_structure_path': standardized_structure_path,
-        'standard_mapping_path': standard_mapping_path,
-        'symprec': symprec,
-        'mcif_parent_recovery': mcif_parent_recovery,
+        'vacuum_axis': analysis_result['vacuum_axis'],
+        'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
+        'seekpath_rotation_matrix': np.array(
+            analysis_result['sp_result']['rotation_matrix']
+        ),
+        'standardized_structure_path': diagnostic_result[
+            'standardized_structure_path'
+        ],
+        'standard_mapping_path': diagnostic_result['standard_mapping_path'],
+        'symprec': analysis_result['symprec'],
+        'mcif_parent_recovery': analysis_result['mcif_parent_recovery'],
         'display_figures': display_figures,
     }
 
