@@ -174,6 +174,15 @@ def test_qe_build_tick_data_keeps_unpaired_helper_labels():
     assert positions == [0.0, 1.0, 2.0]
 
 
+def test_qe_build_tick_data_rejects_out_of_range_gap_partner():
+    from plot_alterband_qe import _build_tick_data
+
+    waypoints = [("k", 30, 0), ("k'", 1, 2)]
+
+    with pytest.raises(ValueError, match="k-index 2"):
+        _build_tick_data(waypoints, np.array([0.0]))
+
+
 def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
     from plot_alterband_qe import _parse_kpoints_qe
 

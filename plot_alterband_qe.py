@@ -262,6 +262,13 @@ def _build_tick_data(
     _fix_klabels_missing_merge in plot_alterband.py, which handles the
     same coincident-point case for VASP/VASPKIT-derived KLABELS).
     """
+    for label, _ni, k_idx in waypoints:
+        if k_idx >= len(kpath):
+            raise ValueError(
+                f"Waypoint '{label}' has k-index {k_idx} but .gnu file has only "
+                f"{len(kpath)} k-points — KPOINTS_alter_qe and .gnu file mismatch"
+            )
+
     labels: list[str] = []
     positions: list[float] = []
     i = 0
@@ -279,11 +286,6 @@ def _build_tick_data(
             positions.append((x_first + x_second) / 2.0)
             i += 2
             continue
-        if k_idx >= len(kpath):
-            raise ValueError(
-                f"Waypoint '{label}' has k-index {k_idx} but .gnu file has only "
-                f"{len(kpath)} k-points — KPOINTS_alter_qe and .gnu file mismatch"
-            )
         x_pos = float(kpath[k_idx])
         next_label, _next_ni, next_k_idx = (
             waypoints[i + 1] if i + 1 < len(waypoints) else (None, None, None)
