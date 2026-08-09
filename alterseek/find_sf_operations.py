@@ -15,15 +15,12 @@ import sys
 import os
 import re
 import sympy as sp
-import warnings
 from .atomic_write import _atomic_open_text
 from .mcif import (
     _MCIF_PARENT_SYMPREC_CANDIDATES,
     _declared_mcif_parent_hint,
     _validate_collinear_moments,
 )
-
-warnings.filterwarnings("ignore", category=UserWarning, module=r"pymatgen\.io\.cif")
 
 # 1e-3 A, not spglib's own 1e-5 default. Deposited structures routinely carry
 # coordinates rounded to 5 decimals, which at 1e-5 hides symmetry that is

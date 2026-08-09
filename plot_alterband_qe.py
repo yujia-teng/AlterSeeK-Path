@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import wraps
 import math
 from pathlib import Path
 from typing import Any
@@ -16,11 +17,6 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 fallback
 import matplotlib as mpl
 
 mpl.use("Agg")
-mpl.rcParams["font.family"] = "serif"
-mpl.rcParams["font.serif"] = ["Times New Roman", "Liberation Serif", "DejaVu Serif"]
-mpl.rcParams["mathtext.fontset"] = "stix"
-mpl.rcParams["xtick.direction"] = "in"
-mpl.rcParams["ytick.direction"] = "in"
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -42,6 +38,22 @@ FERMI_COLOR = "0.5"
 FONT_SIZE = 14
 GAP_LABELS = {"k|k'", "k'|k"}
 HELPER_LABELS = {"k", "k'", *GAP_LABELS}
+
+_PLOT_STYLE = {
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Liberation Serif", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+}
+
+
+def _plot_style(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with mpl.rc_context(_PLOT_STYLE):
+            return func(*args, **kwargs)
+    return wrapped
 
 _PLOT_CONFIG_KEYS = {
     "band_up", "band_down", "kpoints_qe", "output", "fermi_ev",
@@ -411,6 +423,7 @@ def _draw_panel(
     ax.tick_params(axis="y", labelsize=font_size)
 
 
+@_plot_style
 def plot_alterband_qe(
     *,
     band_up: str | Path = "band_up.gnu",

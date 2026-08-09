@@ -7,6 +7,7 @@ io_vasp.py). pymatgen/ase imports are function-local (kept lazy).
 """
 import itertools
 import os
+import warnings
 import numpy as np
 
 from .atomic_write import _atomic_write_text, _atomic_open_text
@@ -53,7 +54,12 @@ def _read_grouped_poscar(path):
     # dynamics; import locally to keep module import light.
     from pymatgen.io.vasp.inputs import Poscar
 
-    structure = Poscar.from_file(path, check_for_potcar=False).structure
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="We strongly encourage explicit.*encoding",
+        )
+        structure = Poscar.from_file(path, check_for_potcar=False).structure
     lattice = np.array(structure.lattice.matrix, dtype=float)
     expanded_symbols = [site.specie.symbol for site in structure]
     positions = [np.array(site.frac_coords, dtype=float) for site in structure]
@@ -247,7 +253,12 @@ def _write_seekpath_standard_mcif(
     import spglib
     from pymatgen.core import Element, Structure
 
-    target = Structure.from_file(target_structure_path)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="We strongly encourage explicit.*encoding",
+        )
+        target = Structure.from_file(target_structure_path)
     target_lattice = np.asarray(target.lattice.matrix, dtype=float)
     target_positions = np.asarray(target.frac_coords, dtype=float)
     target_types = np.asarray([site.specie.Z for site in target], dtype=int)

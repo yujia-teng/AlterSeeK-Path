@@ -4,6 +4,7 @@ k-point, drive the interactive Step 0-5 workflow, and write KPOINTS output.
 Extracted from alterseek_path.py (restructuring phase 4).
 """
 import os
+import warnings
 from typing import List, Optional
 import numpy as np
 
@@ -21,6 +22,7 @@ from .plotting_3d import (plot_spin_flip_figure,
                           plot_spin_bz_figure,
                           plot_spin_bz_top_view_figure)
 from .plotting_2d import plot_2d_figures
+from .plotting_common import alterseek_plot_style
 from .ssg_setting import (
     prepare_magnetic_setting_files,
     finalize_magnetic_setting_outputs,
@@ -80,6 +82,7 @@ def _figure_basename(struct_file):
     return os.path.splitext(os.path.basename(struct_file))[0]
 
 
+@alterseek_plot_style
 def _display_and_save_figures(display_figures):
     """Display deferred figures, save each independently, and always close it.
 
@@ -387,7 +390,12 @@ class KPointsModifier:
             # import light.
             from pymatgen.io.vasp.inputs import Kpoints
 
-            kpoints = Kpoints.from_file(filename)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="We strongly encourage explicit.*encoding",
+                )
+                kpoints = Kpoints.from_file(filename)
             if kpoints.style.name != "Line_mode":
                 print(f"Error: {filename} is not a line-mode KPOINTS file "
                       f"(style: {kpoints.style.name}).")
@@ -1015,6 +1023,7 @@ class KPointsModifier:
         print(f"QE KPOINTS written to: {output_file}")
         return True
 
+    @alterseek_plot_style
     def _generate_spin_figures(self, centroid_result, struct_file, general_kpoint,
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
                                preserve_ops_for_plot, new_kpoints, display_figures,

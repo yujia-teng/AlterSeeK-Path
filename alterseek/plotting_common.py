@@ -2,8 +2,26 @@
 
 Extracted from compute_centroid_hybrid.py (restructuring phase 1).
 """
+from functools import wraps
 import os
+
+import matplotlib as mpl
+
 from .lattice_kpoints import canonical_lattice_type
+
+
+ALTERSEEK_PLOT_STYLE = {
+    "mathtext.fontset": "stix",
+}
+
+
+def alterseek_plot_style(func):
+    """Run one AlterSeeK figure stage without changing caller rcParams."""
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with mpl.rc_context(ALTERSEEK_PLOT_STYLE):
+            return func(*args, **kwargs)
+    return wrapped
 
 GAMMA_LABEL = "\u0393"
 BZ_SPECIAL_COLORS = {

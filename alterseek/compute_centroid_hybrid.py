@@ -22,14 +22,6 @@ Requires:
 import sys
 import os
 import warnings
-warnings.filterwarnings("ignore", message="We strongly encourage explicit.*encoding")
-warnings.filterwarnings("ignore", message="dict interface is deprecated")
-warnings.filterwarnings(
-    "ignore",
-    category=DeprecationWarning,
-    module=r"seekpath\.hpkot(\..*)?",
-)
-
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -41,8 +33,6 @@ import spglib
 
 from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
-
-plt.rcParams["mathtext.fontset"] = "stix"
 
 # See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 rather than spglib's
 # 1e-5. Override per run with `symprec` in alterseek_input.toml.
@@ -192,6 +182,7 @@ from .plotting_common import (
     GAMMA_LABEL,
     _save_figure,
     _print_saved_paths,
+    alterseek_plot_style,
 )
 from .plotting_3d import setup_3d_ax, plot_ibz
 
@@ -206,7 +197,12 @@ def _analyze_kspace(
     verbose,
 ):
     """Perform the required structure, symmetry, IBZ, and path analysis."""
-    struct = Structure.from_file(filename)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="We strongly encourage explicit.*encoding",
+        )
+        struct = Structure.from_file(filename)
     a_matrix = struct.lattice.matrix
     cell = a_matrix.tolist()
     positions = struct.frac_coords.tolist()
@@ -234,6 +230,11 @@ def _analyze_kspace(
         warnings.filterwarnings(
             "ignore",
             message=r".*dict interface is deprecated.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+            module=r"seekpath\.hpkot(\..*)?",
         )
         sp_result = seekpath.get_path(
             (cell, positions, numbers),
@@ -660,6 +661,7 @@ def _compute_ibz_centroid(
     }
 
 
+@alterseek_plot_style
 def _generate_figure1(
     analysis,
     centroid,
