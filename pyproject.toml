@@ -12,12 +12,12 @@ dependencies = [
     "numpy>=1.26",
     "matplotlib>=3.8",
     "scipy>=1.13",
-    "sympy>=1.12",
-    "spglib>=2.6",
-    "findspingroup>=0.15.6,<0.16",
-    "ase>=3.22",
+    "sympy>=1.13",
+    "spglib>=2.7",
+    "findspingroup>=0.15.6",
+    "ase>=3.23",
     "seekpath>=2.1",
-    "pymatgen>=2024.1",
+    "pymatgen>=2024.11",
 ]
 
 [project.scripts]
