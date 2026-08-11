@@ -18,8 +18,7 @@ def _is_doubled_ibz_extra_label(label):
 
 def _doubled_ibz_extra_flags(hull_labels):
     labels = [str(label) for label in hull_labels]
-    # Project doubled sectors always include at least one copied _A label.
-    # Ordinary HPKOT labels ending in _2 must not trigger sector coloring.
+    # Project-doubled sectors always include a copied _A label, while ordinary HPKOT _2 labels must not trigger sector coloring.
     if not any(
         "_" in label and label.rsplit("_", 1)[-1].endswith("A")
         for label in labels
@@ -464,11 +463,9 @@ def describe_spinflip_op(R_cart, b_matrix=None):
         if b_matrix is None or op['axis'] is None:
             return f"{sym}{order}"
         axis = np.asarray(op['axis'], dtype=float)
-        # Axis components in the reciprocal (b1,b2,b3) frame, same projection the
-        # mirror normal uses, so both labels read against the drawn axes.
+        # Express axis components in the reciprocal b1/b2/b3 frame used by the mirror normal so both labels are read against the drawn axes.
         hkl_raw = axis @ np.linalg.inv(np.asarray(b_matrix))
-        # Match the first-non-zero-positive convention of the reported indices,
-        # and measure the rotation sense about that same reported axis direction.
+        # Match the reported indices' first-nonzero-positive convention and measure rotation sense about that same reported axis direction.
         flip = 1.0
         for val in hkl_raw:
             if abs(val) > 1e-9:

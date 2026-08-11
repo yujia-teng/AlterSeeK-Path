@@ -437,8 +437,7 @@ def triclinic_half_bz_cell(b_matrix, normal_frac):
     bz_halfspaces = _bz_halfspaces(b_matrix)
     halfspaces = np.vstack([bz_halfspaces, np.r_[-cart_normal, 0.0]])
 
-    # Seed just inside the cut plane, close enough to Gamma to stay well within
-    # every BZ face.
+    # Seed just inside the cut plane, close enough to Gamma to stay well within every BZ face.
     scale = float(np.min(np.linalg.norm(bz_halfspaces[:, :3], axis=1)))
     interior = cart_normal * (1e-3 * scale)
     if np.max(halfspaces[:, :3] @ interior + halfspaces[:, 3]) >= 0.0:
@@ -480,8 +479,7 @@ def _spin_bz_cells(b_matrix, unique_ops, centroid_cart):
         interior = ci.copy()
         vals = hs[:, :3] @ interior + hs[:, 3]
         if np.max(vals) >= -1e-9:
-            # Move very slightly toward the BZ center if the centroid image lies
-            # on a numerical boundary.  This preserves the intended cell.
+            # Move the centroid image very slightly toward the BZ center when it lies on a numerical boundary, preserving the intended cell.
             interior = ci * (1.0 - 1e-7)
         vals = hs[:, :3] @ interior + hs[:, 3]
         if np.max(vals) >= -1e-9:

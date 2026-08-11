@@ -63,6 +63,10 @@ def test_display_label_matches_kpoints_label():
                 == KPointsModifier._kpoints_label(label))
 
 
+def test_combined_gamma_label_is_vasp_safe():
+    assert KPointsModifier._kpoints_label("Γ/H_2") == "GAMMA/H_2"
+
+
 def test_format_path_joins_continuous_and_breaks_discontinuous():
     segments = [("Γ", "X"), ("X", "M"), ("R", "Z")]
     assert KPointsModifier._format_path(segments) == "GAMMA-X-M | R-Z"
@@ -114,6 +118,44 @@ def test_qe_writer_deduplicates_continuous_chain_boundary(tmp_path):
     output = tmp_path / "KPOINTS_alter_qe"
     assert modifier.write_kpoints_file_qe(points, str(output))
     assert _qe_waypoints(output) == [("A", 30), ("B", 30), ("C", 1)]
+
+
+def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
+    modifier = KPointsModifier()
+    modifier.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
+    points = [
+        [0.0, 0.0, 0.0, "A"], [0.0, 0.0, 0.0, "H"],
+        [0.0, 0.0, 0.0, "H"], [0.5, 0.0, 0.0, "X"],
+    ]
+
+    vasp_output = tmp_path / "KPOINTS_alter"
+    qe_output = tmp_path / "KPOINTS_alter_qe"
+    assert modifier.write_kpoints_file(points, str(vasp_output))
+    assert modifier.write_kpoints_file_qe(points, str(qe_output))
+
+    vasp_labels = [
+        line.split()[-1]
+        for line in vasp_output.read_text(encoding="utf-8").splitlines()[4:]
+        if line.split()
+    ]
+    assert vasp_labels == ["A/H", "X"]
+    assert _qe_waypoints(qe_output) == [("A/H", 30), ("X", 1)]
+
+
+def test_butterfly_path_retains_primed_coincident_aliases():
+    modifier = KPointsModifier()
+    modifier.kpoints_data = [
+        [0.5, 0.0, 0.0, "X"], [0.0, 0.0, 0.0, "A"],
+        [0.0, 0.0, 0.0, "A"], [0.0, 0.0, 0.0, "H"],
+    ]
+
+    path = modifier.insert_general_kpoints(
+        [0.2, 0.2, 0.2], np.diag([-1.0, 1.0, 1.0])
+    )
+    labels = [point[3] for point in path if point is not None]
+
+    assert "A/H" in labels
+    assert "A'/H'" in labels
 
 
 def test_qe_writer_keeps_k_to_k_prime_gap_disconnected(tmp_path):

@@ -88,8 +88,7 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
     return data
 
 
-# Keep this function's body identical to the copy in plot_alterband.py;
-# only the module-level key sets differ between the two plotters.
+# Keep this function identical to plot_alterband.py except for the module-level key sets.
 def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
     unknown = sorted(set(config) - _PLOT_CONFIG_KEYS)
     if unknown:
@@ -200,6 +199,8 @@ def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
 def _format_tick_label(label: str) -> str:
     if "|" in label:
         return "|".join(_format_tick_label(part) for part in label.split("|"))
+    if "/" in label:
+        return "/".join(_format_tick_label(part) for part in label.split("/"))
     prime_count = 0
     while label.endswith("'"):
         prime_count += 1
@@ -452,13 +453,8 @@ def plot_alterband_qe(
     )
     flat_axes = list(axes[:, 0])
 
-    # Every panel is rendered at the same physical figure width regardless of
-    # how much k-path range it covers, so a gap sized relative to the GLOBAL
-    # x_total looks wrong on any panel that only shows a slice of it (a
-    # narrower panel is effectively "zoomed in", so the same absolute gap
-    # covers more of its visible width). Size each panel's gap relative to
-    # its own local range instead, so the physical/printed gap width is the
-    # same across all panels and panel counts.
+    # Every panel has the same physical width even when it covers a different k-path range, so a gap scaled to the global x_total looks too wide in a panel showing only a narrow slice.
+    # Scale each gap to its panel's local range so its physical printed width stays constant across panel counts.
     axis_width_inches = total_size[0]
 
     def _gap_half_for(xlim: tuple[float, float]) -> float:

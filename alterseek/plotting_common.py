@@ -6,6 +6,7 @@ from functools import wraps
 import os
 
 import matplotlib as mpl
+import numpy as np
 
 from .lattice_kpoints import canonical_lattice_type
 
@@ -24,6 +25,7 @@ def alterseek_plot_style(func):
     return wrapped
 
 GAMMA_LABEL = "\u0393"
+POINT_COINCIDENCE_ATOL = 1e-6
 BZ_SPECIAL_COLORS = {
     "orange": "#e68613",
     "purple": "#6b5596",
@@ -174,22 +176,94 @@ _GREEK_MATH = {
 }
 
 
-def _math_label(label):
-    """Return a bold mathtext label for high-symmetry point names."""
-    label = str(label)
-    prime = label.endswith("'")
-    base = label.rstrip("'")
-    if base == '\u0393' or base.upper() == "GAMMA":
+def label_aliases(label):
+    """Return the individual names in a slash-combined point label."""
+    return tuple(part for part in str(label).split("/") if part)
+
+
+def combine_point_labels(*labels):
+    """Combine point names with slashes while preserving their first occurrence."""
+    combined = []
+    for label in labels:
+        for alias in label_aliases(label):
+            if alias not in combined:
+                combined.append(alias)
+    return "/".join(combined)
+
+
+def prime_point_label(label):
+    """Prime every non-Gamma name in a possibly slash-combined label."""
+    primed = []
+    for alias in label_aliases(label):
+        if alias == GAMMA_LABEL or alias.strip().upper() == "GAMMA":
+            primed.append(alias)
+        else:
+            primed.append(f"{alias}'")
+    return combine_point_labels(*primed)
+
+
+def point_label_is_primed(label):
+    """Return whether every name in a combined label is primed."""
+    aliases = label_aliases(label)
+    return bool(aliases) and all(alias.endswith("'") for alias in aliases)
+
+
+def unprime_point_label(label):
+    """Remove primes independently from every name in a combined label."""
+    return combine_point_labels(*(alias.rstrip("'") for alias in label_aliases(label)))
+
+
+def grouped_point_labels(points, path_labels, atol=POINT_COINCIDENCE_ATOL):
+    """Group coincident plotted points and choose path-aware display labels.
+
+    A coincident group uses all of its labels that occur in the path. If none
+    occurs there, its first label is retained so an IBZ vertex does not become
+    anonymous merely because it has equivalent names.
+    """
+    preferred = {
+        alias
+        for label in path_labels
+        for alias in label_aliases(label)
+    }
+    groups = []
+    for label, coords in points.items():
+        if str(label).startswith("_"):
+            continue
+        coords = np.asarray(coords, dtype=float)
+        for group in groups:
+            if np.allclose(coords, group["coords"], atol=atol, rtol=0.0):
+                group["labels"].append(str(label))
+                break
+        else:
+            groups.append({"coords": coords, "labels": [str(label)]})
+
+    result = []
+    for group in groups:
+        selected = [label for label in group["labels"] if label in preferred]
+        if not selected:
+            selected = group["labels"][:1]
+        result.append((combine_point_labels(*selected), group["coords"]))
+    return result
+
+
+def _math_symbol(label):
+    """Return one high-symmetry name without the outer mathtext delimiters."""
+    prime_count = len(label) - len(label.rstrip("'"))
+    base = label[:-prime_count] if prime_count else label
+    if base == GAMMA_LABEL or base.upper() == "GAMMA":
         symbol = r"\Gamma"
     elif '_' in base:
         head, sub = base.split('_', 1)
         symbol = rf"{_GREEK_MATH.get(head.upper(), head)}_{{{sub}}}"
     else:
         symbol = _GREEK_MATH.get(base.upper(), base)
-    if prime:
-        # Attach the prime as a real mathtext superscript (inside the same
-        # braces as any subscript) so it stacks tightly next to the base
-        # symbol, matching e.g. 6_{001}^{+}, instead of floating off as a
-        # trailing plain-text character.
-        symbol = rf"{symbol}^{{\prime}}"
+    if prime_count:
+        prime_marks = " ".join([r"\prime"] * prime_count)
+        symbol = rf"{symbol}^{{{prime_marks}}}"
+    return symbol
+
+
+def _math_label(label):
+    """Return a bold mathtext label for high-symmetry point names."""
+    symbol = "/".join(_math_symbol(alias) for alias in label_aliases(label))
     return rf"$\mathbf{{{symbol}}}$"

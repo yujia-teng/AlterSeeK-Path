@@ -2,8 +2,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plot_alterband import _draw_panel, _validate_plot_config, plot_alterband
-from plot_alterband_qe import _validate_plot_config as _validate_qe_plot_config
+from plot_alterband import (
+    _draw_panel,
+    _format_tick_label,
+    _validate_plot_config,
+    plot_alterband,
+)
+from plot_alterband_qe import (
+    _format_tick_label as _format_qe_tick_label,
+    _validate_plot_config as _validate_qe_plot_config,
+)
+
+
+@pytest.mark.parametrize("formatter", [_format_tick_label, _format_qe_tick_label])
+def test_combined_tick_label_formats_each_alias(formatter):
+    formatted = formatter("A'/H_2'")
+    assert "/" in formatted
+    assert formatted.count("'") == 2
 
 
 def test_spin_up_band_is_drawn_above_spin_down_band():

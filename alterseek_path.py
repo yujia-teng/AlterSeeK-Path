@@ -1,11 +1,4 @@
-# Script for generating general k-path for band structure calculation
-# Author: Yujia Teng, Rutgers University
-# 06/14/2025 - Creation of the script
-# 01/12/2026 - Automatically reads the spin-flip operation based on outputs of find_sf_operations.py
-# 03/2026    - Integrated find_sf_operations and compute_centroid_hybrid into one workflow
-# 07/2026    - Restructured into focused modules; this file is now just the CLI entry point.
-#              The workflow lives in kpoints.KPointsModifier (see io / ssg_setting /
-#              compute_centroid_hybrid / plotting_* / symmetry / geometry).
+"""Command-line entry point for AlterSeeK-Path."""
 import sys
 
 from alterseek.kpoints import KPointsModifier
@@ -15,8 +8,7 @@ def main():
     import argparse
 
     argv = sys.argv[1:]
-    # Forward the bandplot subcommand untouched so plot_alterband's own
-    # parser handles its options (including --help).
+    # Forward the bandplot subcommand untouched so plot_alterband parses its own options, including --help.
     if argv and argv[0].lower() in {"bandplot", "plot-band", "plot"}:
         from plot_alterband import main as plot_alterband_main
         plot_alterband_main(argv[1:])
@@ -69,11 +61,9 @@ def main():
     try:
         success = modifier.interactive_modify()
     except Exception as exc:
-        # This is the command-line workflow's final safety boundary. Required
-        # calculations raise to here; expected input failures and optional
-        # output warnings remain the responsibility of their own subsystems.
-        # Never continue after an unexpected failure or reinterpret it as a
-        # request for different scientific input.
+        # This is the command-line workflow's final failure boundary.
+        # Required calculations raise here, while expected input failures and optional-output warnings remain with their own subsystems.
+        # Never continue after an unexpected failure or reinterpret it as a request for different scientific input.
         print(f"[Error] AlterSeeK-Path failed: {exc}", file=sys.stderr)
         return 1
     return 0 if success else 1

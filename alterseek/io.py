@@ -50,8 +50,7 @@ def _write_poscar(path, title, lattice, symbols, counts, positions):
 
 
 def _read_grouped_poscar(path):
-    # pymatgen handles scale factors, Cartesian/Direct mode, and Selective
-    # dynamics; import locally to keep module import light.
+    # Import pymatgen locally to keep module import light while retaining its handling of scale factors, Cartesian/Direct coordinates, and Selective Dynamics.
     from pymatgen.io.vasp.inputs import Poscar
 
     with warnings.catch_warnings():
@@ -216,8 +215,7 @@ def _basis_change_candidates(magnetic_lattice, target_lattice, max_extent=6):
     if smallest <= 1e-12:
         return candidates
 
-    # |c|^2 * smallest <= c.G.c, so a row matching a prescribed squared length
-    # cannot be longer than this.
+    # Since |c|^2 * smallest <= c.G.c, a row matching a prescribed squared length cannot be longer than this bound.
     axis_options = []
     for index in range(3):
         extent = int(np.floor(np.sqrt(max(target_gram[index, index], 0.0) / smallest)))
@@ -355,10 +353,8 @@ def _write_seekpath_standard_mcif(
             f"({len(magnetic_positions)} != {len(target_positions)})"
         )
 
-    # The standard settings of a magnetic subgroup and its G0 parent normally
-    # differ only by axis permutation/reversal plus a rigid Cartesian rotation.
-    # Prefer proper transformations so axial moments rotate like ordinary
-    # vectors and no artificial reflection of the spin pattern is introduced.
+    # The standard settings of a magnetic subgroup and its G0 parent normally differ only by axis permutation/reversal plus a rigid Cartesian rotation.
+    # Prefer proper transformations so axial moments rotate like ordinary vectors and no artificial reflection of the spin pattern is introduced.
     best = None
     for basis_change in _basis_change_candidates(
         magnetic_lattice, target_lattice
@@ -384,8 +380,7 @@ def _write_seekpath_standard_mcif(
         if matched is None:
             continue
         mapping, max_distance = matched
-        # Strictly-less keeps the earliest candidate on a tie, so the signed
-        # permutations emitted first still win wherever they already aligned.
+        # Strict comparison preserves the earliest candidate on a tie, so the signed permutations emitted first still win wherever they already align.
         if best is None or max_distance < best[0]:
             best = (max_distance, mapping, rotation)
     if best is None:

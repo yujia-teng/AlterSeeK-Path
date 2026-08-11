@@ -34,8 +34,8 @@ import spglib
 from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 
-# See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 rather than spglib's
-# 1e-5. Override per run with `symprec` in alterseek_input.toml.
+# See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
+# Override it per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
 
 
@@ -602,17 +602,14 @@ def _compute_ibz_centroid(
     hull_matches_labels = False
 
     if mode_2d:
-        # 2D slab: the physical IBZ is the k[vacuum_axis]=0 cross-section.
-        # Restrict the curated hull points to that plane and take the 2D area
-        # centroid (the 3D volume centroid/ConvexHull are meaningless here and
-        # ConvexHull crashes on coplanar input).
+        # In 2D slab mode, the physical IBZ is the k[vacuum_axis] = 0 cross-section.
+        # Restrict the curated hull points to that plane and take the 2D area centroid because the 3D volume centroid is meaningless and ConvexHull crashes on coplanar input.
         in_plane_labels = [
             lab for lab in labels_list
             if abs(kpoints_frac_centroid[lab][vacuum_axis]) < 1e-4
         ]
-        # A "<base>_2" HPKOT point that is genuinely a distinct 3D hull
-        # vertex can still be a redundant mirror-image duplicate once sliced
-        # to this 2D plane. This reduction is 2D-only.
+        # An HPKOT <base>_2 point that is a distinct 3D hull vertex can become a redundant mirror-image duplicate after slicing to this 2D plane.
+        # This reduction is 2D-only.
         base_labels = {lab for lab in in_plane_labels if not lab.endswith('_2')}
         in_plane_labels = [
             lab for lab in in_plane_labels
@@ -633,10 +630,8 @@ def _compute_ibz_centroid(
                   f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, "
                   f"{centroid_frac[2]:.6f}]  area={ibz_volume:.6f}")
     elif sg in (1, 2):
-        # Triclinic: the curated points are not a closed IBZ hull, so the
-        # domain is taken from the Wigner-Seitz BZ instead.  Laue group -1
-        # applies to both P1 and P-1, so the nonmagnetic IBZ is half the BZ;
-        # the axis-containing plane below fixes which half.
+        # The curated triclinic points are not a closed IBZ hull, so use the Wigner-Seitz BZ instead.
+        # Laue group -1 applies to both P1 and P-1, making the nonmagnetic IBZ half the BZ; the selected axis-containing plane fixes which half.
         hull = None
         normal_frac = triclinic_halfspace_normal(sc_type)
         if normal_frac is not None:
@@ -669,8 +664,7 @@ def _compute_ibz_centroid(
         centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
         hull_matches_labels = True
 
-        # The mC2/mC3 HPKOT tables include distinctive boundary labels whose
-        # convex hull is slightly larger than the true C2/m fundamental domain.
+        # The mC2/mC3 HPKOT boundary-label hull is slightly larger than the true C2/m fundamental domain.
         if sc_type in {'mC2', 'mC3'}:
             mono_pts, mono_simplices = build_symmetry_ibz_cell(
                 b_matrix, unique_ops, centroid_cart
@@ -887,10 +881,8 @@ def run(
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
-    # Figures are named for the structure the user submitted, not for whatever
-    # intermediate cell they were computed from. Without this the magnetic
-    # route names Figure 1 after its internal helper file, so it alone carries
-    # an extra token that Figures 2-4 do not.
+    # Name figures after the submitted structure rather than the intermediate cell used for the calculation.
+    # Otherwise the magnetic route names Figure 1 after its internal helper file while Figures 2-4 use the submitted structure name.
     fig_basename = figure_basename or basename
 
     if verbose:
@@ -983,8 +975,7 @@ def run(
         'band_kpoints_frac': analysis_result['band_kpoints_frac'],
         'band_kpath': analysis_result['band_kpath'],
         'extra_general_vertices': analysis_result['extra_general_vertices'],
-        # The triclinic hull is the clipped half-BZ rather than the curated
-        # label hull, so it is published without labels.
+        # The clipped triclinic half-BZ has no curated hull labels.
         'hull_pts': (
             centroid_result['points_arr']
             if (

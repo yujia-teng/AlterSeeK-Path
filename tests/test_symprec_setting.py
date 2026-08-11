@@ -91,6 +91,12 @@ def test_symprec_rejects_non_positive(value):
         _validate_input_config({"symprec": value})
 
 
+@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan])
+def test_symprec_rejects_non_finite_numbers(value):
+    with pytest.raises(ValueError, match="symprec must be finite"):
+        _validate_input_config({"symprec": value})
+
+
 @pytest.mark.parametrize("value", ["1e-3", True, False, None, [1e-3]])
 def test_symprec_rejects_non_numbers(value):
     with pytest.raises(ValueError, match="symprec must be a number"):

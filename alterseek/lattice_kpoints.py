@@ -84,9 +84,7 @@ EXTRA_PATH_RULES = {
 }
 
 
-# HPKOT caption-only/additional path labels are stored in the point tables so
-# optional segments can be generated, but they are not vertices of the selected
-# IBZ hull used for centroid construction.
+# HPKOT caption-only and additional path labels stay in the point tables so optional segments can be generated, but they are not vertices of the selected IBZ hull used for centroid construction.
 HULL_EXCLUDED_POINTS = {
     "cP1": {"X_1"},
     "cP2": {"X_1"},
@@ -94,31 +92,17 @@ HULL_EXCLUDED_POINTS = {
     "cF2": {"W_2"},
     "hP1": {"H_2"},
     "hP2": {"H_2"},
-    # seekpath includes all symmetry-equivalent copies across the full BZ.
-    # Only the IBZ-wedge vertices (those that appear in the kpath) are kept.
+    # SeeK-path includes symmetry-equivalent copies across the full BZ, so keep only the IBZ-wedge vertices that occur in the selected path.
     "hR1": {"L_4", "F_2", "S_4", "S_6", "H_4", "H_6",
             "M_8", "M_6"}, 
     "hR2": {"M", "M_2"},
-    # oC2: HPKOT includes _2 mirror copies at kz < 0 (bottom half of BZ).
-    # These are outside the IBZ wedge and must not contribute to the hull.
+    # In oC2, HPKOT _2 labels are mirror copies at kz < 0 in the bottom half of the BZ, outside the selected IBZ wedge, and must not enter its hull.
     "oC2": {"B_2", "G_2", "R_2", "T_2", "Z_2"},
 }
 
 
+# Cubic 23/m-3 and trigonal 3/-3 use no project-only copied vertices.
 PROJECT_HULL_EXTRA_POINTS_BY_SG = {
-    # Cubic 23 and m-3 point groups: no project-only copied vertices are used.
-    # ("cP1", range(195, 207)): {
-    #     "X_A": ("1/2", "0", "0"),
-    # },
-    # ("cF1", range(195, 207)): {
-    #     "U_A": ("1/4", "5/8", "5/8"),
-    #     "W_A": ("1/4", "1/2", "3/4"),
-    #     "X_A": ("0", "1/2", "1/2"),
-    # },
-    # ("cI1", range(195, 207)): {
-    #     "H_A": ("-1/2", "1/2", "1/2"),
-    # },
-
     # Tetragonal 4, -4, and 4/m point groups: doubled project IBZ.
     ("tP1", range(75, 89)): {
         "X_A": ("1/2", "0", "0"),
@@ -136,28 +120,15 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "R_A": ("Z", "-Z", "1/2"),
     },
 
-    # Trigonal 3 and -3 point groups on a primitive hexagonal lattice:
-    # no project-only copied vertices are used.
-    # ("hP1", range(143, 149)): {
-    #     "M_A": ("0", "1/2", "0"),
-    #     "L_A": ("0", "1/2", "1/2"),
-    #     "K_A": ("-1/3", "2/3", "0"),
-    #     "H_A": ("-1/3", "2/3", "1/2"),
-    #     "M_B": ("-1/2", "1/2", "0"),
-    #     "L_B": ("-1/2", "1/2", "1/2"),
-    # },
-    # Trigonal hP1/hP2 middle-row project IBZ: keep the ordinary SeeK-path
-    # high-symmetry path, and use the lower/middle-row vertices as copied-sector
-    # general anchors. H_2 is already a SeeK-path path label for hP1 where
-    # K-H_2 is required by the k-vector table.
+    # For the trigonal hP1/hP2 middle-row IBZ, retain the ordinary SeeK-path path and use lower/middle-row vertices as copied-sector general anchors.
+    # H_2 is already a SeeK-path path label for hP1, where K-H_2 is required by the k-vector table.
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): {
         "A_2": ("0", "0", "-1/2"),
         "L_A": ("1/2", "0", "-1/2"),
         "H_2": ("1/3", "1/3", "-1/2"),
     },
 
-    # Trigonal 32, 3m, -3m middle-row project IBZ. Hexagonal 6, -6, and 6/m
-    # keep the side copied-sector convention below.
+    # Trigonal 32, 3m, and -3m use the middle-row project IBZ, while hexagonal 6, -6, and 6/m retain the side copied-sector convention below.
     ("hP2", range(149, 168)): {
         "A_2": ("0", "0", "-1/2"),
         "L_A": ("1/2", "0", "-1/2"),
@@ -170,23 +141,8 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
 }
 
 
+# Cubic 23/m-3 and trigonal 3/-3 use the ordinary path without copied-sector segments.
 PROJECT_HULL_PATH_BY_SG = {
-    # ("cP1", range(195, 207)): [
-    #     ("\u0393", "X"), ("X", "M"), ("M", "X_A"), ("X_A", "\u0393"),
-    #     ("\u0393", "R"), ("R", "X"), ("R", "M"), ("R", "X_A"),
-    # ],
-    # ("cF1", range(195, 207)): [
-    #     ("\u0393", "X"), ("X", "W"), ("W", "K"), ("K", "\u0393"),
-    #     ("\u0393", "L"), ("L", "U"), ("U", "W"), ("W", "L"),
-    #     ("L", "K"), ("U", "X"),
-    #     ("\u0393", "X_A"), ("X_A", "W_A"), ("W_A", "K"),
-    #     ("L", "U_A"), ("U_A", "W_A"), ("U_A", "X_A"),
-    # ],
-    # ("cI1", range(195, 207)): [
-    #     ("\u0393", "H"), ("H", "N"), ("N", "\u0393"), ("\u0393", "P"),
-    #     ("P", "H"), ("P", "N"),
-    #     ("\u0393", "H_A"), ("H_A", "N"), ("P", "H_A"),
-    # ],
     ("tP1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"),
         ("\u0393", "Z"),
@@ -205,15 +161,6 @@ PROJECT_HULL_PATH_BY_SG = {
         ("S_0", "\u0393"), ("X", "R"), ("G", "M"),
         ("X", "R_A"), ("P", "N_A"),
     ],
-    # ("hP1", range(143, 149)): [
-    #     ("\u0393", "M"), ("M", "K"), ("K", "M_A"), ("M_A", "K_A"),
-    #     ("K_A", "M_B"), ("M_B", "\u0393"),
-    #     ("\u0393", "A"),
-    #     ("A", "L"), ("L", "H"), ("H", "L_A"), ("L_A", "H_A"),
-    #     ("H_A", "L_B"), ("L_B", "A"),
-    #     ("L", "M"), ("H", "K"), ("L_A", "M_A"), ("H_A", "K_A"),
-    #     ("L_B", "M_B"),
-    # ],
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): [
         ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
@@ -269,9 +216,7 @@ def _hpkot_table(ext_bravais: str):
     }
     path = _normalize_path(path)
 
-    # The SeeK-path bundled cP1/cF1/hP1 path files contain the optional
-    # HPKOT caption segments unconditionally.  Keep them as points, but add
-    # the segments only when the paper's space-group list applies.
+    # SeeK-path's bundled cP1/cF1/hP1 tables include optional HPKOT caption segments unconditionally, so keep their points but add the segments only for the paper's listed space groups.
     if ext_bravais in {"cP1", "cP2"}:
         path = _strip_path_segments(path, [("M", "X_1")])
     elif ext_bravais in {"cF1", "cF2"}:
@@ -292,9 +237,7 @@ def _hpkot_table(ext_bravais: str):
 def _build_lattice_data():
     data = {key: _hpkot_table(key) for key in HPKOT_LATTICE_TYPES}
 
-    # Project-curated hidden closure vertices for the mC1 selected IBZ hull.
-    # These are not public HPKOT path labels, so they are excluded from the
-    # display label map and are never added to k-paths.
+    # Project-curated mC1 closure vertices define the selected IBZ hull but are not public HPKOT labels, so exclude them from display labels and k-paths.
     data["mC1"]["hidden_points_def"] = {
         "_F4": ("-1/2+Z+S", "-1/2-Z+S", "1-H"),
         "_Q1": ("-1/2-Z+S", "-1/2+Z+S", "H"),
@@ -302,8 +245,7 @@ def _build_lattice_data():
         "_P1": ("-3/2+Z+S", "1/2-Z+S", "1-H"),
     }
 
-    # Backward-compatible aliases for older callers and scripts.  New code
-    # should use HPKOT extended symbols directly.
+    # Retain aliases for older callers; new code should use HPKOT extended symbols.
     aliases = {
         "CUB": "cP2", "CUB2": "cP1",
         "FCC": "cF2", "FCC2": "cF1",
@@ -372,8 +314,7 @@ def _evaluate_point_exprs(point_exprs, kparam):
         try:
             values.append(eval_expr_simple(expr, kparam))
         except ValueError:
-            # Project-only hidden closure vertices can use small arithmetic
-            # combinations of HPKOT parameters, e.g. "-1/2+Z+S".
+            # Hidden closure vertices may use small arithmetic combinations of HPKOT parameters, such as -1/2+Z+S.
             values.append(float(eval(expr, safe_globals, safe_locals)))
     return values
 

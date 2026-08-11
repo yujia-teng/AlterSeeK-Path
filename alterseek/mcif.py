@@ -16,9 +16,7 @@ import warnings
 import numpy as np
 
 
-# Conservative ladder. A looser tolerance is only ever accepted when it
-# reproduces the structure's own declared parent, so a genuinely
-# lower-symmetry structure is never over-symmetrized.
+# This is a conservative ladder because a looser tolerance is accepted only when it reproduces the structure's own declared parent, preventing a genuinely lower-symmetry structure from being over-symmetrized.
 _MCIF_PARENT_SYMPREC_CANDIDATES = (1e-5, 1e-4, 1e-3)
 _MCIF_COLLINEAR_MOMENT_TOLERANCE = 0.02
 

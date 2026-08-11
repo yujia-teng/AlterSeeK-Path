@@ -184,11 +184,8 @@ def _magnetic_primitive_ssg_operations(result):
 
 def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_cart=None, output_dir="."):
     """Write real magnetic primitive POSCAR/MCIF files from FindSpinGroup."""
-    # Use the same pymatgen-backed MCIF loader as the rest of AlterSeeK-Path
-    # before entering FindSpinGroup's public from-data ACC-primitive route.
-    # Pymatgen restores near-special fractional coordinates (for example,
-    # 0.33333 -> 1/3) that a direct MCIF parse can otherwise leave just outside
-    # SeeK-path/spglib's default symmetry tolerance.
+    # Use the shared pymatgen-backed MCIF loader before entering FindSpinGroup's parsed-data route.
+    # Pymatgen restores nearly special fractional coordinates such as 0.33333 to 1/3, which otherwise may fall just outside SeeK-path or spglib's symmetry tolerance.
     lattice_in, positions_in, elements_in, moments_in, spin_setting = _load_magnetic_input_data(
         structure_file, moments_str, spin_axis_cart
     )
@@ -295,9 +292,7 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "basename": basename,
         "seekpath_type_numbers": None,
         "magnetic_cell_sites": len(elements),
-        # Both lattices are kept so finalize_magnetic_setting_outputs() can
-        # decide whether the magnetic cell is genuinely a different cell or
-        # merely the submitted one with its axes relabelled.
+        # Retain both lattices so finalization can distinguish a genuinely different magnetic cell from the submitted cell with relabelled axes.
         "magnetic_primitive_lattice": lattice,
         "magnetic_positions": np.asarray(grouped_positions, dtype=float),
         "magnetic_elements": ordered_elements,
@@ -400,9 +395,8 @@ def finalize_magnetic_setting_outputs(
     standard_mcif_path = None
     helper_final = None
 
-    # These standardized structures are diagnostic views, not the calculation
-    # cell and not the basis of KPOINTS_alter. Their absence must not prevent the
-    # required calculation-basis decision below from being completed.
+    # These standardized structures are diagnostic views, not the calculation cell or the basis of KPOINTS_alter.
+    # Their absence must not prevent the required calculation-basis decision below.
     if helper_source and os.path.exists(helper_source):
         real_candidate = os.path.join(
             output_dir, f"{basename}_seekpath_standard.vasp"
@@ -463,10 +457,8 @@ def finalize_magnetic_setting_outputs(
             "skipping standardized diagnostic VASP/MCIF files."
         )
 
-    # The basis mapping is the human-readable record of how the path's reciprocal
-    # basis relates to the submitted cell. The matrices used by the workflow are
-    # already held in memory, so inability to preserve this diagnostic text file
-    # must not invalidate an otherwise verified calculation-basis decision.
+    # The basis mapping is the human-readable record of how the path's reciprocal basis relates to the submitted cell.
+    # The workflow already holds the required matrices in memory, so failure to preserve this diagnostic file must not invalidate a verified calculation-basis decision.
     mapping_source = centroid_result.get("standard_mapping_path")
     mapping_final = None
     if mapping_source and os.path.exists(mapping_source):
@@ -480,21 +472,11 @@ def finalize_magnetic_setting_outputs(
         except OSError as exc:
             print(f"[Warning] Could not keep the SeeK-path basis mapping: {exc}")
 
-    # Output basis. Reaching here means the analysis had to run in the magnetic
-    # cell, but that on its own does not mean the calculation cell changed:
-    # FindSpinGroup routinely returns the submitted cell with its axes reordered
-    # or reversed (MnSe2), and a deliberately submitted calculation supercell
-    # remains valid (GdAuGe SUPERCELL_221). Only a same-volume, nontrivial basis
-    # change -- GdAuGe AFM5's hexagonal-looking 211 cell to the SSG-adapted
-    # orthorhombic setting -- moves the calculation off the user's own cell.
-    #
-    # Either way the basis is never taken from the standardized cell written
-    # above: that is spglib's standardized *conventional* cell, so for a centred
-    # lattice it is 2x or 4x the primitive, and taking the basis from it used to
-    # hand the user a cell several times larger than the magnetism required.
-    #
-    # Runs before the temp-dir cleanup below, because the magnetic primitive
-    # POSCAR promoted here still lives in it.
+    # Reaching here means the analysis used the magnetic cell, but that alone does not mean the calculation cell changed.
+    # Keep the submitted cell when FindSpinGroup only reordered or reversed its axes, or when the user deliberately submitted a valid calculation supercell.
+    # Use the magnetic primitive cell only for a genuine same-volume nontrivial basis change that the submitted calculation cell cannot carry.
+    # Never use the standardized conventional diagnostic cell as the KPOINTS output basis because a centered conventional cell may be two or four times larger than the required primitive cell.
+    # Decide the output basis before cleanup because the magnetic primitive POSCAR still lives in the temporary directory.
     magnetic_lattice = np.asarray(
         mag_setting["magnetic_primitive_lattice"], dtype=float)
     submitted_lattice = mag_setting.get("submitted_lattice")
@@ -513,9 +495,7 @@ def finalize_magnetic_setting_outputs(
     else:
         output_lattice = np.asarray(submitted_lattice, dtype=float)
         b_matrix_output = 2 * np.pi * np.linalg.inv(output_lattice).T
-    # Written next to KPOINTS_alter rather than into the output folder: it is
-    # not a record of the run but an input the user has to calculate with, and
-    # it only appears when the cell genuinely changed.
+    # Write a genuinely changed calculation cell beside KPOINTS_alter because it is a required calculation input rather than a record of the run.
     calculation_cell_path = None
     calculation_magmom_path = None
     calculation_output_texts = None
@@ -594,8 +574,7 @@ def finalize_magnetic_setting_outputs(
             print(f"[Warning] Could not finalize the SeeK-path basis mapping: {exc}")
             mapping_final = None
 
-    # Remove or relocate low-level seekpath artifacts for the hidden marker helper.
-    # The clean final standardized structure above is the user-facing record.
+    # Remove or relocate low-level SeeK-path artifacts for the hidden marker helper; the clean standardized structure is the user-facing record.
     temp_dir = mag_setting.get("temp_dir")
     for path in (
         helper_source,

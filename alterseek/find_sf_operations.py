@@ -22,11 +22,8 @@ from .mcif import (
     _validate_collinear_moments,
 )
 
-# 1e-3 A, not spglib's own 1e-5 default. Deposited structures routinely carry
-# coordinates rounded to 5 decimals, which at 1e-5 hides symmetry that is
-# really there (MnSe2's cubic Pa-3 parent reads as orthorhombic Pbca). 1e-3 A
-# stays far below any deliberate distortion -- a 0.5% strain on a 4 A lattice
-# is 0.02 A, twenty times larger -- and changes none of the 54 reference cases.
+# Deposited structures routinely carry coordinates rounded to five decimals, for which spglib's 1e-5 A default can hide real symmetry (for example, MnSe2's cubic Pa-3 parent reads as orthorhombic Pbca).
+# A tolerance of 1e-3 A remains far below a deliberate distortion: a 0.5% strain on a 4 A lattice is 0.02 A, twenty times larger, and it changes none of the 54 reference cases.
 # Override per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
 
@@ -96,10 +93,7 @@ def _seekpath_lattice_tag(lattice, positions, numbers, symprec):
         import seekpath
         import warnings
 
-        # SeeK-path 2.1 still reads spglib's dataset through its deprecated
-        # dict interface, so spglib warns from inside third-party code that
-        # this project cannot fix.  Suppress it only around this call, exactly
-        # as the other seekpath call site does, leaving caller filters intact.
+        # SeeK-path 2.1 still reads spglib's dataset through its deprecated dictionary interface, so suppress that third-party warning only around this call and leave caller filters intact.
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
@@ -148,10 +142,8 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
             'sites': None,
             'lattice': None,
         }
-    # The reported space group belongs to the primitive cell, not to whatever
-    # cell was submitted: a magnetic supercell input still reports its parent's
-    # space group, so quoting the input's site count next to it would misstate
-    # what the group describes.
+    # The reported space group belongs to the primitive cell rather than necessarily to the submitted cell.
+    # A magnetic supercell input still reports its parent's space group, so report the primitive site count with it.
     primitive = spglib.find_primitive(cell, symprec=symprec)
     point_group = dataset.pointgroup
     return {
@@ -584,9 +576,11 @@ def format_msg_without_soc(msg_type):
         return f"{bns_symbol} (BNS {bns_number}), Type {_magnetic_type_label(msg_type.type)}"
     return f"BNS {bns_number}, Type {_magnetic_type_label(msg_type.type)}"
 
+
 # ==========================================
-# MAIN FUNCTION
+# Public analysis entry point
 # ==========================================
+
 class SpinSymmetryError(RuntimeError):
     """A required spin-symmetry analysis or output step failed."""
 
@@ -758,9 +752,7 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
                 magmoms,
                 input_spin_setting="cartesian",
             )
-            # FindSpinGroup currently exposes this input-setting operation route
-            # for parsed data internally; keep its use isolated here until a
-            # public from-data equivalent is available.
+            # FindSpinGroup currently exposes its parsed-data input-setting route only through this private entry point, so keep its use isolated here until a public equivalent is available.
             fsg_input = _find_spin_group_input_ssg_from_parsed(
                 structure_file,
                 lattice,
@@ -928,8 +920,9 @@ MSG without SOC: {msg_without_soc_label}"""
 
 
 # ==========================================
-# STANDALONE SCRIPT (python find_sf_operations.py)
+# Standalone entry point
 # ==========================================
+
 if __name__ == "__main__":
     filename = input("Enter structure file name (default: POSCAR): ").strip()
     if not filename:

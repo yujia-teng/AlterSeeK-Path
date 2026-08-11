@@ -21,7 +21,7 @@ Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 import os
 import numpy as np
 
-from .plotting_common import _save_figure
+from .plotting_common import _save_figure, grouped_point_labels
 
 try:
     from scipy.spatial import ConvexHull
@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover - op-visual is best-effort only
 
 
 # ---------------------------------------------------------------------------
-# geometry helpers
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 def _cart_from_frac(frac, b_matrix):
@@ -130,7 +130,7 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False):
 
 
 # ---------------------------------------------------------------------------
-# drawing helpers
+# Drawing helpers
 # ---------------------------------------------------------------------------
 
 def _setup_2d_ax(title, bz_poly):
@@ -157,6 +157,9 @@ _GREEK = {
 
 
 def _fig_label(label, prime=False):
+    if "/" in str(label):
+        return "/".join(_fig_label(alias, prime=prime)
+                        for alias in str(label).split("/"))
     label = str(label).rstrip("'")
     pt = "'" if prime else ""
     if "_" in label:
@@ -177,14 +180,12 @@ def _label_offset(points):
 
 
 def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
-                         prime=False, label_color=None, center=None,
-                         offset_scale=None):
+                          prime=False, label_color=None, center=None,
+                          offset_scale=None, path_labels=()):
     if not points:
         return
     auto_center, auto_scale = _label_offset(points.values())
-    # A degenerate (single-point) set has no meaningful own centroid/span;
-    # fall back to the caller-supplied shared reference in that case only,
-    # so a well-formed multi-point set keeps its own (already-correct) offset.
+    # A single-point set has no meaningful centroid or span, so only that case falls back to the caller's shared reference; a normal multi-point set keeps its own offset.
     if len(points) <= 1:
         if center is None:
             center = auto_center
@@ -193,7 +194,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
     else:
         center = auto_center
         offset_scale = auto_scale
-    for label, point in points.items():
+    for label, point in grouped_point_labels(points, path_labels):
         ax.scatter(point[0], point[1], s=85, c=color, edgecolors=edgecolor,
                    linewidths=0.7, zorder=5)
         if not labels:
@@ -208,7 +209,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
 
 
 # ---------------------------------------------------------------------------
-# in-plane operation classification (Figure 3)
+# In-plane operation classification
 # ---------------------------------------------------------------------------
 
 def _axis_name(axis):
@@ -403,8 +404,7 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
     COLOR = os.environ.get('ALTERSEEK_OP_AXIS_COLOR', '#00c853')
 
     if op_type in ('rotation', 'rotoreflection') and op['order'] and op['order'] >= 3:
-        # Canonical "out of the page" direction for this screen basis, so the
-        # drawn sense (+/- = CCW/CW) matches what's actually on screen.
+        # Use the screen basis's canonical out-of-page direction so the displayed +/- sense matches the visible counterclockwise or clockwise rotation.
         e1, e2, _ = basis if basis is not None else (
             np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), None)
         normal_dir = np.cross(e1, e2)
@@ -413,12 +413,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
             axis = -axis
         sense = _rotation_sense(R_cart, axis)
         order = op['order']
-        # International/Bilbao numeral convention (same as the 3D figure):
-        # a proper rotation Cn is just its order n; an improper Sn is
-        # relabeled by its rotoinversion order n-bar (S3<->6bar, S4<->4bar,
-        # S6<->3bar). The axis subscript here is always the trivial vacuum
-        # direction (this glyph only fires for the perpendicular-axis case),
-        # kept for consistency with the 3D label format.
+        # Use International/Bilbao labels: a proper Cn is shown as n, while S3, S4, and S6 become 6-bar, 4-bar, and 3-bar.
+        # Retain the trivial vacuum-axis subscript because this glyph is used only for the perpendicular-axis case and should match the 3D label format.
         if op_type == 'rotation':
             display_order = order
             improper = False
@@ -433,16 +429,12 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
                  else rf"$\mathbf{{{digit}_{{{axis_sub}}}}}$")
 
         r_arc = 0.14 * span
-        # Sweep direction follows sense so the arrowhead shows the true
-        # rotation sense (n^+ = CCW, n^- = CW), not just the label text.
+        # Match the arc direction to the displayed rotation sense so n+ is counterclockwise and n- is clockwise.
         dir_sign = -1 if sense < 0 else 1
         theta = np.radians(np.linspace(180.0 - dir_sign * 150.0,
                                         180.0 + dir_sign * 150.0, 100))  # 300 deg, gap at bottom
         arc = origin + r_arc * np.column_stack([np.cos(theta), np.sin(theta)])
-        # Solid shaft stops at the arrow base; only the final segment is the
-        # arrowhead (same convention as the 3D rotation-axis arrow), so the
-        # plain curved line never overlaps/co-terminates with the separately
-        # drawn straight arrowhead triangle at the tip.
+        # Stop the solid shaft at the arrow base and draw only the final segment as the arrowhead so the two strokes do not overlap.
         head_cut = 4
         shaft = arc[:-head_cut]
         ax.plot(shaft[:, 0], shaft[:, 1], color=COLOR, lw=2.4, alpha=0.95, zorder=210)
@@ -458,12 +450,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
                 color=COLOR, ha='center', va='center', zorder=212, clip_on=False)
 
     elif op_type == 'rotation' and op['order'] == 2:
-        # A C2 whose 3D axis lies IN this plane (common for 6/mmm-family
-        # in-plane two-fold axes) restricts to a genuine in-plane mirror when
-        # drawn flat: the axis direction itself is the fixed line (+1
-        # eigenvalue), while the in-plane-perpendicular direction flips sign.
-        # A C2 axis exactly along the vacuum direction (the excluded trivial
-        # -I case) never reaches here since it's filtered out upstream.
+        # A C2 whose 3D axis lies in the plane restricts to a genuine mirror in the flat view: the axis is fixed while the in-plane perpendicular direction changes sign.
+        # A C2 along the vacuum direction would reduce to the excluded trivial -I action and is filtered upstream.
         axis_full = np.array(op['axis'], dtype=float)
         axis_2d = _to_2d(axis_full, basis)
         axis_2d_len = float(np.linalg.norm(axis_2d))
@@ -598,7 +586,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
 
 
 # ---------------------------------------------------------------------------
-# main entry
+# Main plotting entry point
 # ---------------------------------------------------------------------------
 
 def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
@@ -624,6 +612,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     bz_poly, basis = _bz_polygon_2d(b_matrix, axis, cartesian_xy=cartesian_xy)
 
     kpath = centroid_result["band_kpath"]
+    path_labels = {label for segment in kpath for label in segment}
     coords = centroid_result["band_kpoints_frac"]
     # Only physical in-plane labels appear in the top-down view.
     kpoints_cart = {
@@ -647,12 +636,11 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
             p1, p2 = kpoints_cart[start], kpoints_cart[end]
             ax1.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=3.0,
                      alpha=0.9, zorder=3)
-    _draw_labeled_points(ax1, kpoints_cart, "red", "darkred", label_color="black")
+    _draw_labeled_points(ax1, kpoints_cart, "red", "darkred", label_color="black",
+                         path_labels=path_labels)
     ax1.scatter(*centroid_xy, c="gold", marker="*", s=420, edgecolors="k",
                 zorder=112, label=r"$k$")
-    # Legend placed outside the axes (bbox_to_anchor) rather than in a
-    # corner, so it never overlaps plotted points/labels and the BZ content
-    # itself doesn't need extra padding to make room for it.
+    # Place the legend outside the axes so it cannot overlap plotted points or labels and the BZ itself needs no extra padding.
     ax1.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=18,
               borderaxespad=0, frameon=True)
     fig1.tight_layout()
@@ -706,9 +694,11 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     shared_points = list(kpoints_cart.values()) + list(mapped_cart_lines.values())
     shared_center, shared_scale = _label_offset(shared_points)
     _draw_labeled_points(ax2, kpoints_cart, "salmon", "darkred", prime=False,
-                         center=shared_center, offset_scale=shared_scale)
+                         center=shared_center, offset_scale=shared_scale,
+                         path_labels=path_labels)
     _draw_labeled_points(ax2, mapped_cart, "cornflowerblue", "navy", prime=True,
-                         center=shared_center, offset_scale=shared_scale)
+                         center=shared_center, offset_scale=shared_scale,
+                         path_labels={f"{label}'" for label in path_labels})
     threshold = 0.05 * max(np.max(np.linalg.norm(bz_poly, axis=1)), 1e-8)
     for point in kpoints_cart.values():
         if np.linalg.norm(point - centroid_xy) > threshold:

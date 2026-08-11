@@ -98,8 +98,7 @@ def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
 
 
 VASPKIT_TRUNCATED_LABEL_FIXES = {
-    # VASPKIT can drop the trailing zero in combined labels such as
-    # LAMBDA_0'|G_.  Repair only the affected HPKOT labels.
+    # VASPKIT can drop the trailing zero in combined labels such as LAMBDA_0'|G_, so repair only the affected HPKOT labels.
     "oI2": {"G_": "G_2"},
     "oI3": {"G_": "G_0"},
     "oF2": {"Q_": "Q_0"},
@@ -155,9 +154,12 @@ def _fix_vaspkit_truncated_label(label: str, lattice_type: str | None) -> str:
 
     fixed_parts = []
     for part in str(label).split("|"):
-        prime_count = len(part) - len(part.rstrip("'"))
-        base = part[:-prime_count] if prime_count else part
-        fixed_parts.append(fixes.get(base, base) + "'" * prime_count)
+        fixed_aliases = []
+        for alias in part.split("/"):
+            prime_count = len(alias) - len(alias.rstrip("'"))
+            base = alias[:-prime_count] if prime_count else alias
+            fixed_aliases.append(fixes.get(base, base) + "'" * prime_count)
+        fixed_parts.append("/".join(fixed_aliases))
     return "|".join(fixed_parts)
 
 
@@ -171,8 +173,7 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
     return data
 
 
-# Keep this function's body identical to the copy in plot_alterband_qe.py;
-# only the module-level key sets differ between the two plotters.
+# Keep this function identical to plot_alterband_qe.py except for the module-level key sets.
 def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
     unknown = sorted(set(config) - _PLOT_CONFIG_KEYS)
     if unknown:
@@ -201,6 +202,8 @@ def _format_tick_label(label: str) -> str:
     """Return labels with mathtext only where Greek/subscripts are needed."""
     if "|" in label:
         return "|".join(_format_tick_label(part) for part in label.split("|"))
+    if "/" in label:
+        return "/".join(_format_tick_label(part) for part in label.split("/"))
 
     prime_count = 0
     while label.endswith("'"):
@@ -417,13 +420,8 @@ def plot_alterband(
     )
     flat_axes = list(axes[:, 0])
 
-    # Every panel is rendered at the same physical figure width regardless of
-    # how much k-path range it covers, so a gap sized relative to the GLOBAL
-    # x_total looks wrong on any panel that only shows a slice of it (a
-    # narrower panel is effectively "zoomed in", so the same absolute gap
-    # covers more of its visible width). Size each panel's gap relative to
-    # its own local range instead, so the physical/printed gap width is the
-    # same across all panels and panel counts.
+    # Every panel has the same physical width even when it covers a different k-path range, so a gap scaled to the global x_total looks too wide in a panel showing only a narrow slice.
+    # Scale each gap to its panel's local range so its physical printed width stays constant across panel counts.
     axis_width_inches = total_size[0]
 
     def _gap_half_for(xlim: tuple[float, float]) -> float:
