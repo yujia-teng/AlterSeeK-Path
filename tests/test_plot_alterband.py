@@ -21,6 +21,14 @@ def test_combined_tick_label_formats_each_alias(formatter):
     assert formatted.count("'") == 2
 
 
+@pytest.mark.parametrize("formatter", [_format_tick_label, _format_qe_tick_label])
+def test_ti1_boundary_tick_formats_m_z0_alias(formatter):
+    formatted = formatter("M/Z_0")
+    assert "/" in formatted
+    assert "M" in formatted
+    assert "Z" in formatted
+
+
 def test_spin_up_band_is_drawn_above_spin_down_band():
     fig, ax = plt.subplots()
     try:

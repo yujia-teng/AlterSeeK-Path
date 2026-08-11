@@ -41,6 +41,21 @@ def test_coincident_labels_used_by_path_are_slash_combined():
     assert [label for label, _coords in displayed] == ["A/H", "X"]
 
 
+def test_ti1_equal_metric_displays_m_and_z0_as_one_path_point():
+    points = get_hull_kpoints("tI1", a=9.127, c=9.127)
+    path = get_hull_kpath("tI1")
+    path_labels = {label for segment in path for label in segment}
+
+    displayed = {
+        label: coords
+        for label, coords in grouped_point_labels(points, path_labels)
+    }
+
+    assert "M/Z_0" in displayed
+    assert "M" not in displayed
+    assert "Z_0" not in displayed
+
+
 def test_3d_ibz_draws_one_marker_and_one_path_label_per_coincident_group():
     points = {
         "A": np.array([0.0, 0.0, 0.0]),

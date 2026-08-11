@@ -142,6 +142,43 @@ def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
     assert _qe_waypoints(qe_output) == [("A/H", 30), ("X", 1)]
 
 
+def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
+    modifier = KPointsModifier()
+    modifier.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
+    modifier.kpoints_data = [
+        [0.0, 0.0, 0.0, "GAMMA"], [0.0, 0.0, 0.5, "X"],
+        [0.0, 0.0, 0.5, "X"], [-0.5, 0.5, 0.5, "M"],
+        [-0.5, 0.5, 0.5, "M"], [0.0, 0.0, 0.0, "GAMMA"],
+        [0.0, 0.0, 0.0, "GAMMA"], [0.5, 0.5, -0.5, "Z"],
+        [-0.5, 0.5, 0.5, "Z_0"], [-0.5, 0.5, 0.5, "M"],
+        [0.0, 0.0, 0.5, "X"], [0.25, 0.25, 0.25, "P"],
+        [0.25, 0.25, 0.25, "P"], [0.0, 0.5, 0.0, "N"],
+        [0.0, 0.5, 0.0, "N"], [0.0, 0.0, 0.0, "GAMMA"],
+    ]
+
+    path = modifier.insert_general_kpoints(
+        [0.2, 0.3, 0.4],
+        np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+    )
+    labels = [point[3] for point in path if point is not None]
+    assert "M/Z_0" in labels
+    assert "M'/Z_0'" in labels
+    assert "M" not in labels
+    assert "Z_0" not in labels
+
+    vasp_output = tmp_path / "KPOINTS_alter"
+    qe_output = tmp_path / "KPOINTS_alter_qe"
+    assert modifier.write_kpoints_file(path, str(vasp_output))
+    assert modifier.write_kpoints_file_qe(path, str(qe_output))
+
+    vasp_text = vasp_output.read_text(encoding="utf-8")
+    qe_labels = [label for label, _count in _qe_waypoints(qe_output)]
+    assert "M/Z_0" in vasp_text
+    assert "M'/Z_0'" in vasp_text
+    assert "M/Z_0" in qe_labels
+    assert "M'/Z_0'" in qe_labels
+
+
 def test_butterfly_path_retains_primed_coincident_aliases():
     modifier = KPointsModifier()
     modifier.kpoints_data = [

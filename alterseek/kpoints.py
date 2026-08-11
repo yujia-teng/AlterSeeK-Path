@@ -641,7 +641,7 @@ class KPointsModifier:
             return [tc[0], tc[1], tc[2], prime_point_label(p[3])]
 
         # --- Step 1: group flat kpoints_data into segment pairs ---
-        raw = self.kpoints_data
+        raw = self._globally_alias_coincident_path_points(self.kpoints_data)
         seg_pairs = [(raw[i], raw[i+1]) for i in range(0, len(raw) - 1, 2)]
 
         # --- Step 2: build connected chains ---
@@ -823,7 +823,7 @@ class KPointsModifier:
                                       extra_general_points: Optional[List[List]] = None) -> List[List]:
         """Keep the ordinary path, then append compact high-symmetry/k comparisons."""
         kpt = [kpoint[0], kpoint[1], kpoint[2], "k"]
-        raw = self.kpoints_data
+        raw = self._globally_alias_coincident_path_points(self.kpoints_data)
         seg_pairs = [(raw[i], raw[i + 1]) for i in range(0, len(raw) - 1, 2)]
         path_sequence = []
         for idx, (start, end) in enumerate(seg_pairs):
@@ -864,6 +864,40 @@ class KPointsModifier:
         )
         return path_sequence
     
+    @staticmethod
+    def _globally_alias_coincident_path_points(points):
+        """Give every occurrence of a path coordinate the same combined label.
+
+        This runs before disconnected zero-length path parts are discarded. It
+        therefore preserves aliases from a degenerate part such as ``Z_0--M``
+        on nonzero occurrences of that same point elsewhere in the path.
+        """
+        groups = []
+        assignments = []
+        copied = []
+        for point in points:
+            current = point.copy()
+            copied.append(current)
+            for index, group in enumerate(groups):
+                if np.allclose(
+                        current[:3], group["coords"],
+                        atol=POINT_COINCIDENCE_ATOL, rtol=0.0):
+                    group["label"] = combine_point_labels(
+                        group["label"], current[3]
+                    )
+                    assignments.append(index)
+                    break
+            else:
+                groups.append({
+                    "coords": np.asarray(current[:3], dtype=float),
+                    "label": str(current[3]),
+                })
+                assignments.append(len(groups) - 1)
+
+        for point, group_index in zip(copied, assignments):
+            point[3] = groups[group_index]["label"]
+        return copied
+
     @staticmethod
     def _coalesce_coincident_path_points(new_kpoints):
         """Merge consecutive equal-coordinate path points and retain their names."""
