@@ -12,6 +12,14 @@ import os
 import uuid
 from io import StringIO
 
+# Scratch files stay beside their targets so os.replace is atomic, but their
+# private names do not repeat the possibly long public basename.
+_SCRATCH_TOKEN_HEX = 16
+
+
+def _scratch_token():
+    return uuid.uuid4().hex[:_SCRATCH_TOKEN_HEX]
+
 
 def _atomic_write_text(path, text):
     """Write UTF-8 text beside *path*, then atomically replace the target."""
@@ -22,7 +30,7 @@ def _atomic_write_text(path, text):
     # same mode a plain open() would create — without mkstemp's 0600 or a
     # process-global os.umask() round-trip that could race other threads.
     temporary = os.path.join(
-        parent, f".{os.path.basename(target)}.{uuid.uuid4().hex}.tmp"
+        parent, f".alterseek-{_scratch_token()}.tmp"
     )
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
     fd = os.open(temporary, flags, 0o666)
@@ -67,23 +75,26 @@ def _atomic_write_text_set(outputs):
     """
     entries = []
     seen_targets = set()
-    transaction_id = uuid.uuid4().hex
+    transaction_id = _scratch_token()
     preserve_failed_backups = False
 
     try:
-        for path, text in outputs.items():
+        for index, (path, text) in enumerate(outputs.items()):
             target = os.path.abspath(os.fspath(path))
             if target in seen_targets:
                 raise ValueError(f"duplicate transaction target: {target}")
             seen_targets.add(target)
             parent = os.path.dirname(target)
-            basename = os.path.basename(target)
             staged = os.path.join(
-                parent, f".{basename}.{transaction_id}.stage"
+                parent, f".alterseek-{transaction_id}-{index}.stage"
             )
             backup = os.path.join(
-                parent, f".{basename}.{transaction_id}.backup"
+                parent, f".alterseek-{transaction_id}-{index}.backup"
             )
+            if os.path.exists(staged) or os.path.exists(backup):
+                raise FileExistsError(
+                    f"scratch path already exists for transaction target {target}"
+                )
             entry = {
                 "target": target,
                 "staged": staged,
@@ -91,6 +102,7 @@ def _atomic_write_text_set(outputs):
                 "existed": os.path.exists(target),
                 "backed_up": False,
                 "promoted": False,
+                "staged_owned": False,
             }
             entries.append(entry)
             flags = (
@@ -98,6 +110,7 @@ def _atomic_write_text_set(outputs):
                 | getattr(os, "O_BINARY", 0)
             )
             fd = os.open(staged, flags, 0o666)
+            entry["staged_owned"] = True
             try:
                 handle = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
             except Exception:
@@ -137,15 +150,14 @@ def _atomic_write_text_set(outputs):
         raise
     finally:
         for entry in entries:
-            for key in ("staged", "backup"):
-                if (
-                    key == "backup"
-                    and preserve_failed_backups
-                    and entry["backed_up"]
-                ):
-                    continue
+            if entry["staged_owned"]:
                 try:
-                    os.remove(entry[key])
+                    os.remove(entry["staged"])
+                except OSError:
+                    pass
+            if entry["backed_up"] and not preserve_failed_backups:
+                try:
+                    os.remove(entry["backup"])
                 except OSError:
                     pass
 

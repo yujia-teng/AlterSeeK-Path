@@ -9,6 +9,7 @@ import os
 
 import pytest
 
+import alterseek.atomic_write as atomic_write
 from alterseek.atomic_write import (
     _atomic_open_text,
     _atomic_write_text,
@@ -119,6 +120,53 @@ def test_multi_file_commit_replaces_the_complete_set(tmp_path):
         b"new 0\n", b"new 1\n", b"new 2\n"
     ]
     assert _transaction_siblings(tmp_path) == []
+
+
+def test_multi_file_stage_collision_does_not_remove_sentinel(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "KPOINTS_alter"
+    token = "deadbeefcafebabe"
+    colliding = tmp_path / f".alterseek-{token}-0.stage"
+    colliding.write_bytes(b"previous transaction stage\n")
+    monkeypatch.setattr(atomic_write, "_scratch_token", lambda: token)
+
+    with pytest.raises(FileExistsError, match="scratch path already exists"):
+        _atomic_write_text_set({target: "new k-points\n"})
+
+    assert not target.exists()
+    assert colliding.read_bytes() == b"previous transaction stage\n"
+    assert _transaction_siblings(tmp_path) == [colliding.name]
+
+
+def test_short_transaction_names_fit_legacy_windows_path_limit(
+    tmp_path, monkeypatch
+):
+    parent = tmp_path / "long"
+    parent.mkdir()
+    target_length = 240
+    basename_length = target_length - len(os.fspath(parent)) - 1
+    target = parent / ("x" * basename_length)
+    assert len(os.fspath(target)) == target_length
+    target.write_bytes(b"old\n")
+
+    real_open = os.open
+    scratch_lengths = []
+
+    def legacy_windows_open(path, flags, mode=0o777):
+        path_length = len(os.fspath(path))
+        scratch_lengths.append(path_length)
+        if path_length >= 260:
+            raise FileNotFoundError("synthetic legacy Windows MAX_PATH")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", legacy_windows_open)
+    _atomic_write_text_set({target: "new\n"})
+
+    assert target.read_bytes() == b"new\n"
+    assert max(scratch_lengths) < 260
+    assert max(scratch_lengths) < len(os.fspath(target))
+    assert _transaction_siblings(parent) == []
 
 
 @pytest.mark.parametrize("failed_replace", [4, 5, 6])
