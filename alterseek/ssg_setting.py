@@ -17,7 +17,7 @@ from .io import (
     _group_poscar_sites, _write_poscar, _write_without_species,
     _dedupe_frac_positions,
     _min_periodic_cart_distance, _write_magnetic_mcif,
-    _load_magnetic_input_data, _write_seekpath_standard_mcif,
+    _load_magnetic_input_data,
 )
 
 
@@ -294,9 +294,6 @@ def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_car
         "magnetic_cell_sites": len(elements),
         # Retain both lattices so finalization can distinguish a genuinely different magnetic cell from the submitted cell with relabelled axes.
         "magnetic_primitive_lattice": lattice,
-        "magnetic_positions": np.asarray(grouped_positions, dtype=float),
-        "magnetic_elements": ordered_elements,
-        "magnetic_moments": ordered_moments,
         "submitted_lattice": np.array(lattice_in, dtype=float),
         "magnetic_symbols": list(symbols),
         "magnetic_counts": list(counts),
@@ -392,7 +389,6 @@ def finalize_magnetic_setting_outputs(
     helper_source = centroid_result.get("standardized_structure_path")
     basename = mag_setting["basename"]
     real_final = None
-    standard_mcif_path = None
     helper_final = None
 
     # These standardized structures are diagnostic views, not the calculation cell or the basis of KPOINTS_alter.
@@ -415,28 +411,6 @@ def finalize_magnetic_setting_outputs(
                 "[Warning] Could not write the marker-free SeeK-path standard "
                 f"cell: {exc}"
             )
-
-        if real_final:
-            standard_mcif_candidate = os.path.join(
-                output_dir, f"{basename}_seekpath_standard.mcif"
-            )
-            try:
-                _write_seekpath_standard_mcif(
-                    real_final,
-                    standard_mcif_candidate,
-                    f"{basename}_seekpath_standard",
-                    mag_setting["magnetic_primitive_lattice"],
-                    mag_setting["magnetic_positions"],
-                    mag_setting["magnetic_elements"],
-                    mag_setting["magnetic_moments"],
-                    symprec=centroid_result.get("symprec"),
-                )
-                standard_mcif_path = standard_mcif_candidate
-            except Exception as exc:
-                print(
-                    "[Warning] Could not write the SeeK-path-standardized "
-                    f"magnetic MCIF: {exc}"
-                )
 
         if verbose_output:
             helper_candidate = os.path.join(
@@ -602,8 +576,6 @@ def finalize_magnetic_setting_outputs(
     }
     if real_final:
         result["standard_real_path"] = real_final
-    if standard_mcif_path:
-        result["standard_magnetic_path"] = standard_mcif_path
     if calculation_cell_path:
         result["calculation_cell_path"] = calculation_cell_path
     if calculation_magmom_path:

@@ -8,10 +8,8 @@ extraction of interactive_modify into helper methods (and any future edits).
 """
 import io
 import sys
-import warnings
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 # The full interactive flow runs Step 0 (FindSpinGroup) and reads the structure
@@ -71,28 +69,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     ]
 
     standard_vasp = output_dir / "case12_POSCAR_seekpath_standard.vasp"
-    standard_mcif = output_dir / "case12_POSCAR_seekpath_standard.mcif"
     assert standard_vasp.exists()
-    assert standard_mcif.exists()
-    from pymatgen.core import Structure
-    from pymatgen.io.cif import CifParser
-    structural_standard = Structure.from_file(standard_vasp)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        magnetic_standard = CifParser(str(standard_mcif)).parse_structures(
-            primitive=False
-        )[0]
-    assert np.allclose(
-        magnetic_standard.lattice.matrix,
-        structural_standard.lattice.matrix,
-    )
-    moment_norms = sorted(
-        np.linalg.norm(site.properties["magmom"].moment)
-        for site in magnetic_standard
-        if "magmom" in site.properties
-        and np.linalg.norm(site.properties["magmom"].moment) > 1e-8
-    )
-    assert np.allclose(moment_norms, [5.0, 5.0])
 
 
 def test_step4_path_construction_error_reaches_workflow_boundary(
@@ -241,7 +218,6 @@ def test_optional_basis_mapping_failure_keeps_standardized_structure(
     assert "synthetic basis-mapping diagnostic failure" in output
     output_dir = tmp_path / kpoints_module.OUTPUT_DIR
     assert (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
-    assert (output_dir / f"{POSCAR.stem}_seekpath_standard.mcif").exists()
     assert not (output_dir / f"{POSCAR.stem}_seekpath_basis_mapping.txt").exists()
     assert "IBZ centroid construction failed" not in output
     assert (tmp_path / "KPOINTS_alter").exists()

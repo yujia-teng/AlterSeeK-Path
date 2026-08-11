@@ -108,7 +108,6 @@ record files go into `alterseek_output/`.
 | `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
 | `*_magnetic_primitive.mcif` | Magnetic primitive cell with its vector moments (default route) |
 | `*_seekpath_standard.vasp` | SeeK-path standardized conventional diagnostic cell; it is not the calculation POSCAR or final KPOINTS basis |
-| `*_seekpath_standard.mcif` | The same SeeK-path standardized cell with transformed vector moments for magnetic-structure visualization; written with explicit sites in P1 |
 | `*_seekpath_marker_helper.vasp` | Marker-bearing standardized helper, retained only with verbose output |
 | `*_seekpath_basis_mapping.txt` | Analysis input, internal primitive path, standardized conventional, and final KPOINTS output lattices |
 

@@ -39,8 +39,6 @@ from .atomic_write import (
     _atomic_open_text,
 )
 from .io import (
-    _load_magnetic_input_data,
-    _write_seekpath_standard_mcif,
     write_bandplot_lattice_config,
     write_qe_bandplot_config,
 )
@@ -1643,44 +1641,6 @@ class KPointsModifier:
                                 print(
                                     "[SSG setting] Kept intermediates in "
                                     f"{magnetic_setting_outputs.get('intermediate_dir')}"
-                                )
-                        if magnetic_setting_counts is None:
-                            # The submitted cell already carries the magnetic order, but SeeK-path may still rotate or permute it into its standard setting.
-                            # Write a spin-bearing MCIF beside the structural standardized VASP so that setting can be inspected directly.
-                            try:
-                                standard_vasp = centroid_result.get(
-                                    "standardized_structure_path"
-                                )
-                                if standard_vasp:
-                                    (magnetic_lattice,
-                                     magnetic_positions,
-                                     magnetic_elements,
-                                     magnetic_moments,
-                                     _) = _load_magnetic_input_data(
-                                        struct_file,
-                                        moments_str,
-                                        spin_axis_cart,
-                                    )
-                                    standard_mcif = os.path.splitext(
-                                        standard_vasp
-                                    )[0] + ".mcif"
-                                    _write_seekpath_standard_mcif(
-                                        standard_vasp,
-                                        standard_mcif,
-                                        f"{_figure_basename(struct_file)}_seekpath_standard",
-                                        magnetic_lattice,
-                                        magnetic_positions,
-                                        magnetic_elements,
-                                        magnetic_moments,
-                                        symprec=centroid_result.get("symprec"),
-                                    )
-                                    centroid_result[
-                                        "standardized_magnetic_structure_path"
-                                    ] = standard_mcif
-                            except Exception as exc:
-                                print(
-                                    "[Warning] Could not write the SeeK-path-"
-                                    f"standardized magnetic MCIF: {exc}"
                                 )
                         display_figures.extend(centroid_result.get('display_figures', []))
                     except Exception as exc:
