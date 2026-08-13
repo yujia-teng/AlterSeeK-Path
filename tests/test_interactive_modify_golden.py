@@ -42,7 +42,8 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
 
     stdout = capsys.readouterr().out
     assert "Nonmagnetic primitive cell:   SG P4_2/mnm (136)" in stdout
-    assert "Magnetic primitive reference: SG P4_2/mnm (136)" in stdout
+    assert "Magnetic primitive cell:      SG P4_2/mnm (136)" in stdout
+    assert "[6 atoms, tP1]" in stdout
     assert "Submitted analysis cell:" in stdout
     assert "SG P4/mmm (123)" in stdout
 

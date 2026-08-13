@@ -89,7 +89,7 @@ Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 
 
 Input structure: POSCAR, 6 atoms
 Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
-Magnetic primitive reference: SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms]
+Magnetic primitive cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Submitted analysis cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L

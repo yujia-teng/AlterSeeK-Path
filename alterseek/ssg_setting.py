@@ -66,6 +66,30 @@ def _point_operation_keys(rotations):
     }
 
 
+def _seekpath_lattice_tag(lattice, symprec):
+    """Return the HPKOT tag of a primitive lattice from its metric alone."""
+    metric_cell = (
+        np.asarray(lattice, dtype=float).tolist(),
+        [[0.11000000, 0.12000000, 0.15000001]],
+        [1],
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message=r".*dict interface is deprecated.*"
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+            module=r"seekpath\.hpkot(\..*)?",
+        )
+        result = seekpath.get_path(
+            metric_cell,
+            with_time_reversal=True,
+            symprec=symprec,
+        )
+    return result["bravais_lattice_extended"]
+
+
 def build_submitted_analysis_cell(
     lattice,
     real_type_numbers,
@@ -286,6 +310,9 @@ def prepare_submitted_cell_analysis(
             "mcif_path": mcif_path,
             "magnetic_primitive_lattice": magnetic_lattice,
             "magnetic_primitive_sites": len(magnetic_elements),
+            "magnetic_primitive_lattice_tag": _seekpath_lattice_tag(
+                magnetic_lattice, symprec
+            ),
             "magnetic_summary": {
                 "index": fsg_result.get("index"),
                 "acc_symbol": fsg_result.get("acc_symbol"),

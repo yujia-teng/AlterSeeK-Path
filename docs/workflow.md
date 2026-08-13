@@ -243,8 +243,8 @@ For supercell altermagnets, the submitted lattice fixes the BZ while G0 fixes
 the magnetic point symmetry inside it. MnSe2 illustrates why those roles must
 remain separate: the submitted magnetic cell has a cubic moment-free parent,
 but G0 is orthorhombic `Pbca` (61, Laue `mmm`). Step 0 therefore reports the
-nonmagnetic primitive reference, the FindSpinGroup magnetic primitive
-reference, and the submitted analysis cell as distinct concepts.
+nonmagnetic primitive cell, the FindSpinGroup magnetic primitive cell, and the
+submitted analysis cell as distinct concepts.
 
 ## Next Step
 

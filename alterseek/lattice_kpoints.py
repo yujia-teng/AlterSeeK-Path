@@ -120,7 +120,7 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "R_A": ("Z", "-Z", "1/2"),
     },
 
-    # For the trigonal hP1/hP2 middle-row IBZ, retain the ordinary SeeK-path path and use lower/middle-row vertices as copied-sector general anchors.
+    # For the trigonal hP1/hP2 middle-row IBZ, retain the ordinary SeeK-path path and use lower/middle-row vertices as copied-sector general-k points.
     # H_2 is already a SeeK-path path label for hP1, where K-H_2 is required by the k-vector table.
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): {
         "A_2": ("0", "0", "-1/2"),

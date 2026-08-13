@@ -67,9 +67,9 @@ def test_hp1_trigonal_keeps_seekpath_K_H2_segment():
     assert ("K", "H_2") not in lk.get_kpath("hP1", 191)
 
 
-def test_hp1_trigonal_hull_uses_A2_LA_anchors_and_keeps_H2():
-    # SG 149 family: copied/general anchors A_2 and L_A; H_2 stays because it
-    # is path-used. Plain hP1 (e.g. SG 191) has no copied anchors.
+def test_hp1_trigonal_hull_uses_A2_LA_general_points_and_keeps_H2():
+    # SG 149 family: copied general-k points A_2 and L_A; H_2 stays because it
+    # is path-used. Plain hP1 (e.g. SG 191) has no copied general-k points.
     keys_149 = sorted(lk.get_hull_kpoints("hP1", spacegroup_number=149))
     assert keys_149 == sorted(["A", "A_2", "H", "H_2", "K", "L", "L_A", "M", GAMMA])
     keys_191 = sorted(lk.get_hull_kpoints("hP1", spacegroup_number=191))
@@ -77,7 +77,7 @@ def test_hp1_trigonal_hull_uses_A2_LA_anchors_and_keeps_H2():
 
 
 def test_hp2_6m_hull_keeps_MA_LA():
-    # hP2 6/m doubled-IBZ uses M_A/L_A copied anchors.
+    # hP2 6/m doubled-IBZ uses M_A/L_A copied general-k points.
     keys = sorted(lk.get_hull_kpoints("hP2", spacegroup_number=170))
     assert keys == sorted(["A", "H", "K", "L", "L_A", "M", "M_A", GAMMA])
 
