@@ -42,7 +42,9 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
 
     stdout = capsys.readouterr().out
     assert "Nonmagnetic primitive cell:   SG P4_2/mnm (136)" in stdout
-    assert "Magnetic primitive cell (G0): SG P4_2/mnm (136)" in stdout
+    assert "Magnetic primitive reference: SG P4_2/mnm (136)" in stdout
+    assert "Submitted analysis cell:" in stdout
+    assert "SG P4/mmm (123)" in stdout
 
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = REFERENCE.read_text(encoding="utf-8")
@@ -69,7 +71,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     ]
 
     standard_vasp = output_dir / "case12_POSCAR_seekpath_standard.vasp"
-    assert standard_vasp.exists()
+    assert not standard_vasp.exists()
 
 
 def test_step4_path_construction_error_reaches_workflow_boundary(
@@ -165,36 +167,7 @@ def test_optional_bz_geometry_failure_does_not_block_kpoints(
     assert (tmp_path / "KPOINTS_alter").exists()
 
 
-def test_optional_standardized_poscar_failure_keeps_basis_mapping(
-    tmp_path, monkeypatch, capsys
-):
-    from alterseek import compute_centroid_hybrid as centroid_module
-    from alterseek import kpoints as kpoints_module
-
-    def fail_standardization(*args, **kwargs):
-        raise OSError("synthetic standardization diagnostic failure")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
-    monkeypatch.setattr(
-        centroid_module,
-        "_write_seekpath_standard_poscar",
-        fail_standardization,
-    )
-    monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
-
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
-    output = capsys.readouterr().out
-    assert "Could not write SeeK-path standardized structure" in output
-    assert "synthetic standardization diagnostic failure" in output
-    output_dir = tmp_path / kpoints_module.OUTPUT_DIR
-    assert not (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
-    assert (output_dir / f"{POSCAR.stem}_seekpath_basis_mapping.txt").exists()
-    assert "IBZ centroid construction failed" not in output
-    assert (tmp_path / "KPOINTS_alter").exists()
-
-
-def test_optional_basis_mapping_failure_keeps_standardized_structure(
+def test_optional_basis_mapping_failure_does_not_publish_marker_structure(
     tmp_path, monkeypatch, capsys
 ):
     from alterseek import compute_centroid_hybrid as centroid_module
@@ -217,7 +190,7 @@ def test_optional_basis_mapping_failure_keeps_standardized_structure(
     assert "Could not write SeeK-path basis mapping" in output
     assert "synthetic basis-mapping diagnostic failure" in output
     output_dir = tmp_path / kpoints_module.OUTPUT_DIR
-    assert (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
+    assert not (output_dir / f"{POSCAR.stem}_seekpath_standard.vasp").exists()
     assert not (output_dir / f"{POSCAR.stem}_seekpath_basis_mapping.txt").exists()
     assert "IBZ centroid construction failed" not in output
     assert (tmp_path / "KPOINTS_alter").exists()

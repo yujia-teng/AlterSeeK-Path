@@ -1,23 +1,19 @@
-"""SSG-setting marker workflow: build spin-space-group setting inputs.
+"""Build validated submitted-cell marker inputs for SeeK-path."""
 
-Extracted from alterseek_path.py (restructuring phase 4).
-"""
 import os
-import shutil
-import numpy as np
+import warnings
 
+import numpy as np
+import seekpath
+import spglib
 from findspingroup import find_spin_group_acc_primitive_from_data
 
-from .atomic_write import (
-    _atomic_write_text,
-    _atomic_write_text_set,
-    _atomic_open_text,
-)
 from .io import (
-    _group_poscar_sites, _write_poscar, _write_without_species,
     _dedupe_frac_positions,
-    _min_periodic_cart_distance, _write_magnetic_mcif,
+    _group_poscar_sites,
     _load_magnetic_input_data,
+    _min_periodic_cart_distance,
+    _write_magnetic_mcif,
 )
 
 
@@ -28,567 +24,272 @@ _MARKER_SEEDS = [
     np.array([0.21100000, 0.13700000, 0.29300001]),
 ]
 
-_MARKER_SPECIES_PREFERENCE = ("He", "Ne", "Ar", "Kr", "Xe", "Rn", "Og")
+_MARKER_SEED_SETS = (
+    (_MARKER_SEEDS[0], _MARKER_SEEDS[1]),
+    (_MARKER_SEEDS[0], _MARKER_SEEDS[2]),
+    (_MARKER_SEEDS[1], _MARKER_SEEDS[3]),
+    (_MARKER_SEEDS[0], _MARKER_SEEDS[1], _MARKER_SEEDS[2]),
+)
 
 
-def _marker_orbit(seed, operations):
-    positions = []
-    for op in operations:
-        rotation = np.array(op["real_rotation"], dtype=float)
-        translation = np.array(op.get("translation", [0.0, 0.0, 0.0]), dtype=float)
-        positions.append(seed @ rotation.T + translation)
-    return _dedupe_frac_positions(positions)
-
-
-def _select_marker_species(real_symbols):
-    """Choose a deterministic chemical symbol absent from the real structure."""
-    from ase.data import chemical_symbols
-
-    used = {str(symbol) for symbol in real_symbols}
-    candidates = dict.fromkeys(
-        (*_MARKER_SPECIES_PREFERENCE, *chemical_symbols[1:])
-    )
-    for candidate in candidates:
-        if candidate not in used:
-            return candidate
-    raise RuntimeError(
-        "Could not choose an unused chemical species for the SSG marker helper."
-    )
-
-
-def _build_marker_helper(lattice, symbols, counts, positions, operations):
-    marker_species = _select_marker_species(symbols)
-    best = None
-    for seed in _MARKER_SEEDS:
-        markers = _marker_orbit(seed, operations)
-        helper_positions = list(positions) + markers
-        candidate = {
-            "seed": seed,
-            "marker_species": marker_species,
-            "symbols": list(symbols) + [marker_species],
-            "counts": list(counts) + [len(markers)],
-            "positions": helper_positions,
-            "markers": markers,
-            "min_distance": _min_periodic_cart_distance(helper_positions, lattice),
-        }
-        if best is None or candidate["min_distance"] > best["min_distance"]:
-            best = candidate
-    if best is None:
-        raise RuntimeError("Could not build SSG-setting marker helper.")
-    return best
-
-
-def _spin_axis_from_moments(moments):
-    for moment in np.asarray(moments, dtype=float):
-        norm = np.linalg.norm(moment)
-        if norm > 1e-10:
-            return moment / norm
-    raise ValueError("No nonzero magnetic moment found.")
-
-
-def _operation_class_indices(operations, spin_axis, flip):
-    indices = []
-    for i, op in enumerate(operations):
-        spin_rotation = np.array(op["spin_rotation"], dtype=float)
-        mapped_axis = spin_rotation @ spin_axis
-        is_flip = np.allclose(mapped_axis, -spin_axis, atol=1e-7)
-        is_preserve = np.allclose(mapped_axis, spin_axis, atol=1e-7)
-        if not is_flip and not is_preserve:
+def _integer_point_operations(point_operations, tol=1e-7):
+    """Return distinct point rotations compatible with the submitted lattice."""
+    rotations = []
+    for operation in point_operations:
+        value = (
+            operation.get("real_rotation")
+            if isinstance(operation, dict)
+            else operation
+        )
+        rotation = np.asarray(value, dtype=float)
+        if rotation.shape != (3, 3) or not np.all(np.isfinite(rotation)):
             continue
-        if is_flip == flip:
-            indices.append(i)
-    return indices
-
-
-def _collect_point_ops_from_payload(operations, indices, include_inversion=True):
-    point_ops = []
-    source_indices = []
-    for idx in indices:
-        rotation = np.array(operations[idx]["real_rotation"], dtype=float)
-        variants = [rotation]
-        if include_inversion:
-            variants.append(-rotation)
-        for candidate in variants:
-            rounded = np.rint(candidate).astype(int)
-            compare = rounded if np.allclose(candidate, rounded, atol=1e-7) else candidate
-            if not any(np.allclose(compare, existing, atol=1e-7) for existing in point_ops):
-                point_ops.append(compare)
-                source_indices.append(int(operations[idx].get("index", idx + 1)))
-    return point_ops, source_indices
-
-
-def _write_operation_file(filename, rotations, source_indices, label, basis_label):
-    with _atomic_open_text(filename) as f:
-        f.write(
-            f"# Basis: {basis_label} real-space fractional basis "
-            "(a1, a2, a3).\n"
+        rounded = np.rint(rotation).astype(int)
+        if not np.allclose(rotation, rounded, atol=tol):
+            continue
+        if not np.isclose(abs(np.linalg.det(rounded)), 1.0, atol=tol):
+            continue
+        if not any(np.array_equal(rounded, existing) for existing in rotations):
+            rotations.append(rounded)
+    if not rotations:
+        raise RuntimeError(
+            "No magnetic point operation is compatible with the submitted "
+            "cell lattice."
         )
-        f.write(
-            "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
-            "reciprocal basis (b1, b2, b3).\n"
-        )
-        f.write(f"# Found {len(rotations)} inversion-extended spin-{label} point operations\n")
-        f.write(f"# Original Indices: {source_indices}\n")
-        for i, rotation in enumerate(rotations):
-            f.write(f"Operation_{i + 1}\n")
-            for row in rotation:
-                f.write(" ".join(f"{value:.10g}" for value in row) + "\n")
-            f.write("\n")
-    return len(rotations)
+    return rotations
 
 
-def _write_magnetic_setting_operation_files(
-    operations,
-    spin_axis,
-    basis_label,
-    output_dir=".",
-):
-    flip_indices = _operation_class_indices(operations, spin_axis, flip=True)
-    preserve_indices = _operation_class_indices(operations, spin_axis, flip=False)
-    flip_ops, flip_sources = _collect_point_ops_from_payload(operations, flip_indices)
-    preserve_ops, preserve_sources = _collect_point_ops_from_payload(operations, preserve_indices)
-    flip_count = _write_operation_file(
-        os.path.join(output_dir, "spin_flip_operations.txt"),
-        flip_ops,
-        flip_sources,
-        "flipping",
-        basis_label,
-    )
-    preserve_count = _write_operation_file(
-        os.path.join(output_dir, "spin_preserve_operations.txt"),
-        preserve_ops,
-        preserve_sources,
-        "preserving",
-        basis_label,
-    )
-    return flip_count, preserve_count
-
-
-def _magnetic_primitive_ssg_operations(result):
-    views = (
-        result.get("operation_views", {})
-        .get("magnetic_primitive_cartesian", {})
-        .get("views", {})
-    )
-    nssg_view = views.get("nssg")
-    if nssg_view and nssg_view.get("ops"):
-        return nssg_view["ops"]
-    all_view = views.get("all")
-    if all_view and all_view.get("ops"):
-        return all_view["ops"]
-    operations = result.get("acc_primitive_ssg_ops_cartesian")
-    if operations is None:
-        operations = result.get("acc_primitive_ssg_operation_matrices", [])
-    return operations
-
-
-def prepare_magnetic_setting_files(structure_file, moments_str="", spin_axis_cart=None, output_dir="."):
-    """Write real magnetic primitive POSCAR/MCIF files from FindSpinGroup."""
-    # Use the shared pymatgen-backed MCIF loader before entering FindSpinGroup's parsed-data route.
-    # Pymatgen restores nearly special fractional coordinates such as 0.33333 to 1/3, which otherwise may fall just outside SeeK-path or spglib's symmetry tolerance.
-    lattice_in, positions_in, elements_in, moments_in, spin_setting = _load_magnetic_input_data(
-        structure_file, moments_str, spin_axis_cart
-    )
-    result = find_spin_group_acc_primitive_from_data(
-        structure_file,
-        lattice_in,
-        positions_in,
-        elements_in,
-        [1.0] * len(elements_in),
-        moments_in,
-        input_spin_setting=spin_setting,
-    )
-    cell = result["acc_primitive_cell_detail"]
-    lattice = np.array(cell["lattice"], dtype=float)
-    positions = [np.array(pos, dtype=float) for pos in cell["positions"]]
-    elements = [str(el) for el in cell["elements"]]
-    moments = np.array(cell.get("moments", np.zeros((len(elements), 3))), dtype=float)
-
-    basename = os.path.splitext(os.path.basename(structure_file))[0]
-    temp_dir = os.path.join(output_dir, ".alterseek_magnetic_tmp")
-    os.makedirs(temp_dir, exist_ok=True)
-    real_path = os.path.join(temp_dir, f"{basename}_magnetic_primitive.vasp")
-    mcif_path = os.path.join(output_dir, f"{basename}_magnetic_primitive.mcif")
-    magmom_path = os.path.join(
-        temp_dir, f"{basename}_magnetic_primitive_MAGMOM.txt")
-    helper_path = os.path.join(
-        temp_dir, f"{basename}_magnetic_marker_input.vasp")
-
-    symbols, counts, grouped_positions, ordered_indices = _group_poscar_sites(
-        elements, positions)
-    _write_poscar(
-        real_path,
-        f"{basename} magnetic primitive from FindSpinGroup; "
-        f"moments: {basename}_magnetic_primitive_MAGMOM.txt",
-        lattice,
-        symbols,
-        counts,
-        grouped_positions,
-    )
-
-    ordered_moments = moments[ordered_indices]
-    ordered_elements = [elements[idx] for idx in ordered_indices]
-    _write_magnetic_mcif(
-        mcif_path,
-        f"{basename}_magnetic_primitive",
-        lattice,
-        ordered_elements,
-        grouped_positions,
-        ordered_moments,
-    )
-    axis = None
-    for moment in ordered_moments:
-        norm = np.linalg.norm(moment)
-        if norm > 1e-10:
-            axis = moment / norm
-            break
-    with _atomic_open_text(magmom_path) as f:
-        f.write("# Magnetic primitive POSCAR atom order matches:\n")
-        f.write(f"# {real_path}\n")
-        f.write(f"# Species order: {' '.join(symbols)}\n")
-        f.write(f"# Counts: {' '.join(str(count) for count in counts)}\n")
-        if axis is not None:
-            scalars = [float(np.dot(moment, axis)) for moment in ordered_moments]
-            f.write("# Collinear spin axis (Cartesian): " + " ".join(
-                f"{value:.8g}" for value in axis) + "\n")
-            f.write("# Collinear scalar MAGMOM along first nonzero moment axis:\n")
-            f.write("MAGMOM = " + " ".join(
-                f"{value:.8g}" for value in scalars) + "\n")
-
-    operations = _magnetic_primitive_ssg_operations(result)
-    marker_helper = _build_marker_helper(
-        lattice,
-        symbols,
-        counts,
-        grouped_positions,
-        operations,
-    )
-    _write_poscar(
-        helper_path,
-        f"{basename} SSG-setting {marker_helper['marker_species']} marker "
-        "helper from FindSpinGroup",
-        lattice,
-        marker_helper["symbols"],
-        marker_helper["counts"],
-        marker_helper["positions"],
-    )
-    spin_axis = _spin_axis_from_moments(moments)
-    magnetic_basis = (
-        f"magnetic primitive cell '{os.path.basename(mcif_path)}'"
-    )
-    flip_count, preserve_count = _write_magnetic_setting_operation_files(
-        operations,
-        spin_axis,
-        magnetic_basis,
-        output_dir=output_dir,
-    )
-
+def _point_operation_keys(rotations):
     return {
-        "real_poscar_path": real_path,
-        "helper_path": helper_path,
-        "mcif_path": mcif_path,
-        "magmom_path": magmom_path,
-        "temp_dir": temp_dir,
-        "basename": basename,
-        "seekpath_type_numbers": None,
-        "magnetic_cell_sites": len(elements),
-        # Retain both lattices so finalization can distinguish a genuinely different magnetic cell from the submitted cell with relabelled axes.
-        "magnetic_primitive_lattice": lattice,
-        "submitted_lattice": np.array(lattice_in, dtype=float),
-        "magnetic_symbols": list(symbols),
-        "magnetic_counts": list(counts),
-        "spin_flip_operations": flip_count,
-        "spin_preserve_operations": preserve_count,
-        "operation_basis_label": magnetic_basis,
-        "marker_species": marker_helper["marker_species"],
+        tuple(np.asarray(rotation, dtype=int).ravel())
+        for rotation in rotations
+    }
+
+
+def build_submitted_analysis_cell(
+    lattice,
+    real_type_numbers,
+    point_operations,
+    *,
+    symprec=1e-3,
+):
+    """Build and validate an in-memory marker cell in the submitted lattice.
+
+    The generic marker orbits encode only compatible point operations. They
+    contain neither real atoms nor copies generated by hidden smaller-cell
+    translations, so SeeK-path cannot reduce a deliberate submitted supercell
+    to a different translation lattice.
+    """
+    lattice = np.asarray(lattice, dtype=float)
+    if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
+        raise ValueError("Submitted lattice must be a finite 3x3 matrix.")
+    if abs(np.linalg.det(lattice)) < 1e-12:
+        raise ValueError("Submitted lattice is singular.")
+
+    real_types = {int(value) for value in real_type_numbers}
+    marker_type = max(real_types, default=0) + 1
+    while marker_type in real_types or marker_type <= 0:
+        marker_type += 1
+
+    rotations = _integer_point_operations(point_operations)
+    intended_keys = _point_operation_keys(rotations)
+    failures = []
+    for seeds in _MARKER_SEED_SETS:
+        markers = _dedupe_frac_positions([
+            seed @ rotation.T
+            for seed in seeds
+            for rotation in rotations
+        ])
+        cell = (
+            lattice.tolist(),
+            [position.tolist() for position in markers],
+            [marker_type] * len(markers),
+        )
+        dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
+        seed_label = [seed.tolist() for seed in seeds]
+        if dataset is None:
+            failures.append(f"seeds {seed_label}: spglib found no symmetry")
+            continue
+        detected_keys = _point_operation_keys(dataset.rotations)
+        if detected_keys != intended_keys:
+            failures.append(
+                f"seeds {seed_label}: intended {len(intended_keys)} point "
+                f"operations but detected {len(detected_keys)}"
+            )
+            continue
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=r".*dict interface is deprecated.*"
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"seekpath\.hpkot(\..*)?",
+            )
+            sp_result = seekpath.get_path(
+                cell,
+                with_time_reversal=True,
+                symprec=symprec,
+            )
+        volume_ratio = float(sp_result["volume_original_wrt_prim"])
+        if not np.isclose(volume_ratio, 1.0, atol=1e-7, rtol=0.0):
+            failures.append(
+                f"seeds {seed_label}: volume_original_wrt_prim="
+                f"{volume_ratio:.12g}"
+            )
+            continue
+        reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
+        return {
+            "cell": cell,
+            "marker_type": marker_type,
+            "marker_seeds": [seed.copy() for seed in seeds],
+            "marker_count": len(markers),
+            "marker_min_distance": _min_periodic_cart_distance(
+                markers, lattice
+            ),
+            "point_operations": rotations,
+            "intended_point_operation_count": len(intended_keys),
+            "detected_point_operation_count": len(detected_keys),
+            "volume_original_wrt_prim": volume_ratio,
+            "submitted_bz_volume": abs(float(np.linalg.det(reciprocal))),
+            "seekpath_bravais": sp_result["bravais_lattice_extended"],
+            "point_coords": dict(sp_result["point_coords"]),
+            "analysis_spacegroup_number": int(dataset.number),
+            "analysis_spacegroup_symbol": str(dataset.international),
+            "analysis_point_group": str(dataset.pointgroup),
+        }
+
+    raise RuntimeError(
+        "Could not validate a submitted-cell marker helper without primitive "
+        f"reduction. {'; '.join(failures)}"
+    )
+
+
+def prepare_submitted_cell_analysis(
+    structure_file,
+    *,
+    moments_str="",
+    spin_axis_cart=None,
+    input_setting_operations=None,
+    output_dir=".",
+    symprec=1e-3,
+    write_magnetic_diagnostic=False,
+):
+    """Prepare the validated in-memory analysis cell in the submitted lattice."""
+    from ase.data import atomic_numbers
+
+    lattice, positions, elements, moments, spin_setting = (
+        _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart)
+    )
+    real_types = [atomic_numbers[str(element)] for element in elements]
+    if input_setting_operations is None:
+        symmetry = spglib.get_symmetry(
+            (lattice, positions, real_types),
+            symprec=symprec,
+        )
+        if symmetry is None:
+            raise RuntimeError(
+                "Could not determine submitted-cell structural point operations."
+            )
+        point_operations = symmetry["rotations"]
+    else:
+        point_operations = input_setting_operations
+
+    helper = build_submitted_analysis_cell(
+        lattice,
+        real_types,
+        point_operations,
+        symprec=symprec,
+    )
+    basename = os.path.splitext(os.path.basename(structure_file))[0]
+    result = {
+        "analysis_cell": helper["cell"],
+        "analysis_marker_type": helper["marker_type"],
+        "submitted_lattice": np.array(lattice, dtype=float),
+        "submitted_sites": len(elements),
+        "operation_basis_label": (
+            f"submitted structure '{os.path.basename(structure_file)}'"
+        ),
+        "analysis_symmetry": {
+            "number": helper["analysis_spacegroup_number"],
+            "symbol": helper["analysis_spacegroup_symbol"],
+            "point_group": helper["analysis_point_group"],
+            "seekpath_bravais": helper["seekpath_bravais"],
+        },
         "summary": {
-            "index": result.get("index"),
-            "acc_symbol": result.get("acc_symbol"),
-            "setting": result.get("acc_primitive_cell_setting"),
-            "marker_seed": marker_helper["seed"].tolist(),
-            "marker_count": len(marker_helper["markers"]),
-            "marker_species": marker_helper["marker_species"],
-            "marker_min_distance": marker_helper["min_distance"],
+            "marker_seeds": [
+                seed.tolist() for seed in helper["marker_seeds"]
+            ],
+            "marker_count": helper["marker_count"],
+            "marker_type": helper["marker_type"],
+            "marker_min_distance": helper["marker_min_distance"],
+            "intended_point_operations": helper[
+                "intended_point_operation_count"
+            ],
+            "detected_point_operations": helper[
+                "detected_point_operation_count"
+            ],
+            "volume_original_wrt_prim": helper[
+                "volume_original_wrt_prim"
+            ],
         },
     }
 
-
-def _is_axis_relabelling(magnetic_lattice, submitted_lattice, tol=1e-6):
-    """True when the magnetic cell is the submitted cell with its axes merely
-    reordered and/or reversed, rather than a genuinely different cell.
-
-    FindSpinGroup returns the magnetic primitive cell in its own convention,
-    which routinely permutes and flips the axes even when the cell is the one
-    that was submitted. MnSe2 (MAGNDATA 1.0.47) is the clean example: the
-    submitted 36-site cell comes back as the same three vectors in the order
-    (c, a, b), so the transformation is a bare permutation. Re-expressing the
-    path in it would rewrite every coordinate for no physical reason.
-
-    GdAuGe AFM5 is the contrasting case: its transformation combines two
-    submitted vectors, which is what turns the 120-degree hexagonal cell into
-    the 90-degree orthorhombic one. That is a real change of cell and the
-    calculation has to follow it.
-    """
-    submitted = np.asarray(submitted_lattice, dtype=float)
-    magnetic = np.asarray(magnetic_lattice, dtype=float)
-    try:
-        transform = magnetic @ np.linalg.inv(submitted)
-    except np.linalg.LinAlgError:
-        return False
-    if not np.allclose(transform, np.rint(transform), atol=tol):
-        return False
-    rounded = np.rint(transform)
-    if not np.all(np.isin(rounded, (-1.0, 0.0, 1.0))):
-        return False
-    return (np.all(np.count_nonzero(rounded, axis=0) == 1)
-            and np.all(np.count_nonzero(rounded, axis=1) == 1))
-
-
-def _is_proper_magnetic_supercell(
-    magnetic_lattice,
-    submitted_lattice,
-    tol=1e-6,
-):
-    """True when the submitted calculation cell is an integer supercell of
-    the magnetic primitive cell.
-
-    A deliberate calculation supercell remains a valid output basis.  The
-    magnetic primitive cell is still the right cell for the G0/IBZ analysis,
-    but the resulting k-points must be transformed back to the reciprocal
-    basis of the cell VASP will actually use.  GdAuGe SUPERCELL_221 is the
-    regression case: its submitted cell has index four over the six-site
-    magnetic primitive cell.
-
-    Index one is deliberately excluded.  A nontrivial unimodular basis change
-    is not a supercell and can be physically important for making the magnetic
-    symmetry explicit (GdAuGe SUPERCELL_211, hexagonal-looking input to the
-    SSG-adapted orthorhombic setting).
-    """
-    submitted = np.asarray(submitted_lattice, dtype=float)
-    magnetic = np.asarray(magnetic_lattice, dtype=float)
-    try:
-        transform = submitted @ np.linalg.inv(magnetic)
-    except np.linalg.LinAlgError:
-        return False
-    rounded = np.rint(transform)
-    if not np.allclose(transform, rounded, atol=tol):
-        return False
-    determinant = abs(float(np.linalg.det(rounded)))
-    index = int(round(determinant))
-    return index > 1 and np.isclose(determinant, index, atol=tol)
-
-
-def finalize_magnetic_setting_outputs(
-    mag_setting,
-    centroid_result,
-    output_dir=".",
-    verbose_output=False,
-    calculation_cell_dir=".",
-    defer_calculation_inputs=False,
-):
-    helper_source = centroid_result.get("standardized_structure_path")
-    basename = mag_setting["basename"]
-    real_final = None
-    helper_final = None
-
-    # These standardized structures are diagnostic views, not the calculation cell or the basis of KPOINTS_alter.
-    # Their absence must not prevent the required calculation-basis decision below.
-    if helper_source and os.path.exists(helper_source):
-        real_candidate = os.path.join(
-            output_dir, f"{basename}_seekpath_standard.vasp"
+    if write_magnetic_diagnostic:
+        fsg_result = find_spin_group_acc_primitive_from_data(
+            structure_file,
+            lattice,
+            positions,
+            elements,
+            [1.0] * len(elements),
+            moments,
+            input_spin_setting=spin_setting,
         )
-        try:
-            marker_species = mag_setting.get("marker_species", "He")
-            _write_without_species(
-                helper_source,
-                real_candidate,
-                {marker_species},
-                f"{basename} SeeK-path standard cell from SSG G0 analysis",
-            )
-            real_final = real_candidate
-        except Exception as exc:
-            print(
-                "[Warning] Could not write the marker-free SeeK-path standard "
-                f"cell: {exc}"
-            )
-
-        if verbose_output:
-            helper_candidate = os.path.join(
-                output_dir, f"{basename}_seekpath_marker_helper.vasp"
-            )
-            try:
-                if os.path.abspath(helper_source) != os.path.abspath(helper_candidate):
-                    shutil.copyfile(helper_source, helper_candidate)
-                helper_final = helper_candidate
-            except OSError as exc:
-                print(
-                    "[Warning] Could not keep the verbose SeeK-path marker "
-                    f"helper: {exc}"
-                )
-    else:
-        print(
-            "[Warning] SeeK-path standardized structure is unavailable; "
-            "skipping standardized diagnostic VASP/MCIF files."
+        magnetic_cell = fsg_result["acc_primitive_cell_detail"]
+        magnetic_lattice = np.asarray(
+            magnetic_cell["lattice"], dtype=float
         )
-
-    # The basis mapping is the human-readable record of how the path's reciprocal basis relates to the submitted cell.
-    # The workflow already holds the required matrices in memory, so failure to preserve this diagnostic file must not invalidate a verified calculation-basis decision.
-    mapping_source = centroid_result.get("standard_mapping_path")
-    mapping_final = None
-    if mapping_source and os.path.exists(mapping_source):
-        mapping_candidate = os.path.join(
-            output_dir, f"{basename}_seekpath_basis_mapping.txt"
+        magnetic_positions = [
+            np.asarray(position, dtype=float)
+            for position in magnetic_cell["positions"]
+        ]
+        magnetic_elements = [
+            str(value) for value in magnetic_cell["elements"]
+        ]
+        magnetic_moments = np.asarray(
+            magnetic_cell.get(
+                "moments", np.zeros((len(magnetic_elements), 3))
+            ),
+            dtype=float,
         )
-        try:
-            if os.path.abspath(mapping_source) != os.path.abspath(mapping_candidate):
-                shutil.copyfile(mapping_source, mapping_candidate)
-            mapping_final = mapping_candidate
-        except OSError as exc:
-            print(f"[Warning] Could not keep the SeeK-path basis mapping: {exc}")
-
-    # Reaching here means the analysis used the magnetic cell, but that alone does not mean the calculation cell changed.
-    # Keep the submitted cell when FindSpinGroup only reordered or reversed its axes, or when the user deliberately submitted a valid calculation supercell.
-    # Use the magnetic primitive cell only for a genuine same-volume nontrivial basis change that the submitted calculation cell cannot carry.
-    # Never use the standardized conventional diagnostic cell as the KPOINTS output basis because a centered conventional cell may be two or four times larger than the required primitive cell.
-    # Decide the output basis before cleanup because the magnetic primitive POSCAR still lives in the temporary directory.
-    magnetic_lattice = np.asarray(
-        mag_setting["magnetic_primitive_lattice"], dtype=float)
-    submitted_lattice = mag_setting.get("submitted_lattice")
-    submitted_cell_is_usable = (
-        submitted_lattice is not None
-        and (
-            _is_axis_relabelling(magnetic_lattice, submitted_lattice)
-            or _is_proper_magnetic_supercell(
-                magnetic_lattice, submitted_lattice)
+        _, _, grouped_positions, ordered_indices = _group_poscar_sites(
+            magnetic_elements,
+            magnetic_positions,
         )
-    )
-    cell_changed = not submitted_cell_is_usable
-    if cell_changed:
-        b_matrix_output = 2 * np.pi * np.linalg.inv(magnetic_lattice).T
-        output_lattice = magnetic_lattice
-    else:
-        output_lattice = np.asarray(submitted_lattice, dtype=float)
-        b_matrix_output = 2 * np.pi * np.linalg.inv(output_lattice).T
-    # Write a genuinely changed calculation cell beside KPOINTS_alter because it is a required calculation input rather than a record of the run.
-    calculation_cell_path = None
-    calculation_magmom_path = None
-    calculation_output_texts = None
-    source = mag_setting.get("real_poscar_path") if cell_changed else None
-    magmom_source = mag_setting.get("magmom_path") if cell_changed else None
-    if cell_changed:
-        if not source or not os.path.exists(source):
-            raise RuntimeError(
-                "Magnetic calculation POSCAR is missing; refusing an incomplete "
-                "calculation-cell handoff."
-            )
-        if not magmom_source or not os.path.exists(magmom_source):
-            raise RuntimeError(
-                "Matching magnetic moments are missing; refusing to hand over a "
-                "reordered calculation POSCAR without its MAGMOM data."
-            )
-        os.makedirs(calculation_cell_dir, exist_ok=True)
-        calculation_cell_path = os.path.normpath(
-            os.path.join(
-                calculation_cell_dir,
-                f"{basename}_magnetic_primitive.vasp",
-            )
+        ordered_elements = [
+            magnetic_elements[index] for index in ordered_indices
+        ]
+        ordered_moments = magnetic_moments[ordered_indices]
+        os.makedirs(output_dir, exist_ok=True)
+        mcif_path = os.path.join(
+            output_dir, f"{basename}_magnetic_primitive.mcif"
         )
-        calculation_magmom_path = os.path.normpath(
-            os.path.join(
-                calculation_cell_dir,
-                f"{basename}_magnetic_primitive_MAGMOM.txt",
-            )
+        _write_magnetic_mcif(
+            mcif_path,
+            f"{basename}_magnetic_primitive",
+            magnetic_lattice,
+            ordered_elements,
+            grouped_positions,
+            ordered_moments,
         )
-
-        with open(source, "r", encoding="utf-8") as f:
-            calculation_cell_text = f.read()
-
-        with open(magmom_source, "r", encoding="utf-8") as f:
-            magmom_lines = f.read().splitlines()
-        if len(magmom_lines) >= 2 and magmom_lines[0] == \
-                "# Magnetic primitive POSCAR atom order matches:":
-            magmom_lines[1] = f"# {os.path.basename(calculation_cell_path)}"
-        else:
-            magmom_lines = [
-                "# Magnetic primitive POSCAR atom order matches:",
-                f"# {os.path.basename(calculation_cell_path)}",
-                *magmom_lines,
-            ]
-        calculation_output_texts = {
-            calculation_cell_path: calculation_cell_text,
-            calculation_magmom_path: "\n".join(magmom_lines) + "\n",
-        }
-        if not defer_calculation_inputs:
-            _atomic_write_text_set(calculation_output_texts)
-
-    if mapping_final:
-        try:
-            if calculation_cell_path:
-                output_label = os.path.basename(calculation_cell_path)
-            else:
-                output_label = "submitted structure (calculation cell unchanged)"
-            with open(mapping_final, "r", encoding="utf-8") as f:
-                mapping_text = f.read().rstrip()
-            output_lines = [
-                "",
-                f"# kpoints_output_lattice is the direct lattice of {output_label}.",
-                "# KPOINTS_alter fractional coordinates are written in its "
-                "reciprocal basis.",
-                "kpoints_output_lattice:",
-            ]
-            output_lines.extend(
-                "  " + " ".join(f"{float(value): .10f}" for value in row)
-                for row in output_lattice
-            )
-            _atomic_write_text(
-                mapping_final,
-                mapping_text + "\n" + "\n".join(output_lines) + "\n",
-            )
-        except (OSError, UnicodeError) as exc:
-            print(f"[Warning] Could not finalize the SeeK-path basis mapping: {exc}")
-            mapping_final = None
-
-    # Remove or relocate low-level SeeK-path artifacts for the hidden marker helper; the clean standardized structure is the user-facing record.
-    temp_dir = mag_setting.get("temp_dir")
-    for path in (
-        helper_source,
-        mapping_source,
-    ):
-        if not path or not os.path.exists(path):
-            continue
-        try:
-            if verbose_output and temp_dir and os.path.isdir(temp_dir):
-                shutil.move(path, os.path.join(temp_dir, os.path.basename(path)))
-            else:
-                os.remove(path)
-        except OSError as exc:
-            print(f"[Warning] Could not clean up the intermediate {path}: {exc}")
-
-    if not verbose_output and temp_dir and os.path.isdir(temp_dir):
-        try:
-            shutil.rmtree(temp_dir)
-        except OSError as exc:
-            print(f"[Warning] Could not remove {temp_dir}: {exc}")
-
-    result = {
-        "b_matrix_output": b_matrix_output,
-        "cell_changed": cell_changed,
-    }
-    if real_final:
-        result["standard_real_path"] = real_final
-    if calculation_cell_path:
-        result["calculation_cell_path"] = calculation_cell_path
-    if calculation_magmom_path:
-        result["calculation_magmom_path"] = calculation_magmom_path
-    if defer_calculation_inputs and calculation_output_texts:
-        result["calculation_output_texts"] = calculation_output_texts
-    if mag_setting.get("magnetic_symbols"):
-        result["calculation_species_order"] = list(
-            mag_setting["magnetic_symbols"])
-    if mapping_final:
-        result["standard_mapping_path"] = mapping_final
-    if helper_final:
-        result["standard_with_helper_path"] = helper_final
-    if verbose_output:
-        result["intermediate_dir"] = mag_setting.get("temp_dir")
+        result.update({
+            "mcif_path": mcif_path,
+            "magnetic_primitive_lattice": magnetic_lattice,
+            "magnetic_primitive_sites": len(magnetic_elements),
+            "magnetic_summary": {
+                "index": fsg_result.get("index"),
+                "acc_symbol": fsg_result.get("acc_symbol"),
+                "setting": fsg_result.get("acc_primitive_cell_setting"),
+            },
+        })
     return result

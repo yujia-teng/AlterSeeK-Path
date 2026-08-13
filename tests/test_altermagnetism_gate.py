@@ -5,17 +5,13 @@ when it fires, the ordinary structural path is written and no butterfly path is
 built. Getting it right needs two things that MnSe2 (MAGNDATA 1.0.47) shows are
 independent:
 
-1. It must judge the cell the path is built in. MnSe2 is deposited in a cubic
-   Pa-3 (205) parent whose Laue group m-3 forbids altermagnetism outright, so
-   judging the submitted cell discards a genuine altermagnet.
+1. The submitted translation lattice defines the BZ and output basis.
 
-2. It must judge that cell by its *magnetic* symmetry. MnSe2's magnetic
-   primitive cell is a 3x1x1 supercell of the same cubic crystal -- strip the
-   moments and spglib still finds the 12-atom cubic primitive. Re-detecting
-   symmetry from its coordinates therefore reproduces the forbidding m-3, and
-   does so tolerance-dependently: at spglib's default symprec the mcif's
-   5-decimal rounding hides the 3-fold axis and it looks orthorhombic, which
-   is an accident, not a result.
+2. The point symmetry inside that lattice must still be the magnetic G0.
+   MnSe2's moment-free coordinates recover the cubic parent and would therefore
+   reproduce the forbidding m-3. At spglib's default symprec the MCIF's
+   5-decimal rounding can instead make it look orthorhombic, which is an
+   accident, not a magnetic-symmetry result.
 
 G0, the spatial part of the spin space group (Pbca 61 -> Laue mmm here), is the
 symmetry that actually holds, and FindSpinGroup reports it directly.
@@ -37,6 +33,25 @@ CUBIC_PARENT = {'point_group': 'm-3', 'laue_group': 'm-3'}
 # MnSe2's G0: orthorhombic Pbca, the symmetry left once the moments are counted.
 ORTHORHOMBIC_G0 = {'label': 'Pbca (61)', 'spacegroup_number': 61, 'laue_group': 'mmm'}
 CUBIC_G0 = {'label': 'Pa-3 (205)', 'spacegroup_number': 205, 'laue_group': 'm-3'}
+
+
+def _synthetic_analysis_preparation():
+    return {
+        "analysis_cell": (
+            np.eye(3).tolist(),
+            [[0.11, 0.12, 0.15], [0.31, 0.27, 0.19]],
+            [119, 119],
+        ),
+        "analysis_marker_type": 119,
+        "submitted_lattice": np.eye(3),
+        "magnetic_primitive_sites": 2,
+        "analysis_symmetry": {
+            "number": 47,
+            "symbol": "Pmmm",
+            "point_group": "mmm",
+            "seekpath_bravais": "oP1",
+        },
+    }
 
 
 def test_submitted_cell_decides_when_no_magnetic_cell_was_built():
@@ -205,15 +220,10 @@ def test_cell_suffix_only_describes_what_is_known():
     assert _cell_suffix(None, 'unknown') == ""
 
 
-def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
+def test_submitted_helper_failure_aborts_before_centroid(
     tmp_path, monkeypatch, capsys
 ):
-    """A default-route failure must not silently change the physical cell.
-
-    Step 0 has already established that G0 differs from the nonmagnetic parent,
-    so falling back would produce a path for a symmetry the magnetic state does
-    not have. The parent route remains available only by explicit CLI choice.
-    """
+    """A failed submitted-cell helper must abort without another-cell fallback."""
     from alterseek import kpoints as kpoints_module
 
     structure = tmp_path / "POSCAR"
@@ -232,177 +242,26 @@ def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
     }
 
     def fail_construction(*args, **kwargs):
-        raise RuntimeError("synthetic ACC-primitive failure")
+        raise RuntimeError("synthetic marker validation failure")
 
-    def forbid_parent_centroid(*args, **kwargs):
-        raise AssertionError("parent-cell centroid generation must not run")
+    def forbid_centroid(*args, **kwargs):
+        raise AssertionError("centroid generation must not run")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
     monkeypatch.setattr(
-        kpoints_module, "prepare_magnetic_setting_files", fail_construction
+        kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result
     )
-    monkeypatch.setattr(kpoints_module, "compute_centroid", forbid_parent_centroid)
+    monkeypatch.setattr(
+        kpoints_module, "prepare_submitted_cell_analysis", fail_construction
+    )
+    monkeypatch.setattr(kpoints_module, "compute_centroid", forbid_centroid)
 
     assert kpoints_module.KPointsModifier().interactive_modify() is False
     output = capsys.readouterr().out
-    assert "Magnetic primitive cell construction failed" in output
-    assert "default magnetic-state path cannot be generated" in output
-    assert "Falling back" not in output
-    assert not (tmp_path / "KPOINTS_alter").exists()
-
-
-@pytest.mark.parametrize("finalizer_mode", ["empty", "exception"])
-def test_required_magnetic_finalization_failure_aborts(
-    tmp_path, monkeypatch, capsys, finalizer_mode
-):
-    """A centroid result must not hide a missing verified output basis."""
-    from alterseek import kpoints as kpoints_module
-
-    structure = tmp_path / "POSCAR"
-    structure.write_text("test structure placeholder\n", encoding="utf-8")
-    (tmp_path / "alterseek_input.toml").write_text(
-        'structure = "POSCAR"\n'
-        'spin_axis = "0 0 1"\n'
-        'moments = "1 -1"\n',
-        encoding="utf-8",
-    )
-    sf_result = {
-        "g0_number": 61,
-        "nonmagnetic_spacegroup_number": 205,
-        "nonmagnetic_sites": 2,
-        "num_atoms": 2,
-    }
-    mag_setting = {
-        "helper_path": "magnetic_marker_input.vasp",
-        "seekpath_type_numbers": None,
-        "operation_basis_label": "magnetic primitive test cell",
-        "magnetic_cell_sites": 2,
-        "spin_flip_operations": 1,
-    }
-    centroid_result = {"display_figures": []}
-
-    def synthetic_finalizer(*args, **kwargs):
-        if finalizer_mode == "exception":
-            raise RuntimeError("synthetic calculation-cell handoff failure")
-        return {}
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
-    monkeypatch.setattr(
-        kpoints_module,
-        "prepare_magnetic_setting_files",
-        lambda *args, **kwargs: mag_setting,
-    )
-    monkeypatch.setattr(
-        kpoints_module, "compute_centroid", lambda *args, **kwargs: centroid_result
-    )
-    monkeypatch.setattr(
-        kpoints_module, "finalize_magnetic_setting_outputs", synthetic_finalizer
-    )
-
-    assert kpoints_module.KPointsModifier().interactive_modify() is False
-    output = capsys.readouterr().out
-    assert "finalization" in output
+    assert "Submitted-cell analysis helper construction failed" in output
+    assert "synthetic marker validation failure" in output
     assert "Aborting" in output
     assert not (tmp_path / "KPOINTS_alter").exists()
-
-
-def test_output_basis_step_failure_aborts_instead_of_being_recorded(
-    tmp_path, monkeypatch, capsys
-):
-    """A failure after compute_centroid() must abort, not be stashed and ignored.
-
-    The whole post-centroid block used to sit inside the same handler as
-    compute_centroid() itself, which only stored the exception in
-    ``centroid_error``. That variable is consulted solely when
-    ``centroid_result is None``, so a failure raised *after* the centroid was
-    assigned was silently discarded: the run continued with a healthy-looking
-    ``centroid_result`` that had no ``b_matrix_output``, Step 1 fell back to
-    ``b_matrix_input`` -- the marker helper's basis in the magnetic route -- and
-    KPOINTS_alter was written in the wrong reciprocal basis with nothing shown
-    to the user.
-
-    A singular ``submitted_lattice`` reproduces it: recording the submitted
-    reciprocal basis inverts that matrix, which is the first unguarded step
-    after the centroid is in hand.
-    """
-    from alterseek import kpoints as kpoints_module
-
-    structure = tmp_path / "POSCAR"
-    structure.write_text("test structure placeholder\n", encoding="utf-8")
-    (tmp_path / "alterseek_input.toml").write_text(
-        'structure = "POSCAR"\n'
-        'spin_axis = "0 0 1"\n'
-        'moments = "1 -1"\n',
-        encoding="utf-8",
-    )
-    # Complete enough to get past the Step 0 summary, so that if the abort is
-    # ever lost again the run reaches Step 1 and the assertions below describe
-    # the real regression rather than a gap in this fixture.
-    sf_result = {
-        "structure_file": "POSCAR",
-        "g0_number": 61,
-        "g0_symbol": "Pbca",
-        "nonmagnetic_spacegroup_number": 205,
-        "nonmagnetic_sites": 2,
-        "nonmagnetic_lattice": "cP1",
-        "num_atoms": 2,
-        "space_group": "Pa-3 (205)",
-        "point_group": "m-3",
-        "laue_group": "m-3",
-        "magnetic_phase": "AFM(Altermagnet)",
-        "ssg_index": "61.1.1.1.L",
-        "ssg_symbol": "test",
-        "magnetic_space_group_without_soc": "Pb'c'a (BNS 61.436)",
-        "actual_spin_flip_point_operations": 4,
-        "actual_spin_preserve_point_operations": 4,
-    }
-    mag_setting = {
-        "helper_path": "magnetic_marker_input.vasp",
-        "seekpath_type_numbers": None,
-        "operation_basis_label": "magnetic primitive test cell",
-        "magnetic_cell_sites": 2,
-        "spin_flip_operations": 1,
-        # Singular: np.linalg.inv() on it raises, standing in for any failure
-        # in the block that decides the KPOINTS output basis.
-        "submitted_lattice": np.zeros((3, 3)),
-    }
-    centroid_result = {"display_figures": []}
-
-    def forbid_finalizer(*args, **kwargs):
-        raise AssertionError(
-            "output-basis finalization must not run after the submitted basis "
-            "could not be recorded"
-        )
-
-    monkeypatch.chdir(tmp_path)
-    # Answers for the Step 1 manual-file prompt the old code fell through to.
-    # Never consumed once the abort is in place.
-    monkeypatch.setattr(sys, "stdin", io.StringIO("KPATH.in\n"))
-    monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *args, **kwargs: sf_result)
-    monkeypatch.setattr(
-        kpoints_module,
-        "prepare_magnetic_setting_files",
-        lambda *args, **kwargs: mag_setting,
-    )
-    monkeypatch.setattr(
-        kpoints_module, "compute_centroid", lambda *args, **kwargs: centroid_result
-    )
-    monkeypatch.setattr(
-        kpoints_module, "finalize_magnetic_setting_outputs", forbid_finalizer
-    )
-
-    assert kpoints_module.KPointsModifier().interactive_modify() is False
-    output = capsys.readouterr().out
-    assert "Could not establish the KPOINTS output basis" in output
-    assert "Aborting" in output
-    # The old handler reported every failure as a Step 1 problem and offered a
-    # manual KPOINTS file instead.
-    assert "Falling back to manual file input" not in output
-    assert "b_matrix_output" not in centroid_result
-    assert not (tmp_path / "KPOINTS_alter").exists()
-    assert not (tmp_path / "KPOINTS_alter_qe").exists()
 
 
 def test_centroid_failure_is_reported_once_under_its_own_headline(
@@ -450,6 +309,11 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
+    monkeypatch.setattr(
+        kpoints_module,
+        "prepare_submitted_cell_analysis",
+        lambda *a, **k: _synthetic_analysis_preparation(),
+    )
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
     result = kpoints_module.KPointsModifier().interactive_modify()
@@ -520,6 +384,11 @@ def test_altermagnet_with_no_available_spin_flip_operation_aborts(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
     monkeypatch.setattr(
+        kpoints_module,
+        "prepare_submitted_cell_analysis",
+        lambda *a, **k: _synthetic_analysis_preparation(),
+    )
+    monkeypatch.setattr(
         kpoints_module, "compute_centroid", lambda *a, **k: centroid_result
     )
 
@@ -564,6 +433,11 @@ def test_centroid_failure_without_spin_analysis_also_aborts(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     monkeypatch.setattr(kpoints_module, "find_sf_run", forbid_spin_analysis)
+    monkeypatch.setattr(
+        kpoints_module,
+        "prepare_submitted_cell_analysis",
+        lambda *a, **k: _synthetic_analysis_preparation(),
+    )
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
     result = kpoints_module.KPointsModifier().interactive_modify()
@@ -603,8 +477,16 @@ def test_step1_internal_error_propagates_without_manual_fallback(
     monkeypatch.setattr(kpoints_module, "find_sf_run", forbid_spin_analysis)
     monkeypatch.setattr(
         kpoints_module,
+        "prepare_submitted_cell_analysis",
+        lambda *a, **k: _synthetic_analysis_preparation(),
+    )
+    monkeypatch.setattr(
+        kpoints_module,
         "compute_centroid",
-        lambda *args, **kwargs: {"display_figures": []},
+        lambda *args, **kwargs: {
+            "display_figures": [],
+            "b_matrix_input": np.eye(3),
+        },
     )
 
     with pytest.raises(KeyError, match="sp_path"):
@@ -617,34 +499,8 @@ def test_step1_internal_error_propagates_without_manual_fallback(
     assert not (tmp_path / "KPOINTS_alter").exists()
 
 
-def test_missing_standardized_diagnostic_does_not_skip_required_basis_finalization(
-    tmp_path, capsys
-):
-    """The optional standard-cell view is not needed to select output basis."""
-    from alterseek.ssg_setting import finalize_magnetic_setting_outputs
-
-    lattice = np.diag([4.0, 5.0, 6.0])
-    result = finalize_magnetic_setting_outputs(
-        {
-            "basename": "case",
-            "magnetic_primitive_lattice": lattice,
-            "submitted_lattice": lattice.copy(),
-            "magnetic_symbols": ["Mn"],
-        },
-        {"standardized_structure_path": None},
-        output_dir=str(tmp_path),
-        calculation_cell_dir=str(tmp_path),
-    )
-
-    assert result["cell_changed"] is False
-    assert np.allclose(result["b_matrix_output"], 2 * np.pi * np.linalg.inv(lattice).T)
-    assert "standard_real_path" not in result
-    assert "skipping standardized diagnostic" in capsys.readouterr().out
-
-
-@pytest.mark.skipif(not POSCAR.exists(), reason="SSG test input not present")
-def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
-    """The wiring: the gate's symmetry must come from G0 of the built cell.
+def test_workflow_gates_on_findspingroup_g0(tmp_path, monkeypatch):
+    """The gate uses G0 while the path remains in the submitted lattice.
 
     No assertion on the gate helper alone catches a workflow that computes the
     right thing and then feeds the gate something else.
@@ -674,23 +530,18 @@ def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
 
     assert seen, "the gate was never consulted"
     working = seen[0]
-    assert working is not None, "the gate judged the submitted cell, not the built one"
+    assert working is not None, "the gate ignored FindSpinGroup G0"
     # A G0 description, not a re-detection from coordinates.
     assert set(working) == {'label', 'spacegroup_number', 'point_group',
                             'laue_group', 'sites'}
     assert laue_group_from_spacegroup_number(working['spacegroup_number']) == \
         working['laue_group']
-    # The site count must come from the constructed cell, not the input cell.
+    # This row describes the retained FindSpinGroup magnetic reference.
     assert working['sites'] == 12
 
 
 def test_figure_basename_comes_from_the_submitted_structure():
-    """Figure 1 must not be named after the internal helper cell.
-
-    The magnetic route computes the centroid from a helper structure written
-    under a derived name, which used to leak into Figure 1's filename and
-    title while Figures 2-4 used the submitted name.
-    """
+    """All figures use the submitted structure's basename."""
     from alterseek.kpoints import _figure_basename
 
     assert _figure_basename("POSCAR") == "POSCAR"

@@ -30,12 +30,10 @@ from .plotting_common import (
     prime_point_label,
 )
 from .ssg_setting import (
-    prepare_magnetic_setting_files,
-    finalize_magnetic_setting_outputs,
+    prepare_submitted_cell_analysis,
 )
 from .atomic_write import (
     _atomic_write_text,
-    _atomic_write_text_set,
     _atomic_open_text,
 )
 from .io import (
@@ -66,7 +64,7 @@ def _fmt_coord(value):
     return text[1:] if text.startswith("-") and float(text) == 0.0 else text
 
 
-# Fix the label width so the nonmagnetic-parent and magnetic-primitive-cell SG/PG/Laue fields line up and differences are visible at a glance.
+# Fix the label width so the submitted and reference-cell fields align.
 _CELL_LABEL_WIDTH = 30
 
 # Place generated files in the output directory except KPOINTS_alter, which feeds the band calculation, and alterband.toml, which the band plotter reads from the working directory.
@@ -75,12 +73,7 @@ OUTPUT_DIR = "alterseek_output"
 
 
 def _figure_basename(struct_file):
-    """Name figures after the submitted structure, not an internal cell.
-
-    The magnetic route computes the centroid from a helper structure written
-    under a derived name, so without this Figure 1 alone picks up an extra
-    filename token that Figures 2-4 do not carry.
-    """
+    """Name figures after the submitted structure."""
     if not struct_file:
         return None
     return os.path.splitext(os.path.basename(struct_file))[0]
@@ -152,13 +145,14 @@ def _print_cell_rows(rows, note_after_first=None):
 
 
 def _g0_symmetry(sf_result, sites=None):
-    """Describe the magnetic primitive cell by G0, the spatial part of its SSG.
+    """Describe G0, the spatial part of the reported spin space group.
 
     FindSpinGroup reports G0 directly, so this is the symmetry that actually
     holds once the magnetic order is accounted for, and reading it off the
-    reported group needs no tolerance. Re-detecting symmetry from the magnetic
-    cell's own coordinates would instead describe the moment-stripped crystal,
-    which for a supercell altermagnet is still the higher-symmetry parent.
+    reported group needs no tolerance. Re-detecting symmetry from coordinates
+    would instead describe the moment-stripped crystal, which for a supercell
+    altermagnet can still be the higher-symmetry parent. ``sites`` is optional
+    display metadata for the FindSpinGroup magnetic primitive reference.
     """
     number = sf_result.get('g0_number')
     laue_group = laue_group_from_spacegroup_number(number)
@@ -173,50 +167,15 @@ def _g0_symmetry(sf_result, sites=None):
     }
 
 
-def _magnetic_cell_needed(sf_result):
-    """True when the band path has to be built in the magnetic primitive cell
-    rather than in the cell the user submitted.
-
-    Two things can make the submitted cell unusable, and both are read off
-    quantities Step 0 already determined -- no extra symmetry detection, and no
-    extra tolerance choice:
-
-    1. The magnetic order changes the *space group*, i.e. G0 differs from the
-       moment-free space group of the submitted cell (GdAuGe AFM5,
-       P6_3mc -> Cmc2_1; MnSe2, Pa-3 -> Pbca). A changed Laue group is one way
-       this happens, but not the only one: the order can also remove inversion
-       or mirrors while leaving the Laue group intact, and the magnetic cell is
-       then still the cell the path belongs in.
-    2. The submitted cell is not the nonmagnetic primitive cell, i.e. the
-       magnetic order enlarges the cell (BaMnO3, 10 -> 30 sites).
-    """
-    g0_number = sf_result.get('g0_number')
-    nonmagnetic_number = sf_result.get('nonmagnetic_spacegroup_number')
-    if g0_number is None or nonmagnetic_number is None:
-        # Keep the magnetic route when either side is unknown because it can represent lowered symmetry.
-        return True
-    if int(g0_number) != int(nonmagnetic_number):
-        return True
-    nonmagnetic_sites = sf_result.get('nonmagnetic_sites')
-    submitted_sites = sf_result.get('num_atoms')
-    if nonmagnetic_sites is None or submitted_sites is None:
-        return True
-    return int(nonmagnetic_sites) != int(submitted_sites)
-
-
 def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
-    """Return a reason dict when the working cell's Laue group forbids
+    """Return a reason dict when magnetic G0's Laue group forbids
     altermagnetism, or None when it permits it.
 
-    The gate must judge the cell the k-path is actually built in, by the
-    symmetry that cell actually has. Both halves matter for MnSe2 (MAGNDATA
-    1.0.47). It is deposited in a cubic Pa-3 parent whose Laue group m-3
-    forbids altermagnetism, so judging the submitted cell discards a real
-    altermagnet -- but the magnetic cell replacing it is still the cubic Pa-3
-    *crystal* once its moments are stripped, so judging that cell's bare
-    coordinates discards it too (and does so tolerance-dependently). G0, the
-    spatial part of the spin space group, is orthorhombic here (Pbca 61, Laue
-    mmm), and that is the symmetry which permits altermagnetism.
+    The submitted lattice defines the BZ, but its moment-free coordinates may
+    have a higher parent symmetry. MnSe2 is the clean example: its parent is
+    cubic Pa-3 (Laue m-3), whereas magnetic G0 is orthorhombic Pbca (Laue mmm).
+    FindSpinGroup's G0 therefore supplies the point symmetry encoded in the
+    submitted-cell marker helper and used by this gate.
     """
     if working_cell_symmetry is not None:
         return no_altermagnetism_reason(
@@ -285,8 +244,7 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
 
 
 class KPointsModifier:
-    def __init__(self, output_verbose: bool = False,
-                 mode_2d: bool = False, input_vacuum_axis: int = 2):
+    def __init__(self, mode_2d: bool = False, input_vacuum_axis: int = 2):
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
@@ -294,7 +252,6 @@ class KPointsModifier:
         self.output_basis_matrix = None
         self.kpoints_basis_rotation = None
         self.plane_normal_cartesian = None
-        self.output_verbose = output_verbose
         self.mode_2d = mode_2d
         self.input_vacuum_axis = input_vacuum_axis
 
@@ -467,12 +424,10 @@ class KPointsModifier:
 
         Custom path files are defined to use the reciprocal basis of the
         structure file submitted at Step 0 -- the only cell the user has in
-        hand when writing one. That is not always the analysis cell:
-        ``b_matrix_input`` belongs to the magnetic marker helper in the
-        magnetic-cell route, so the submitted basis is carried separately as
-        ``b_matrix_submitted``. Output uses the calculation cell's basis,
-        which differs whenever the magnetic order changes the cell, so source
-        and output matrices are kept distinct.
+        hand when writing one. The in-memory analysis helper uses that same
+        submitted lattice, while SeeK-path's standardized primitive basis is
+        internal. ``b_matrix_submitted`` is retained explicitly so this
+        source-basis contract remains unambiguous.
         """
         if not self.kpoints_data:
             raise ValueError("No custom KPOINTS path has been loaded.")
@@ -962,10 +917,9 @@ class KPointsModifier:
 
     def _general_kpoint_output_basis(self, general_kpoint) -> Optional[List[float]]:
         """Return the general point k in the KPOINTS output basis, or None
-        when the conversion is unavailable. The output basis belongs to the
-        calculation cell -- the submitted cell unless the magnetic order
-        changed it -- and when it coincides with the standardized basis the
-        returned value equals the input."""
+        when the conversion is unavailable. The output basis always belongs
+        to the submitted calculation cell; when it coincides with the
+        standardized basis the returned value equals the input."""
         if general_kpoint is None:
             return None
         if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
@@ -979,8 +933,7 @@ class KPointsModifier:
     def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
                            transformation_matrix: Optional[np.ndarray] = None,
                            transformation_label: Optional[str] = None,
-                           operation_basis_label: Optional[str] = None,
-                           companion_outputs=None):
+                           operation_basis_label: Optional[str] = None):
         """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
         segments = self._valid_segment_pairs(new_kpoints)
         if not segments:
@@ -1022,12 +975,7 @@ class KPointsModifier:
                 lines.append("\n")
 
         try:
-            if companion_outputs:
-                output_set = dict(companion_outputs)
-                output_set[output_file] = "".join(lines)
-                _atomic_write_text_set(output_set)
-            else:
-                _atomic_write_text(output_file, "".join(lines))
+            _atomic_write_text(output_file, "".join(lines))
         except (OSError, UnicodeError) as exc:
             print(f"Error writing file: {exc}")
             return False
@@ -1040,8 +988,7 @@ class KPointsModifier:
                               transformation_matrix: Optional[np.ndarray] = None,
                               transformation_label: Optional[str] = None,
                               ninterp: int = 30,
-                              operation_basis_label: Optional[str] = None,
-                              companion_outputs=None):
+                              operation_basis_label: Optional[str] = None):
         """Write KPOINTS in QE K_POINTS crystal_b format."""
         valid_pairs = self._valid_segment_pairs(new_kpoints)
         if not valid_pairs:
@@ -1081,12 +1028,7 @@ class KPointsModifier:
             )
 
         try:
-            if companion_outputs:
-                output_set = dict(companion_outputs)
-                output_set[output_file] = "".join(lines)
-                _atomic_write_text_set(output_set)
-            else:
-                _atomic_write_text(output_file, "".join(lines))
+            _atomic_write_text(output_file, "".join(lines))
         except (OSError, UnicodeError) as exc:
             print(f"Error writing QE KPOINTS: {exc}")
             return False
@@ -1294,7 +1236,7 @@ class KPointsModifier:
     ):
         """Convert operations from their source-cell fractional basis to the
         SeeK-path primitive basis and annotate the files with both bases."""
-        # FindSpinGroup operations use the submitted or magnetic-primitive fractional basis, whereas IBZ coordinates use the SeeK-path primitive reciprocal basis.
+        # FindSpinGroup operations use the submitted fractional basis, whereas IBZ coordinates use the SeeK-path primitive reciprocal basis.
         # Convert through Cartesian k-space so k', Figure 2, and the path use the same physical operation.
         #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
         #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
@@ -1423,8 +1365,7 @@ class KPointsModifier:
         submitted_lattice_for_2d = None
         display_figures = []
         self.extra_general_points = []
-        pending_calculation_outputs = None
-        magnetic_setting_outputs = None
+        analysis_preparation = None
 
         def _load_custom_path(custom_filename):
             """Read a custom KPATH.in/KPOINTS path and convert it from the
@@ -1443,7 +1384,6 @@ class KPointsModifier:
                 write_ok = self.write_kpoints_file_qe(
                     path_points, "KPOINTS_alter_qe", R_matrix, R_label,
                     operation_basis_label=operation_basis_label,
-                    companion_outputs=pending_calculation_outputs,
                 )
                 if write_ok:
                     write_qe_bandplot_config()
@@ -1451,7 +1391,6 @@ class KPointsModifier:
                 write_ok = self.write_kpoints_file(
                     path_points, "KPOINTS_alter", R_matrix, R_label,
                     operation_basis_label=operation_basis_label,
-                    companion_outputs=pending_calculation_outputs,
                 )
                 if write_ok and centroid_result is not None:
                     write_bandplot_lattice_config(
@@ -1460,33 +1399,6 @@ class KPointsModifier:
             if not write_ok:
                 print("[Error] KPOINTS output was not written.")
                 return False
-            if (
-                magnetic_setting_outputs
-                and magnetic_setting_outputs.get("cell_changed")
-            ):
-                calc_cell = magnetic_setting_outputs.get(
-                    "calculation_cell_path"
-                )
-                calc_magmom = magnetic_setting_outputs.get(
-                    "calculation_magmom_path"
-                )
-                species_order = magnetic_setting_outputs.get(
-                    "calculation_species_order"
-                )
-                print(
-                    "[Cell] The magnetic order changes the cell; the path "
-                    "is written in the magnetic primitive cell's basis."
-                )
-                if calc_cell:
-                    print(f"[Cell] Run the band calculation with {calc_cell}")
-                if calc_magmom:
-                    print(f"[Cell] Matching magnetic moments: {calc_magmom}")
-                if species_order:
-                    print(
-                        "[Cell] Species order: "
-                        f"{' '.join(species_order)} "
-                        "(match POTCAR and species-indexed settings)."
-                    )
             print("\nDone.")
             if display_figures:
                 _display_and_save_figures(display_figures)
@@ -1530,42 +1442,35 @@ class KPointsModifier:
                 except SpinSymmetryError as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
                     return False
+            try:
+                analysis_preparation = prepare_submitted_cell_analysis(
+                    struct_file,
+                    moments_str=moments_str,
+                    spin_axis_cart=spin_axis_cart,
+                    input_setting_operations=(
+                        sf_result.get("input_setting_operations")
+                        if sf_result is not None else None
+                    ),
+                    output_dir=OUTPUT_DIR,
+                    symprec=(1e-3 if symprec is None else symprec),
+                    write_magnetic_diagnostic=sf_result is not None,
+                )
+                submitted_lattice_for_2d = analysis_preparation[
+                    "submitted_lattice"
+                ]
+            except Exception as exc:
+                print(
+                    "[Error] Submitted-cell analysis helper construction "
+                    f"failed: {exc} Aborting."
+                )
+                return False
+
             # This is either the result dictionary from the magnetic branch or None because the no-moments branch never ran spin analysis.
             if sf_result is not None:
-                magnetic_setting_counts = None
-                magnetic_setting_outputs = None
-                # This remains None when sf_result already describes the cell used for the path.
-                working_cell_symmetry = None
-                # Adopt the magnetic primitive cell only when the submitted cell genuinely cannot carry the path because its space group changed or magnetic order enlarged the cell.
-                # Otherwise retain the submitted basis because FindSpinGroup may return the same cell with permuted or sign-flipped axes, which would rewrite KPOINTS into an equivalent but unexpected basis.
-                magnetic_cell_needed = _magnetic_cell_needed(sf_result)
-                if magnetic_cell_needed:
-                    try:
-                        mag_setting = prepare_magnetic_setting_files(
-                            struct_file,
-                            moments_str=moments_str,
-                            spin_axis_cart=spin_axis_cart,
-                            output_dir=OUTPUT_DIR,
-                        )
-                        centroid_struct_file = mag_setting["helper_path"]
-                        centroid_seekpath_type_numbers = mag_setting["seekpath_type_numbers"]
-                        magnetic_setting_counts = mag_setting
-                        submitted_lattice_for_2d = mag_setting.get(
-                            "submitted_lattice"
-                        )
-                        operation_basis_label = mag_setting["operation_basis_label"]
-                        # Judge altermagnetism from G0, the spatial part of the spin space group, rather than by redetecting symmetry after removing the moments.
-                        # For MnSe2, the moment-stripped magnetic cell still looks cubic Pa-3 even though its magnetic G0 is orthorhombic, so coordinate-only redetection answers the wrong question.
-                        working_cell_symmetry = _g0_symmetry(
-                            sf_result, sites=mag_setting.get('magnetic_cell_sites'))
-                    except Exception as e:
-                        print(f"[Error] Magnetic primitive cell construction failed: {e}")
-                        print(
-                            "[Error] The default magnetic-state path cannot be "
-                            "generated. Fix the reported input or dependency "
-                            "problem. Aborting."
-                        )
-                        return False
+                working_cell_symmetry = _g0_symmetry(
+                    sf_result,
+                    sites=analysis_preparation.get("magnetic_primitive_sites"),
+                )
                 try:
                     centroid_result = compute_centroid(
                         centroid_struct_file, output_dir=OUTPUT_DIR, show_plot=True,
@@ -1577,6 +1482,10 @@ class KPointsModifier:
                         figure_basename=_figure_basename(struct_file),
                         save_pdf=save_pdf,
                         spin_log_current_run=_step0_wrote_operation_log,
+                        analysis_cell=analysis_preparation["analysis_cell"],
+                        analysis_marker_type=analysis_preparation[
+                            "analysis_marker_type"
+                        ],
                     )
                 except Exception as e:
                     print(
@@ -1584,71 +1493,14 @@ class KPointsModifier:
                         f"{e} Aborting."
                     )
                     return False
-                if centroid_result is not None:
-                    try:
-                        # This block establishes the reciprocal basis used to write KPOINTS, so any failure must abort.
-                        # Continuing without b_matrix_output would fall back to the magnetic marker helper's basis and silently write KPOINTS in the wrong basis.
-                        if magnetic_setting_counts is not None:
-                            # Centroid analysis used the magnetic marker helper, but custom Step-1 path files are defined in the submitted structure's basis and need that basis for conversion.
-                            submitted_lattice = magnetic_setting_counts.get(
-                                "submitted_lattice")
-                            if submitted_lattice is not None:
-                                centroid_result["b_matrix_submitted"] = (
-                                    2 * np.pi * np.linalg.inv(
-                                        np.asarray(submitted_lattice, dtype=float)
-                                    ).T
-                                )
-                            try:
-                                magnetic_setting_outputs = finalize_magnetic_setting_outputs(
-                                    magnetic_setting_counts,
-                                    centroid_result,
-                                    output_dir=OUTPUT_DIR,
-                                    verbose_output=self.output_verbose,
-                                    defer_calculation_inputs=True,
-                                )
-                            except Exception as exc:
-                                print(
-                                    "[Error] Magnetic calculation-cell "
-                                    f"finalization failed: {exc} Aborting."
-                                )
-                                return False
-                            if (
-                                not isinstance(magnetic_setting_outputs, dict)
-                                or "b_matrix_output" not in magnetic_setting_outputs
-                                or "cell_changed" not in magnetic_setting_outputs
-                            ):
-                                print(
-                                    "[Error] Magnetic calculation-cell "
-                                    "finalization returned no verified output "
-                                    "basis. Aborting."
-                                )
-                                return False
-                            centroid_result["b_matrix_output"] = magnetic_setting_outputs[
-                                "b_matrix_output"
-                            ]
-                            pending_calculation_outputs = (
-                                magnetic_setting_outputs.get(
-                                    "calculation_output_texts"
-                                )
-                            )
-                            if self.output_verbose:
-                                print(
-                                    "[SSG setting] Kept intermediates in "
-                                    f"{magnetic_setting_outputs.get('intermediate_dir')}"
-                                )
-                        display_figures.extend(centroid_result.get('display_figures', []))
-                    except Exception as exc:
-                        print(
-                            "[Error] Could not establish the KPOINTS output "
-                            f"basis: {exc} Aborting."
-                        )
-                        return False
-                if magnetic_setting_counts is not None:
-                    _step0_wrote_flip_file = (
-                        magnetic_setting_counts.get('spin_flip_operations', 0) > 0
-                    )
-                else:
-                    _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
+                centroid_result["b_matrix_output"] = centroid_result[
+                    "b_matrix_input"
+                ]
+                centroid_result["b_matrix_submitted"] = centroid_result[
+                    "b_matrix_input"
+                ]
+                display_figures.extend(centroid_result.get('display_figures', []))
+                _step0_wrote_flip_file = sf_result.get('spin_flip_operations', 0) > 0
                 gate_laue_group = (working_cell_symmetry or sf_result).get('laue_group')
                 laue_no_altermag = _altermagnetism_gate(sf_result, working_cell_symmetry)
                 spin_split_diagnostic = sf_result.get('spin_split_diagnostic', '')
@@ -1670,27 +1522,32 @@ class KPointsModifier:
                                  sf_result.get('nonmagnetic_lattice')),
                 )]
                 reported_g0_symmetry = working_cell_symmetry
-                reported_g0_lattice = lattice_tag
-                # Print the two cells adjacently in the same field order so their differences are easy to compare, using the lattice tag and site count of the cell that actually carries the path.
-                if reported_g0_symmetry is None:
-                    # When no separate magnetic cell is needed, the submitted primitive cell's size and lattice class describe G0 as well.
-                    # If a distinct magnetic cell exists but was not constructed, report G0 without borrowing the parent cell's size or lattice label.
-                    reported_g0_symmetry = _g0_symmetry(
-                        sf_result,
-                        sites=(None if magnetic_cell_needed else
-                               sf_result.get('nonmagnetic_sites')),
-                    )
-                    if magnetic_cell_needed:
-                        reported_g0_lattice = None
                 if reported_g0_symmetry is not None:
                     cell_rows.append((
-                        'Magnetic primitive cell (G0):',
+                        'Magnetic primitive reference:',
                         reported_g0_symmetry['label'],
                         reported_g0_symmetry['point_group'],
                         reported_g0_symmetry['laue_group'],
                         _cell_suffix(
                             reported_g0_symmetry.get('sites'),
-                            reported_g0_lattice,
+                            None,
+                        ),
+                    ))
+                    submitted_analysis_symmetry = analysis_preparation[
+                        "analysis_symmetry"
+                    ]
+                    cell_rows.append((
+                        'Submitted analysis cell:',
+                        "SG "
+                        f"{submitted_analysis_symmetry['symbol']} "
+                        f"({submitted_analysis_symmetry['number']})",
+                        submitted_analysis_symmetry['point_group'],
+                        laue_group_from_spacegroup_number(
+                            submitted_analysis_symmetry['number']
+                        ) or "Unknown",
+                        _cell_suffix(
+                            sf_result.get('num_atoms'),
+                            lattice_tag,
                         ),
                     ))
                 recovery_note = None
@@ -1750,6 +1607,10 @@ class KPointsModifier:
                     figure_basename=_figure_basename(struct_file),
                     save_pdf=save_pdf,
                     spin_log_current_run=_step0_wrote_operation_log,
+                    analysis_cell=analysis_preparation["analysis_cell"],
+                    analysis_marker_type=analysis_preparation[
+                        "analysis_marker_type"
+                    ],
                 )
             except Exception as exc:
                 print(
@@ -1757,6 +1618,12 @@ class KPointsModifier:
                     f"{exc} Aborting."
                 )
                 return False
+            centroid_result["b_matrix_output"] = centroid_result[
+                "b_matrix_input"
+            ]
+            centroid_result["b_matrix_submitted"] = centroid_result[
+                "b_matrix_input"
+            ]
             display_figures.extend(centroid_result.get('display_figures', []))
             print(
                 "Lattice type: "

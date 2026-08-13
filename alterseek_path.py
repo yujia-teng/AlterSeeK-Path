@@ -23,11 +23,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--output",
-        choices=["verbose"],
-        help="verbose: keep intermediate/helper structures for debugging.",
-    )
-    parser.add_argument(
         "--2d",
         dest="mode_2d",
         action="store_true",
@@ -45,7 +40,6 @@ def main():
     args = parser.parse_args(argv)
 
     modifier = KPointsModifier(
-        output_verbose=args.output == "verbose",
         mode_2d=args.mode_2d,
         input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],
     )

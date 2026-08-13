@@ -115,13 +115,7 @@ def _write_seekpath_basis_mapping(
     output_path,
     source_name,
 ):
-    """Record the analysis-input to SeeK-path-standard basis chain.
-
-    ``source_name`` names the cell SeeK-path was actually given. It is not
-    always the submitted structure: when the path is built in the magnetic
-    primitive cell, that cell is what gets standardized, and saying otherwise
-    would misdescribe the lattice recorded below.
-    """
+    """Record the submitted analysis lattice to SeeK-path basis chain."""
     def _fmt_matrix(mat):
         return "\n".join(
             "  " + " ".join(f"{float(x): .10f}" for x in row)
@@ -137,8 +131,8 @@ def _write_seekpath_basis_mapping(
         f"# analysis_input_lattice is the lattice of {source_name}, "
         "the cell given to SeeK-path.",
         "# seekpath_standard_primitive_lattice is the internal HPKOT path basis.",
-        "# seekpath_standard_conventional_lattice is written to "
-        "*_seekpath_standard.vasp.",
+        "# seekpath_standard_conventional_lattice is SeeK-path's conventional "
+        "diagnostic setting.",
         "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
         "",
         "analysis_input_lattice:",
@@ -152,6 +146,11 @@ def _write_seekpath_basis_mapping(
         "",
         "seekpath_rotation_matrix:",
         _fmt_matrix(rotation_matrix),
+        "",
+        "# kpoints_output_lattice is the submitted direct lattice. Final VASP "
+        "and QE fractional coordinates use its reciprocal basis.",
+        "kpoints_output_lattice:",
+        _fmt_matrix(input_lattice),
         "",
     ]
     with _atomic_open_text(output_path) as f:
@@ -192,6 +191,7 @@ from .plotting_3d import setup_3d_ax, plot_ibz
 def _analyze_kspace(
     filename,
     *,
+    analysis_cell=None,
     seekpath_type_numbers,
     mode_2d,
     input_vacuum_axis,
@@ -199,29 +199,42 @@ def _analyze_kspace(
     verbose,
 ):
     """Perform the required structure, symmetry, IBZ, and path analysis."""
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="We strongly encourage explicit.*encoding",
-        )
-        struct = Structure.from_file(filename)
-    a_matrix = struct.lattice.matrix
-    cell = a_matrix.tolist()
-    positions = struct.frac_coords.tolist()
-    if seekpath_type_numbers is None:
-        numbers = [site.Z for site in struct.species]
+    if analysis_cell is None:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="We strongly encourage explicit.*encoding",
+            )
+            struct = Structure.from_file(filename)
+        a_matrix = np.asarray(struct.lattice.matrix, dtype=float)
+        cell = a_matrix.tolist()
+        positions = struct.frac_coords.tolist()
+        if seekpath_type_numbers is None:
+            numbers = [site.Z for site in struct.species]
+        else:
+            numbers = [int(number) for number in seekpath_type_numbers]
     else:
-        numbers = [int(number) for number in seekpath_type_numbers]
-        if len(numbers) != len(positions):
+        a_matrix = np.asarray(analysis_cell[0], dtype=float)
+        cell = a_matrix.tolist()
+        positions = np.asarray(analysis_cell[1], dtype=float).tolist()
+        numbers = [int(number) for number in analysis_cell[2]]
+        if seekpath_type_numbers is not None:
             raise ValueError(
-                "seekpath_type_numbers length must match the number of "
-                "structure sites."
+                "seekpath_type_numbers cannot be combined with analysis_cell."
             )
 
+    if len(numbers) != len(positions):
+        raise ValueError(
+            "Analysis-cell type numbers must match the number of sites."
+        )
     requested_symprec = _DEFAULT_SYMPREC if symprec is None else float(symprec)
-    symprec, mcif_parent_recovery = _select_mcif_parent_symprec(
-        filename, cell, positions, numbers, fallback=requested_symprec
-    )
+    if analysis_cell is None:
+        symprec, mcif_parent_recovery = _select_mcif_parent_symprec(
+            filename, cell, positions, numbers, fallback=requested_symprec
+        )
+    else:
+        symprec = requested_symprec
+        mcif_parent_recovery = None
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -488,6 +501,7 @@ def _write_optional_diagnostics(
     basename,
     verbose,
     spin_log_current_run,
+    analysis_marker_type,
 ):
     """Write optional standardization and symbolic-centroid diagnostics."""
     standardized_structure_output = os.path.join(
@@ -500,20 +514,21 @@ def _write_optional_diagnostics(
     sp_result = analysis['sp_result']
 
     standardized_structure_path = None
-    try:
-        os.makedirs(output_dir, exist_ok=True)
-        _write_seekpath_standard_poscar(
-            np.array(input_dataset.std_lattice),
-            np.array(input_dataset.std_positions),
-            list(input_dataset.std_types),
-            standardized_structure_output,
-            os.path.basename(filename),
-        )
-        standardized_structure_path = standardized_structure_output
-        if verbose:
-            print(f"Saved standardized structure: {standardized_structure_path}")
-    except Exception as exc:
-        print(f"[Warning] Could not write SeeK-path standardized structure: {exc}")
+    if analysis_marker_type is None:
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            _write_seekpath_standard_poscar(
+                np.array(input_dataset.std_lattice),
+                np.array(input_dataset.std_positions),
+                list(input_dataset.std_types),
+                standardized_structure_output,
+                os.path.basename(filename),
+            )
+            standardized_structure_path = standardized_structure_output
+            if verbose:
+                print(f"Saved standardized structure: {standardized_structure_path}")
+        except Exception as exc:
+            print(f"[Warning] Could not write SeeK-path standardized structure: {exc}")
 
     standard_mapping_path = None
     try:
@@ -877,12 +892,13 @@ def run(
     figure_basename=None,
     save_pdf=False,
     spin_log_current_run=False,
+    analysis_cell=None,
+    analysis_marker_type=None,
 ):
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
-    # Name figures after the submitted structure rather than the intermediate cell used for the calculation.
-    # Otherwise the magnetic route names Figure 1 after its internal helper file while Figures 2-4 use the submitted structure name.
+    # Keep all figures named after the submitted structure.
     fig_basename = figure_basename or basename
 
     if verbose:
@@ -892,6 +908,7 @@ def run(
 
     analysis_result = _analyze_kspace(
         filename,
+        analysis_cell=analysis_cell,
         seekpath_type_numbers=seekpath_type_numbers,
         mode_2d=mode_2d,
         input_vacuum_axis=input_vacuum_axis,
@@ -919,6 +936,7 @@ def run(
         basename=basename,
         verbose=verbose,
         spin_log_current_run=spin_log_current_run,
+        analysis_marker_type=analysis_marker_type,
     )
 
     figure_result = _generate_figure1(

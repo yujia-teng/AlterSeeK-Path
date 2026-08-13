@@ -50,10 +50,9 @@ def test_ssg_setting_flag_no_longer_exists(monkeypatch, recorded):
 
 
 def test_other_flags_still_route_through(monkeypatch, recorded):
-    kwargs = _run(monkeypatch, recorded, ["--2d", "--vacuum-axis", "a", "--output", "verbose"])
+    kwargs = _run(monkeypatch, recorded, ["--2d", "--vacuum-axis", "a"])
     assert kwargs["mode_2d"] is True
     assert kwargs["input_vacuum_axis"] == 0
-    assert kwargs["output_verbose"] is True
     assert "magnetic_setting" not in kwargs
 
 

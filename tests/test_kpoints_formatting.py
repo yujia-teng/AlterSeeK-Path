@@ -1,7 +1,5 @@
 """Regression tests for KPOINTS label/path formatting in alterseek_path.py."""
 
-import os
-
 import numpy as np
 import pytest
 
@@ -48,27 +46,26 @@ def test_nonzero_coordinates_keep_their_sign_and_precision():
 
 
 def test_gamma_label_is_vasp_safe():
-    assert KPointsModifier._kpoints_label("Γ") == "GAMMA"
+    assert KPointsModifier._kpoints_label("\u0393") == "GAMMA"
     assert KPointsModifier._kpoints_label("gamma") == "GAMMA"
     assert KPointsModifier._kpoints_label("GAMMA") == "GAMMA"
-    # Ordinary labels pass through untouched, including primes and subscripts.
     assert KPointsModifier._kpoints_label("M_A'") == "M_A'"
     assert KPointsModifier._kpoints_label("X_1") == "X_1"
 
 
 def test_display_label_matches_kpoints_label():
     # The console form and the VASP-file form must never drift apart.
-    for label in ["Γ", "GAMMA", "K", "H_2", "M_A'", "k", "k'"]:
+    for label in ["\u0393", "GAMMA", "K", "H_2", "M_A'", "k", "k'"]:
         assert (KPointsModifier._display_label(label)
                 == KPointsModifier._kpoints_label(label))
 
 
 def test_combined_gamma_label_is_vasp_safe():
-    assert KPointsModifier._kpoints_label("Γ/H_2") == "GAMMA/H_2"
+    assert KPointsModifier._kpoints_label("\u0393/H_2") == "GAMMA/H_2"
 
 
 def test_format_path_joins_continuous_and_breaks_discontinuous():
-    segments = [("Γ", "X"), ("X", "M"), ("R", "Z")]
+    segments = [("\u0393", "X"), ("X", "M"), ("R", "Z")]
     assert KPointsModifier._format_path(segments) == "GAMMA-X-M | R-Z"
 
 
@@ -234,80 +231,6 @@ def test_writers_record_the_operation_source_basis(tmp_path):
         "real-space fractional basis:"
     )
 
-
-@pytest.mark.parametrize(
-    ("writer_name", "filename"),
-    [
-        ("write_kpoints_file", "KPOINTS_alter"),
-        ("write_kpoints_file_qe", "KPOINTS_alter_qe"),
-    ],
-)
-def test_writers_commit_changed_cell_inputs_with_kpoints(
-    tmp_path, writer_name, filename
-):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
-    cell = tmp_path / "case_magnetic_primitive.vasp"
-    magmom = tmp_path / "case_magnetic_primitive_MAGMOM.txt"
-    output = tmp_path / filename
-
-    writer = getattr(modifier, writer_name)
-    assert writer(
-        [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]],
-        str(output),
-        companion_outputs={
-            str(cell): "new cell\n",
-            str(magmom): "new moments\n",
-        },
-    )
-
-    assert cell.read_bytes() == b"new cell\n"
-    assert magmom.read_bytes() == b"new moments\n"
-    assert output.exists()
-
-
-def test_writer_failure_restores_changed_cell_inputs_and_kpoints(
-    tmp_path, monkeypatch, capsys
-):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
-    cell = tmp_path / "case_magnetic_primitive.vasp"
-    magmom = tmp_path / "case_magnetic_primitive_MAGMOM.txt"
-    output = tmp_path / "KPOINTS_alter"
-    originals = {
-        cell: b"old cell\n",
-        magmom: b"old moments\n",
-        output: b"old kpoints\n",
-    }
-    for target, contents in originals.items():
-        target.write_bytes(contents)
-
-    real_replace = os.replace
-    calls = 0
-
-    def fail_after_first_promotion(source, target):
-        nonlocal calls
-        calls += 1
-        if calls == 5:
-            raise PermissionError("synthetic KPOINTS-set failure")
-        real_replace(source, target)
-
-    monkeypatch.setattr(os, "replace", fail_after_first_promotion)
-    assert not modifier.write_kpoints_file(
-        [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]],
-        str(output),
-        companion_outputs={
-            str(cell): "new cell\n",
-            str(magmom): "new moments\n",
-        },
-    )
-
-    assert "synthetic KPOINTS-set failure" in capsys.readouterr().out
-    assert {target: target.read_bytes() for target in originals} == originals
-    assert not [
-        path for path in tmp_path.iterdir()
-        if path.name.endswith((".stage", ".backup"))
-    ]
 
 
 def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
