@@ -7,6 +7,7 @@ import numpy as np
 import spglib
 from ase import Atoms
 from ase.io import write
+from scipy.spatial import ConvexHull
 
 from alterseek.compute_centroid_hybrid import run as compute_centroid
 from alterseek.ssg_setting import prepare_submitted_cell_analysis
@@ -315,9 +316,13 @@ def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
         analysis_marker_type=preparation["analysis_marker_type"],
     )
     assert result["sc_type"] == "oC1"
-    assert result["path_fractional_basis"] == "submitted"
-    assert np.allclose(result["b_matrix"], result["b_matrix_input"])
-    assert not np.allclose(
-        result["b_matrix"], result["b_matrix_standardized"]
-    )
+    assert not np.allclose(result["b_matrix"], result["b_matrix_input"])
     assert np.allclose(result["sp_point_coords"]["Y"], [-0.5, 0.5, 0.0])
+
+    bz_hull = ConvexHull(np.vstack(result["bz_loops"]))
+    ibz_cart = np.array(result["hull_pts"])
+    signed_distances = (
+        ibz_cart @ bz_hull.equations[:, :-1].T
+        + bz_hull.equations[:, -1]
+    )
+    assert np.all(signed_distances <= 1e-8)

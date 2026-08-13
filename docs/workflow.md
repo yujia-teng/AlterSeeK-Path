@@ -128,10 +128,10 @@ recover exactly the intended full spatial operation set. A
 `volume_original_wrt_prim` greater than one is valid and expected for a
 centered conventional setting; for example, the GdAuGe 211 `Cmc2_1` helper has
 ratio two. SeeK-path determines the HPKOT labels and fractional geometry, but
-those fractions are interpreted directly in the submitted reciprocal basis.
-They are not converted to preserve Cartesian k-points from SeeK-path's internal
-standardized primitive cell. The same submitted-basis convention is used for
-magnetic, q != 0, and no-moments inputs.
+the BZ, IBZ, centroid, and path remain in SeeK-path's standardized primitive
+basis. Their Cartesian k-points are converted into the submitted reciprocal
+fractional basis only for final VASP or QE output. The same analysis/output
+separation is used for magnetic, q != 0, and no-moments inputs.
 
 The marker cell is never written. Because a marker-only SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not

@@ -432,20 +432,6 @@ class KPointsModifier:
         if not self.kpoints_data:
             raise ValueError("No custom KPOINTS path has been loaded.")
 
-        if centroid_result.get('path_fractional_basis') == 'submitted':
-            b_submitted = np.asarray(
-                centroid_result['b_matrix_input'], dtype=float
-            )
-            self.kpoints_basis_matrix = b_submitted
-            self.kpoints_basis_rotation = np.eye(3)
-            self.output_basis_matrix = np.asarray(
-                centroid_result.get('b_matrix_output', b_submitted),
-                dtype=float,
-            )
-            print("[Basis] Custom KPOINTS path already uses the submitted "
-                  "fractional basis.")
-            return
-
         b_standard = np.asarray(centroid_result['b_matrix'], dtype=float)
         rotation = np.asarray(
             centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
@@ -932,9 +918,8 @@ class KPointsModifier:
     def _general_kpoint_output_basis(self, general_kpoint) -> Optional[List[float]]:
         """Return the general point k in the KPOINTS output basis, or None
         when the conversion is unavailable. The output basis always belongs
-        to the submitted calculation cell. Submitted-cell analysis already
-        uses that fractional basis, so the returned value then equals the
-        input."""
+        to the submitted calculation cell; when it coincides with the
+        standardized basis the returned value equals the input."""
         if general_kpoint is None:
             return None
         if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
@@ -1255,12 +1240,6 @@ class KPointsModifier:
         # Convert through Cartesian k-space so k', Figure 2, and the path use the same physical operation.
         #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
         #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
-        if (
-            centroid_result is not None
-            and centroid_result.get('path_fractional_basis') == 'submitted'
-        ):
-            return R, None, flip_ops, preserve_ops
-
         R_cart_for_plot = None
         flip_ops_for_plot = flip_ops
         preserve_ops_for_plot = preserve_ops
@@ -1389,7 +1368,8 @@ class KPointsModifier:
         analysis_preparation = None
 
         def _load_custom_path(custom_filename):
-            """Read a custom path in the submitted structure's basis."""
+            """Read a custom KPATH.in/KPOINTS path and convert it from the
+            input-cell basis to the standardized internal basis."""
             if not self.read_kpoints_file(custom_filename):
                 return False
             self.convert_custom_path_from_input_basis(centroid_result)
@@ -1767,15 +1747,7 @@ class KPointsModifier:
                       "enter the general k-point by hand.")
             else:
                 general_kpoint = [c[0], c[1], c[2]]
-                centroid_basis_label = (
-                    "submitted-cell basis"
-                    if centroid_result.get('path_fractional_basis') == 'submitted'
-                    else "standardized basis"
-                )
-                print(
-                    f"IBZ centroid ({centroid_basis_label}): "
-                    f"[{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]"
-                )
+                print(f"IBZ centroid (standardized basis): [{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]")
         # Append the centroid only to a log owned by this run to avoid creating a centroid-only file or modifying a stale log.
         if general_kpoint is not None:
             out_k = self._general_kpoint_output_basis(general_kpoint)
@@ -1788,12 +1760,7 @@ class KPointsModifier:
                 try:
                     with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
                               "a", encoding="utf-8", newline="\n") as f:
-                        log_basis_label = (
-                            "submitted-cell basis"
-                            if centroid_result.get('path_fractional_basis') == 'submitted'
-                            else "standardized primitive basis"
-                        )
-                        f.write(f"\nGeneral k-point (IBZ centroid, {log_basis_label}): "
+                        f.write(f"\nGeneral k-point (IBZ centroid, standardized primitive basis): "
                                 f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
                         if out_k is not None:
                             f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "

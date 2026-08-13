@@ -122,21 +122,6 @@ def test_true_221_supercell_gets_native_hexagonal_labels_and_basis(
     _assert_submitted_output_contract(
         tmp_path, output_dir, SUPERCELL_221
     )
-    mapping = output_dir / "SUPERCELL_221_seekpath_basis_mapping.txt"
-    submitted = _mapping_matrix(mapping, "kpoints_output_lattice")
-    parent_primitive = submitted.copy()
-    parent_primitive[:2] /= 2
-    k_fraction = np.array([1 / 3, 1 / 3, 0.0])
-    submitted_cart = (
-        k_fraction @ (2 * np.pi * np.linalg.inv(submitted).T)
-    )
-    parent_primitive_cart = (
-        k_fraction
-        @ (2 * np.pi * np.linalg.inv(parent_primitive).T)
-    )
-    assert not np.allclose(
-        submitted_cart, parent_primitive_cart, atol=1e-8
-    )
 
 
 def test_same_volume_case15_never_replaces_the_calculation_cell(
@@ -164,7 +149,7 @@ def test_same_volume_case15_never_replaces_the_calculation_cell(
     )
 
 
-def test_211_keeps_seekpath_fractions_without_preserving_cartesian_points(
+def test_211_preserves_seekpath_cartesian_points_in_submitted_output_basis(
     tmp_path, monkeypatch
 ):
     output_dir = _run(
@@ -182,15 +167,16 @@ def test_211_keeps_seekpath_fractions_without_preserving_cartesian_points(
     b_submitted = 2 * np.pi * np.linalg.inv(submitted).T
     b_primitive = 2 * np.pi * np.linalg.inv(primitive).T
 
-    # SeeK-path supplies Y=(-1/2,1/2,0) for oC1.  AlterSeeK-Path keeps that
-    # fractional triple and interprets it in the submitted reciprocal basis;
-    # it must not convert Y to preserve the standardized Cartesian point.
+    # SeeK-path supplies Y=(-1/2,1/2,0) in its standardized oC1 primitive
+    # basis. The written fraction may differ, but it must represent that same
+    # Cartesian reciprocal-space point in the submitted output basis.
     y_rows = [np.array(row[:3]) for row in _kpoint_rows(
         tmp_path / "KPOINTS_alter"
     ) if row[3] == "Y"]
     expected_fraction = np.array([-0.5, 0.5, 0.0])
     assert y_rows
-    assert all(np.allclose(row, expected_fraction) for row in y_rows)
     standardized_cart = expected_fraction @ b_primitive @ rotation
-    submitted_cart = expected_fraction @ b_submitted
-    assert not np.allclose(submitted_cart, standardized_cart, atol=1e-8)
+    assert any(
+        np.allclose(row @ b_submitted, standardized_cart, atol=1e-8)
+        for row in y_rows
+    )
