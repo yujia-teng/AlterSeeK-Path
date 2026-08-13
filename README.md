@@ -103,7 +103,7 @@ Press [Enter] to use this path, or type a filename to load your own:
 Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
-IBZ centroid (standardized basis): [0.277778, 0.111111, 0.250000]
+IBZ centroid (SeeK-path fractions reused in submitted-cell basis): [0.277778, 0.111111, 0.250000]
 IBZ centroid (KPOINTS output basis): [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Spin-flip operation
@@ -169,8 +169,9 @@ nonsymmorphic screw/glide shifts and legitimate centering translations. The
 helper is accepted when spglib detects exactly that full spatial operation set;
 `volume_original_wrt_prim` may therefore exceed one for a centered conventional
 setting. SeeK-path constructs the BZ, IBZ, centroid, and HPKOT path in its
-standardized primitive basis. The resulting Cartesian k-points are converted
-only at output into the submitted structure's reciprocal fractional basis. The
+standardized primitive basis. The workflow then reuses those fractional
+coordinates unchanged in the submitted structure's reciprocal basis; it does
+not transform them to preserve the standardized Cartesian k-points. The
 FindSpinGroup magnetic primitive cell is
 retained separately as the `*_magnetic_primitive.mcif` diagnostic.
 

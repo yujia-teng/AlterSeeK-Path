@@ -129,9 +129,11 @@ recover exactly the intended full spatial operation set. A
 centered conventional setting; for example, the GdAuGe 211 `Cmc2_1` helper has
 ratio two. SeeK-path determines the HPKOT labels and fractional geometry, but
 the BZ, IBZ, centroid, and path remain in SeeK-path's standardized primitive
-basis. Their Cartesian k-points are converted into the submitted reciprocal
-fractional basis only for final VASP or QE output. The same analysis/output
-separation is used for magnetic, q != 0, and no-moments inputs.
+basis. For VASP or QE output, those fractional triples are reused unchanged in
+the submitted reciprocal basis. No Cartesian-preserving basis conversion is
+applied; different bases therefore generally give different Cartesian
+k-points. The same analysis/output separation is used for magnetic, q != 0,
+and no-moments inputs.
 
 The marker cell is never written. Because a marker-only SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not

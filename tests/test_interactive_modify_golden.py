@@ -61,14 +61,16 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3)."
     )
-    assert "General k-point (IBZ centroid, standardized primitive basis)" in full_text
+    assert (
+        "General k-point (IBZ centroid, SeeK-path fractions reused in "
+        "submitted-cell basis)" in full_text
+    )
     assert flip_headers == [
-        "# Left basis: submitted structure 'case12_POSCAR' real-space "
+        "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3).",
-        "# Right basis: SeeK-path standardized primitive real-space "
-        "fractional basis (a1, a2, a3).",
-        "# k mapping: k' = R^(-T) k (mod G) in each corresponding reciprocal "
+        "# k mapping: k' = R^(-T) k (mod G) in the corresponding reciprocal "
         "basis (b1, b2, b3).",
+        "# Found 8 inversion-extended spin-flipping point operations",
     ]
 
     standard_vasp = output_dir / "case12_POSCAR_seekpath_standard.vasp"

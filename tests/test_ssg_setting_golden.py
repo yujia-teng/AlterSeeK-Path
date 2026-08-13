@@ -149,7 +149,7 @@ def test_same_volume_case15_never_replaces_the_calculation_cell(
     )
 
 
-def test_211_preserves_seekpath_cartesian_points_in_submitted_output_basis(
+def test_211_reuses_seekpath_fractions_without_preserving_cartesian_points(
     tmp_path, monkeypatch
 ):
     output_dir = _run(
@@ -168,15 +168,14 @@ def test_211_preserves_seekpath_cartesian_points_in_submitted_output_basis(
     b_primitive = 2 * np.pi * np.linalg.inv(primitive).T
 
     # SeeK-path supplies Y=(-1/2,1/2,0) in its standardized oC1 primitive
-    # basis. The written fraction may differ, but it must represent that same
-    # Cartesian reciprocal-space point in the submitted output basis.
+    # basis. The workflow deliberately reuses that fractional triple in the
+    # submitted basis, so it is not the same Cartesian reciprocal-space point.
     y_rows = [np.array(row[:3]) for row in _kpoint_rows(
         tmp_path / "KPOINTS_alter"
     ) if row[3] == "Y"]
     expected_fraction = np.array([-0.5, 0.5, 0.0])
     assert y_rows
+    assert all(np.allclose(row, expected_fraction) for row in y_rows)
     standardized_cart = expected_fraction @ b_primitive @ rotation
-    assert any(
-        np.allclose(row @ b_submitted, standardized_cart, atol=1e-8)
-        for row in y_rows
-    )
+    submitted_cart = expected_fraction @ b_submitted
+    assert not np.allclose(submitted_cart, standardized_cart, atol=1e-8)
