@@ -48,7 +48,7 @@ lattice type is reported using SeeK-path keys (`hP2`, `oI3`, `mC2`, etc.).
 A custom path is interpreted in the reciprocal fractional basis of the
 structure submitted in Step 0. AlterSeeK-Path converts it to the standardized
 SeeK-path basis used for internal processing and converts the final path to
-the calculation cell's reciprocal basis when writing output. Custom files
+the submitted cell's reciprocal basis when writing output. Custom files
 must use reciprocal line mode and contain labeled endpoint pairs; one complete
 segment is valid, but a lone point, an odd endpoint count, a missing label, or
 a non-finite coordinate is rejected.
@@ -68,7 +68,7 @@ comes from the detected symmetry set.
 
 The selected operation maps k to k'; both are inserted into the path. Path
 construction uses the standardized SeeK-path primitive reciprocal basis
-internally; written `KPOINTS` coordinates are converted to the calculation
+internally; written `KPOINTS` coordinates are converted to the submitted
 cell's reciprocal basis at output time.
 
 ## Step 5: Save Outputs
@@ -92,8 +92,6 @@ record files go into `alterseek_output/`.
 | `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
 | `alterband.toml` | VASP band-plot configuration; the band plotter reads it from here |
 | `alterband_qe.toml` | QE band-plot configuration; likewise |
-| `*_magnetic_primitive.vasp` | Magnetic primitive calculation cell in the SSG-adapted setting, written only when the calculation setting changes |
-| `*_magnetic_primitive_MAGMOM.txt` | Matching species order, Cartesian spin axis, and scalar MAGMOM line for that generated POSCAR |
 
 **`alterseek_output/`**
 
@@ -106,10 +104,35 @@ record files go into `alterseek_output/`.
 | `spin_operations.txt` | Full spin-symmetry operation log, written only when the current run performs spin analysis; a no-moments run neither creates nor changes it |
 | `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
 | `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion and diagnostics |
-| `*_magnetic_primitive.mcif` | Magnetic primitive cell with its vector moments (default route) |
-| `*_seekpath_standard.vasp` | SeeK-path standardized conventional diagnostic cell; it is not the calculation POSCAR or final KPOINTS basis |
-| `*_seekpath_marker_helper.vasp` | Marker-bearing standardized helper, retained only with verbose output |
-| `*_seekpath_basis_mapping.txt` | Analysis input, internal primitive path, standardized conventional, and final KPOINTS output lattices |
+| `*_magnetic_primitive.mcif` | Direct FindSpinGroup magnetic primitive reference with vector moments; it is not the calculation cell |
+| `*_seekpath_basis_mapping.txt` | Submitted analysis/output lattice, internal primitive path lattice, standardized conventional lattice, and rotation mapping |
+
+## Submitted-Cell Analysis Contract
+
+The submitted translation lattice is authoritative. It defines the BZ, IBZ,
+centroid, high-symmetry path, Figures 1-4, and the reciprocal basis of final
+VASP/QE output. A true integer supercell receives its own native submitted-cell
+BZ rather than a primitive path folded into supercell coordinates. A
+determinant-one basis change likewise remains the calculation and output cell.
+AlterSeeK-Path never emits a replacement calculation POSCAR or MAGMOM file.
+
+For magnetic input, FindSpinGroup still determines G0 and the spin operations.
+The complete compatible magnetic point-operation set is encoded by deterministic
+generic marker orbits in an in-memory SeeK-path cell whose lattice is the
+submitted lattice. All markers have one positive artificial type identifier
+distinct from the real atom types. The helper intentionally omits hidden
+smaller-cell translations. Before it can be used, spglib must recover exactly
+the intended point-operation set and SeeK-path must report
+`volume_original_wrt_prim` equal to one; otherwise the run aborts without
+falling back to another cell. The same validated helper is used for magnetic,
+q != 0, and no-moments inputs.
+
+The marker cell is never written. Because a marker-only SeeK-path standard
+would not be an honest transformed real structure, the workflow also does not
+publish `*_seekpath_standard.vasp`. The direct FindSpinGroup
+`*_magnetic_primitive.mcif` remains as an internal-symmetry reference, and the
+basis-mapping diagnostic records the submitted analysis/output lattice
+explicitly.
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported.
 The workflow prints a note and writes the ordinary default path without an
@@ -165,8 +188,8 @@ parent space group, AlterSeeK-Path additionally tries the tighter sequence
 `1e-5`, `1e-4`, `1e-3` and accepts the tightest one that reproduces the
 declared parent; `symprec` is the fallback when there is no declaration to
 validate against. Note that this affects only the nonmagnetic parent. The
-altermagnetism check in the default (magnetic primitive cell) route reads G0
-from the spin space group and uses no tolerance at all.
+altermagnetism check reads G0 from the spin space group and uses no tolerance
+at all; `symprec` still controls validation of the submitted-cell marker helper.
 
 Comment out a key (or delete the line) to make that one step interactive
 again while the rest of the file still drives the run.
@@ -199,9 +222,9 @@ without `k'`.
 
 `--vacuum-axis {a,b,c}` (default `c`) identifies the submitted cell's vacuum
 vector. The other two submitted lattice vectors define one physical Cartesian
-slab plane, which is carried through submitted, magnetic-primitive,
-SeeK-path-standardized, and final KPOINTS bases. Spin operations are tested in
-Cartesian reciprocal space, so magnetic-cell axis permutations cannot change
+slab plane, which is carried through the submitted, SeeK-path-standardized,
+and final KPOINTS bases. Spin operations are tested in
+Cartesian reciprocal space, so basis standardization cannot change
 the 2D verdict. Written k-points are projected only to remove numerical residue
 normal to that same plane; a genuinely out-of-plane point aborts instead of
 being silently flattened. SeeK-path still auto-detects its own standardized
@@ -216,12 +239,12 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 | `*_2d_spinflip_*.png` | spin-up IBZ and its spin-flip image with path connections |
 | `*_2d_spinbz_*.png` | spin-colored 2D BZ domain pattern |
 
-This distinction is not cosmetic for supercell altermagnets. MnSe2 is deposited
-in a cubic `Pa-3` (205) parent, Laue `m-3`, which forbids altermagnetism; its
-magnetic primitive cell is a 3x1x1 supercell of that same cubic crystal, so
-with the moments stripped it is *still* cubic. Only G0 (`Pbca`, 61, Laue `mmm`)
-reflects the symmetry the magnetic state actually has, and Step 0 prints both
-the nonmagnetic parent and G0 so the two are never confused.
+For supercell altermagnets, the submitted lattice fixes the BZ while G0 fixes
+the magnetic point symmetry inside it. MnSe2 illustrates why those roles must
+remain separate: the submitted magnetic cell has a cubic moment-free parent,
+but G0 is orthorhombic `Pbca` (61, Laue `mmm`). Step 0 therefore reports the
+nonmagnetic primitive reference, the FindSpinGroup magnetic primitive
+reference, and the submitted analysis cell as distinct concepts.
 
 ## Next Step
 

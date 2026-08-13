@@ -89,7 +89,8 @@ Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 
 
 Input structure: POSCAR, 6 atoms
 Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
-Magnetic primitive cell (G0): SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
+Magnetic primitive reference: SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms]
+Submitted analysis cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L
 SSG Symbol (Chen-Liu): P -1|6_{3} 1|m -1|c infinity_{001}m|1
@@ -145,6 +146,24 @@ alterseek-path --2d
 (vacuum k = 0) reciprocal plane, and reports whether any spin-flip operation
 produces in-plane spin splitting. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#2d-slab-mode)
 for the vacuum-axis detection details and output figures.
+
+---
+
+## Submitted-Cell Brillouin Zone
+
+The structure you submit defines the translation lattice used for the BZ,
+IBZ, centroid, SeeK-path labels, figures, and final VASP/QE coordinates. A
+true supercell therefore receives its own native BZ and path; a determinant-one
+basis change is also kept exactly as submitted. AlterSeeK-Path never replaces
+the calculation POSCAR or emits a replacement MAGMOM handoff.
+
+For magnetic input, FindSpinGroup still supplies G0 and the spin operations.
+AlterSeeK-Path encodes the compatible magnetic point operations as validated
+generic marker orbits in an in-memory SeeK-path cell using the submitted lattice. The
+helper deliberately contains no hidden smaller-cell translations and is
+accepted only when its detected point operations match and SeeK-path reports
+`volume_original_wrt_prim = 1`. The FindSpinGroup magnetic primitive cell is
+retained separately as the `*_magnetic_primitive.mcif` diagnostic.
 
 ---
 
