@@ -40,7 +40,7 @@ CUBIC_G0 = {'label': 'Pa-3 (205)', 'spacegroup_number': 205, 'laue_group': 'm-3'
 
 
 def test_submitted_cell_decides_when_no_magnetic_cell_was_built():
-    """Under --parent-setting the submitted cell is the only cell."""
+    """The submitted-cell symmetry applies when no helper cell is needed."""
     assert _altermagnetism_gate(CUBIC_PARENT) is not None
     assert _altermagnetism_gate({'point_group': 'mmm', 'laue_group': 'mmm'}) is None
 
@@ -244,10 +244,10 @@ def test_magnetic_cell_construction_failure_aborts_without_parent_fallback(
     )
     monkeypatch.setattr(kpoints_module, "compute_centroid", forbid_parent_centroid)
 
-    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    assert kpoints_module.KPointsModifier().interactive_modify() is False
     output = capsys.readouterr().out
     assert "Magnetic primitive cell construction failed" in output
-    assert "explicitly rerun with --parent-setting" in output
+    assert "default magnetic-state path cannot be generated" in output
     assert "Falling back" not in output
     assert not (tmp_path / "KPOINTS_alter").exists()
 
@@ -301,7 +301,7 @@ def test_required_magnetic_finalization_failure_aborts(
         kpoints_module, "finalize_magnetic_setting_outputs", synthetic_finalizer
     )
 
-    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    assert kpoints_module.KPointsModifier().interactive_modify() is False
     output = capsys.readouterr().out
     assert "finalization" in output
     assert "Aborting" in output
@@ -393,7 +393,7 @@ def test_output_basis_step_failure_aborts_instead_of_being_recorded(
         kpoints_module, "finalize_magnetic_setting_outputs", forbid_finalizer
     )
 
-    assert kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify() is False
+    assert kpoints_module.KPointsModifier().interactive_modify() is False
     output = capsys.readouterr().out
     assert "Could not establish the KPOINTS output basis" in output
     assert "Aborting" in output
@@ -452,9 +452,7 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
     monkeypatch.setattr(kpoints_module, "find_sf_run", lambda *a, **k: sf_result)
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
-    result = kpoints_module.KPointsModifier(
-        magnetic_setting=False
-    ).interactive_modify()
+    result = kpoints_module.KPointsModifier().interactive_modify()
     output = capsys.readouterr().out
 
     assert result is False
@@ -526,7 +524,7 @@ def test_altermagnet_with_no_available_spin_flip_operation_aborts(
     )
 
     assert (
-        kpoints_module.KPointsModifier(magnetic_setting=False).interactive_modify()
+        kpoints_module.KPointsModifier().interactive_modify()
         is False
     )
     output = capsys.readouterr().out
@@ -672,7 +670,7 @@ def test_workflow_gates_on_the_constructed_cells_g0(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    kpoints_module.KPointsModifier(magnetic_setting=True).interactive_modify()
+    kpoints_module.KPointsModifier().interactive_modify()
 
     assert seen, "the gate was never consulted"
     working = seen[0]

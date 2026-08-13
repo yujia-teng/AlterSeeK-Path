@@ -1,17 +1,12 @@
 """Golden regression test for magnetic-primitive-cell path construction.
 
-This is the default path-construction route (ssg_setting.py +
-KPointsModifier(magnetic_setting=True) + FindSpinGroup's acc-primitive
-setting); --parent-setting opts out of it. This drives it end-to-end on a
+This drives the current magnetic path-construction route (ssg_setting.py +
+KPointsModifier + FindSpinGroup's acc-primitive setting) end-to-end on a
 GdAuGe 2x1x1 supercell (SUPERCELL_211.vasp) with the correct AFM magnetic
 order (moments 1 -1 1 -1 along c, alternating by the a1-doubling
 translation): the magnetic primitive cell is recovered as oC1 orthorhombic
 (MSG P_Cmc2_1, BNS 26.76) and its default (non-altermagnetic) path is
 written.
-
-magnetic_setting=True is passed explicitly even though it is now the
-default, so this test keeps covering the magnetic-primitive route if the
-default is ever changed again.
 
 Guards the shared helpers in ssg_setting.py / find_sf_operations.py (the deferred
 de-duplication) and the magnetic-cell branch of interactive_modify against
@@ -118,7 +113,7 @@ def test_ssg_setting_supercell211_golden(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    KPointsModifier(magnetic_setting=True).interactive_modify()
+    KPointsModifier().interactive_modify()
 
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = GOLDEN.read_text(encoding="utf-8")
@@ -224,7 +219,7 @@ def test_ssg_setting_keeps_submitted_221_calculation_supercell(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    assert KPointsModifier(magnetic_setting=True).interactive_modify() is True
+    assert KPointsModifier().interactive_modify() is True
 
     out = tmp_path / OUTPUT_DIR
     mapping = out / f"{POSCAR_221.stem}_seekpath_basis_mapping.txt"
@@ -327,7 +322,7 @@ def test_custom_path_in_magnetic_route_reads_submitted_basis(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    assert KPointsModifier(magnetic_setting=True).interactive_modify() is True
+    assert KPointsModifier().interactive_modify() is True
 
     kpoints_text = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     rows = {}
@@ -373,7 +368,7 @@ def test_changed_calculation_cell_builds_butterfly_path(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    assert KPointsModifier(magnetic_setting=True).interactive_modify() is True
+    assert KPointsModifier().interactive_modify() is True
 
     stdout = capsys.readouterr().out
     assert "Magnetic primitive cell (G0): SG Immm (71)" in stdout

@@ -1,11 +1,9 @@
 """The symmetry tolerance is a physics setting, not a file-format detail.
 
 The tolerance used to be applied only to .mcif input, so the *same structure
-with the same moments* reported different symmetry as .mcif and as POSCAR --
-and under --parent-setting that changed the physics, not just the printout:
-MnSe2 as .mcif correctly reported its cubic Pa-3 parent and wrote the ordinary
-path, while as POSCAR it read as orthorhombic and built a full butterfly path
-in what is really the cubic parent.
+with the same moments* reported different symmetry as .mcif and as POSCAR:
+MnSe2 as .mcif correctly reported its cubic Pa-3 parent, while as POSCAR it
+read as orthorhombic.
 
 The configured tolerance now applies to every format. Only the *extra*
 validated recovery stays mcif-specific, since only an mcif declares a parent

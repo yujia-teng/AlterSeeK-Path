@@ -148,34 +148,6 @@ for the vacuum-axis detection details and output figures.
 
 ---
 
-## `--parent-setting`
-
-By default AlterSeeK-Path determines the path from the **magnetic primitive
-cell**, the cell that reflects the symmetry of the magnetic state. Final
-k-points are written in the reciprocal basis of the calculation cell. An
-intentional integer supercell of the magnetic primitive cell is therefore
-kept as submitted; a same-volume nontrivial basis change -- e.g. a
-hexagonal-looking cell whose magnetism only respects an SSG-adapted
-orthorhombic setting -- changes the calculation cell. In that case the working
-directory receives the matching `*_magnetic_primitive.vasp` and
-`*_magnetic_primitive_MAGMOM.txt`; use their recorded species and moment order
-together with the generated `KPOINTS_alter`. This is the physical magnetic
-primitive cell in an SSG-adapted setting; path symmetry is determined from
-G0, the spatial part of the SSG.
-
-```bash
-alterseek-path --parent-setting
-```
-
-builds the path in the nonmagnetic parent cell instead. This is useful for
-comparing several magnetic orders against one fixed reference path, but that
-path does not respect the symmetry of the magnetic state -- and where the
-parent is not altermagnetic at all, it cannot represent that state. See
-[Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#-parent-setting)
-for details and the `--output verbose` flag.
-
----
-
 ## Band Plotting
 
 After the VASP band calculation and VASPKIT task `211`, run:

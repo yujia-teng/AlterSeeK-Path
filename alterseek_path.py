@@ -23,14 +23,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--parent-setting",
-        action="store_true",
-        help="Build Figure 1/KPOINTS in the nonmagnetic parent cell instead of "
-             "the magnetic primitive cell. Useful for comparing several magnetic "
-             "orders against one fixed reference path, but that path does not "
-             "respect the symmetry of the magnetic state.",
-    )
-    parser.add_argument(
         "--output",
         choices=["verbose"],
         help="verbose: keep intermediate/helper structures for debugging.",
@@ -53,7 +45,6 @@ def main():
     args = parser.parse_args(argv)
 
     modifier = KPointsModifier(
-        magnetic_setting=not args.parent_setting,
         output_verbose=args.output == "verbose",
         mode_2d=args.mode_2d,
         input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],

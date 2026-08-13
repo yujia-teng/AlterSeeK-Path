@@ -216,60 +216,6 @@ Instead of the 3D figures, 2D mode saves top-down figures:
 | `*_2d_spinflip_*.png` | spin-up IBZ and its spin-flip image with path connections |
 | `*_2d_spinbz_*.png` | spin-colored 2D BZ domain pattern |
 
-## `--parent-setting`
-
-By default, Figure 1 and the path symmetry are determined from the
-**magnetic primitive cell** -- the cell that reflects the symmetry of the
-magnetic state -- which AlterSeeK-Path identifies from the input magnetic
-structure with FindSpinGroup's spin-space-group setting. Final KPOINTS
-coordinates are expressed in the reciprocal basis of the calculation cell.
-
-That cell coincides with the ordinary nonmagnetic structure when the magnetic
-order does not lower the lattice symmetry. It differs when the order does
-lower it: either a **q = 0** order selects a different magnetic primitive cell
-of the same volume (e.g. a hexagonal structural lattice whose magnetic pattern
-only respects orthorhombic symmetry), or a nonzero propagation vector
-**q != 0** enlarges it (e.g. a magnetic cell containing three parent cells).
-If the submitted calculation cell is itself an integer supercell of that
-magnetic primitive cell, AlterSeeK-Path keeps it and maps the path back into
-its reciprocal basis. A same-volume nontrivial basis change instead produces
-the matching `*_magnetic_primitive.vasp` and MAGMOM companion for the band
-calculation.
-If construction of the required magnetic primitive cell fails, AlterSeeK-Path
-stops without writing a parent-cell replacement path. Fix the reported input or
-dependency problem, or explicitly rerun with `--parent-setting` when a
-nonmagnetic reference path is actually intended.
-Likewise, after path construction the calculation-cell basis and any required
-replacement POSCAR/MAGMOM handoff must be finalized successfully before
-KPOINTS are written. Diagnostic standardized VASP/MCIF, mapping, and verbose
-helper files remain best-effort outputs and report a warning if unavailable.
-The internal symmetry marker uses He by default. If He is a real species in
-the submitted structure, AlterSeeK-Path deterministically chooses another
-chemical element absent from that structure (Ne first) and later removes only
-that selected artificial marker species from the standardized diagnostic cell.
-
-```bash
-alterseek-path --parent-setting
-```
-
-builds Figure 1/KPOINTS in the nonmagnetic parent cell instead. Displaying
-bands along a common parent-cell reference path is useful for comparing
-different magnetic orders while keeping the path fixed, but that reference
-path does not respect the symmetry of the magnetic state. Where the parent is
-not altermagnetic at all, it cannot represent the magnetic state, and the path
-built in it will not show the splitting the magnetic structure actually has.
-
-Add `--output verbose` to keep the intermediate helper files for debugging
-instead of deleting them.
-
-The altermagnetism check follows the cell in use. By default the Laue-group
-exclusion is evaluated on **G0**, the spatial part of the spin space group
-reported by FindSpinGroup, which is the symmetry the magnetic primitive cell
-actually has; under `--parent-setting` it is evaluated on the submitted cell's
-own space group. So a structure whose nonmagnetic parent forbids altermagnetism
-but whose magnetic order lowers the symmetry to a Laue class that permits it is
-correctly treated as altermagnetic by default.
-
 This distinction is not cosmetic for supercell altermagnets. MnSe2 is deposited
 in a cubic `Pa-3` (205) parent, Laue `m-3`, which forbids altermagnetism; its
 magnetic primitive cell is a 3x1x1 supercell of that same cubic crystal, so

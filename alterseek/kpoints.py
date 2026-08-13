@@ -285,12 +285,8 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
 
 
 class KPointsModifier:
-    def __init__(self, magnetic_setting: bool = True, output_verbose: bool = False,
+    def __init__(self, output_verbose: bool = False,
                  mode_2d: bool = False, input_vacuum_axis: int = 2):
-        """magnetic_setting: build the path in the magnetic primitive cell
-        (the default). Set False to work in the nonmagnetic parent cell
-        instead, which the CLI exposes as --parent-setting.
-        """
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
@@ -298,7 +294,6 @@ class KPointsModifier:
         self.output_basis_matrix = None
         self.kpoints_basis_rotation = None
         self.plane_normal_cartesian = None
-        self.magnetic_setting = magnetic_setting
         self.output_verbose = output_verbose
         self.mode_2d = mode_2d
         self.input_vacuum_axis = input_vacuum_axis
@@ -1544,7 +1539,7 @@ class KPointsModifier:
                 # Adopt the magnetic primitive cell only when the submitted cell genuinely cannot carry the path because its space group changed or magnetic order enlarged the cell.
                 # Otherwise retain the submitted basis because FindSpinGroup may return the same cell with permuted or sign-flipped axes, which would rewrite KPOINTS into an equivalent but unexpected basis.
                 magnetic_cell_needed = _magnetic_cell_needed(sf_result)
-                if self.magnetic_setting and magnetic_cell_needed:
+                if magnetic_cell_needed:
                     try:
                         mag_setting = prepare_magnetic_setting_files(
                             struct_file,
@@ -1567,9 +1562,8 @@ class KPointsModifier:
                         print(f"[Error] Magnetic primitive cell construction failed: {e}")
                         print(
                             "[Error] The default magnetic-state path cannot be "
-                            "generated. Fix the input/dependency problem, or "
-                            "explicitly rerun with --parent-setting to request "
-                            "the nonmagnetic reference path. Aborting."
+                            "generated. Fix the reported input or dependency "
+                            "problem. Aborting."
                         )
                         return False
                 try:
@@ -1594,7 +1588,7 @@ class KPointsModifier:
                     try:
                         # This block establishes the reciprocal basis used to write KPOINTS, so any failure must abort.
                         # Continuing without b_matrix_output would fall back to the magnetic marker helper's basis and silently write KPOINTS in the wrong basis.
-                        if self.magnetic_setting and magnetic_setting_counts is not None:
+                        if magnetic_setting_counts is not None:
                             # Centroid analysis used the magnetic marker helper, but custom Step-1 path files are defined in the submitted structure's basis and need that basis for conversion.
                             submitted_lattice = magnetic_setting_counts.get(
                                 "submitted_lattice")
