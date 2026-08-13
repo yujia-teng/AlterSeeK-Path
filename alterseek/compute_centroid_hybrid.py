@@ -266,9 +266,28 @@ def _analyze_kspace(
         np.array(sp_result['primitive_positions']),
         sp_result['primitive_types'],
     )
-    dataset = spglib.get_symmetry_dataset(spg_cell, symprec=symprec)
-    b_matrix = np.array(sp_result['reciprocal_primitive_lattice'])
+    standardized_dataset = spglib.get_symmetry_dataset(
+        spg_cell, symprec=symprec
+    )
+    b_matrix_standardized = np.array(
+        sp_result['reciprocal_primitive_lattice']
+    )
     b_matrix_input = 2 * np.pi * np.linalg.inv(np.array(a_matrix)).T
+    if analysis_cell is None:
+        dataset = standardized_dataset
+        b_matrix = b_matrix_standardized
+        path_basis_rotation = np.array(sp_result['rotation_matrix'])
+        path_fractional_basis = "seekpath_standardized_primitive"
+    else:
+        # Submitted-cell analysis deliberately keeps SeeK-path's HPKOT
+        # fractional coordinates while interpreting them in the submitted
+        # reciprocal basis.  This constructs the submitted calculation cell's
+        # own BZ instead of preserving the standardized path in Cartesian
+        # reciprocal space.
+        dataset = input_dataset
+        b_matrix = b_matrix_input
+        path_basis_rotation = np.eye(3)
+        path_fractional_basis = "submitted"
     conventional_lattice = np.array(
         sp_result.get('conv_lattice', sp_result['primitive_lattice'])
     )
@@ -465,6 +484,7 @@ def _analyze_kspace(
         'sp_result': sp_result,
         'dataset': dataset,
         'b_matrix': b_matrix,
+        'b_matrix_standardized': b_matrix_standardized,
         'b_matrix_input': b_matrix_input,
         'b_matrix_conv': b_matrix_conv,
         'vacuum_axis': vacuum_axis,
@@ -489,6 +509,8 @@ def _analyze_kspace(
         'kpoints_frac_for_output': kpoints_frac_for_output,
         'symprec': symprec,
         'mcif_parent_recovery': mcif_parent_recovery,
+        'path_basis_rotation': path_basis_rotation,
+        'path_fractional_basis': path_fractional_basis,
     }
 
 
@@ -978,6 +1000,9 @@ def run(
         'sp_path': analysis_result['sp_result']['path'],
         'sp_point_coords': analysis_result['sp_result']['point_coords'],
         'b_matrix': analysis_result['b_matrix'],
+        'b_matrix_standardized': analysis_result[
+            'b_matrix_standardized'
+        ],
         'bz_loops': bz_loops,
         'bz_center': bz_center,
         'bz_span': bz_span,
@@ -1019,9 +1044,12 @@ def run(
         'mode_2d': mode_2d,
         'vacuum_axis': analysis_result['vacuum_axis'],
         'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
-        'seekpath_rotation_matrix': np.array(
-            analysis_result['sp_result']['rotation_matrix']
-        ),
+        'seekpath_rotation_matrix': analysis_result[
+            'path_basis_rotation'
+        ],
+        'path_fractional_basis': analysis_result[
+            'path_fractional_basis'
+        ],
         'standardized_structure_path': diagnostic_result[
             'standardized_structure_path'
         ],

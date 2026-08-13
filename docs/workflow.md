@@ -121,13 +121,17 @@ Its magnetic-primitive spatial Seitz operations `(R|t)` are transformed into
 the submitted basis and applied to deterministic generic seeds as `Rr+t` in an
 in-memory SeeK-path cell alongside the submitted real atoms. This retains the
 old He helper's symmetry construction while replacing its chemical marker with
-one positive artificial type distinct from the real atom types. Hidden
-smaller-cell translation copies are omitted, but nonsymmorphic screw and glide
-translations are retained. Before the helper can be used, spglib must recover
-exactly the intended full spatial operation set and SeeK-path must report
-`volume_original_wrt_prim` equal to one; otherwise the run aborts without
-falling back to another cell. The same validated helper is used for magnetic,
-q != 0, and no-moments inputs.
+one positive artificial type distinct from the real atom types. Every complete
+operation returned in the magnetic-primitive set is retained, including screw,
+glide, and centering translations. Before the helper can be used, spglib must
+recover exactly the intended full spatial operation set. A
+`volume_original_wrt_prim` greater than one is valid and expected for a
+centered conventional setting; for example, the GdAuGe 211 `Cmc2_1` helper has
+ratio two. SeeK-path determines the HPKOT labels and fractional geometry, but
+those fractions are interpreted directly in the submitted reciprocal basis.
+They are not converted to preserve Cartesian k-points from SeeK-path's internal
+standardized primitive cell. The same submitted-basis convention is used for
+magnetic, q != 0, and no-moments inputs.
 
 The marker cell is never written. Because a marker-only SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not

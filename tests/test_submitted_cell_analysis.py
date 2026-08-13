@@ -289,3 +289,35 @@ def test_no_moments_221_retains_screw_and_glide_translations():
     assert np.isclose(
         preparation["summary"]["volume_original_wrt_prim"], 1.0
     )
+
+
+def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "SUPERCELL_211.vasp"),
+        moments_str="1 -1 1 -1",
+        spin_axis_cart="0 0 1",
+    )
+
+    assert preparation["analysis_symmetry"]["number"] == 36
+    assert preparation["analysis_symmetry"]["symbol"] == "Cmc2_1"
+    assert preparation["summary"]["intended_space_operations"] == 8
+    assert preparation["summary"]["detected_space_operations"] == 8
+    assert np.isclose(
+        preparation["summary"]["volume_original_wrt_prim"], 2.0
+    )
+
+    result = compute_centroid(
+        str(REFERENCES / "SUPERCELL_211.vasp"),
+        output_dir=str(tmp_path),
+        show_plot=False,
+        verbose=False,
+        analysis_cell=preparation["analysis_cell"],
+        analysis_marker_type=preparation["analysis_marker_type"],
+    )
+    assert result["sc_type"] == "oC1"
+    assert result["path_fractional_basis"] == "submitted"
+    assert np.allclose(result["b_matrix"], result["b_matrix_input"])
+    assert not np.allclose(
+        result["b_matrix"], result["b_matrix_standardized"]
+    )
+    assert np.allclose(result["sp_point_coords"]["Y"], [-0.5, 0.5, 0.0])

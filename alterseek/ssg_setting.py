@@ -275,10 +275,10 @@ def build_submitted_analysis_cell(
                 symprec=symprec,
             )
         volume_ratio = float(sp_result["volume_original_wrt_prim"])
-        if not np.isclose(volume_ratio, 1.0, atol=1e-7, rtol=0.0):
+        if not np.isfinite(volume_ratio) or volume_ratio <= 0.0:
             failures.append(
-                f"seeds {seed_label}: volume_original_wrt_prim="
-                f"{volume_ratio:.12g}"
+                f"seeds {seed_label}: invalid volume_original_wrt_prim="
+                f"{volume_ratio!r}"
             )
             continue
         reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
@@ -306,8 +306,8 @@ def build_submitted_analysis_cell(
         }
 
     raise RuntimeError(
-        "Could not validate a submitted-cell marker helper without primitive "
-        f"reduction. {'; '.join(failures)}"
+        "Could not validate the submitted-cell marker helper. "
+        f"{'; '.join(failures)}"
     )
 
 
@@ -341,9 +341,7 @@ def prepare_submitted_cell_analysis(
             moments,
             input_spin_setting=spin_setting,
         )
-        space_operations = _one_full_operation_per_rotation(
-            _magnetic_operations_in_submitted_basis(fsg_result)
-        )
+        space_operations = _magnetic_operations_in_submitted_basis(fsg_result)
     else:
         symmetry = spglib.get_symmetry(
             (lattice, positions, real_types),
