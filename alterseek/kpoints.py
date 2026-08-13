@@ -1447,10 +1447,6 @@ class KPointsModifier:
                     struct_file,
                     moments_str=moments_str,
                     spin_axis_cart=spin_axis_cart,
-                    input_setting_operations=(
-                        sf_result.get("input_setting_operations")
-                        if sf_result is not None else None
-                    ),
                     output_dir=OUTPUT_DIR,
                     symprec=(1e-3 if symprec is None else symprec),
                     write_magnetic_diagnostic=sf_result is not None,

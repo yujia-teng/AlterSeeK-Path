@@ -117,12 +117,14 @@ determinant-one basis change likewise remains the calculation and output cell.
 AlterSeeK-Path never emits a replacement calculation POSCAR or MAGMOM file.
 
 For magnetic input, FindSpinGroup still determines G0 and the spin operations.
-The complete compatible magnetic point-operation set is encoded by deterministic
-generic marker orbits in an in-memory SeeK-path cell whose lattice is the
-submitted lattice. All markers have one positive artificial type identifier
-distinct from the real atom types. The helper intentionally omits hidden
-smaller-cell translations. Before it can be used, spglib must recover exactly
-the intended point-operation set and SeeK-path must report
+Its magnetic-primitive spatial Seitz operations `(R|t)` are transformed into
+the submitted basis and applied to deterministic generic seeds as `Rr+t` in an
+in-memory SeeK-path cell alongside the submitted real atoms. This retains the
+old He helper's symmetry construction while replacing its chemical marker with
+one positive artificial type distinct from the real atom types. Hidden
+smaller-cell translation copies are omitted, but nonsymmorphic screw and glide
+translations are retained. Before the helper can be used, spglib must recover
+exactly the intended full spatial operation set and SeeK-path must report
 `volume_original_wrt_prim` equal to one; otherwise the run aborts without
 falling back to another cell. The same validated helper is used for magnetic,
 q != 0, and no-moments inputs.

@@ -2,7 +2,7 @@
 
 The interactive Step 0-5 driver has no other coverage (the rest of the suite
 tests the engine methods).  This drives the full altermagnetic flow on case 12
-(MnF2, tetragonal P4/mmm, d-wave) with canned keyboard input and asserts the
+(MnF2, tetragonal P4_2/mnm, d-wave) with canned keyboard input and asserts the
 produced KPOINTS matches a stored reference byte-for-byte.  It guards the phase-5
 extraction of interactive_modify into helper methods (and any future edits).
 """
@@ -45,7 +45,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     assert "Magnetic primitive cell:      SG P4_2/mnm (136)" in stdout
     assert "[6 atoms, tP1]" in stdout
     assert "Submitted analysis cell:" in stdout
-    assert "SG P4/mmm (123)" in stdout
+    assert "SG P4_2/mnm (136)" in stdout
 
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = REFERENCE.read_text(encoding="utf-8")

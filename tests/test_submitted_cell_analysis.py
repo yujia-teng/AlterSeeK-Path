@@ -1,6 +1,7 @@
 """The submitted translation lattice defines the analyzed Brillouin zone."""
 
 import itertools
+from pathlib import Path
 
 import numpy as np
 import spglib
@@ -10,6 +11,9 @@ from ase.io import write
 from alterseek.compute_centroid_hybrid import run as compute_centroid
 from alterseek.ssg_setting import prepare_submitted_cell_analysis
 from alterseek.ssg_setting import build_submitted_analysis_cell
+
+
+REFERENCES = Path(__file__).parent / "references"
 
 
 def _signed_permutation_operations():
@@ -42,8 +46,9 @@ def test_primitive_input_is_not_reduced():
     lattice = np.diag([4.0, 5.0, 6.0])
     result = build_submitted_analysis_cell(
         lattice,
-        real_type_numbers=[26, 26],
-        point_operations=_orthorhombic_operations(),
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[26],
+        space_operations=_orthorhombic_operations(),
     )
 
     assert np.allclose(result["cell"][0], lattice)
@@ -56,8 +61,9 @@ def test_true_222_supercell_keeps_its_native_bz():
     lattice = np.diag([8.0, 8.0, 8.0])
     result = build_submitted_analysis_cell(
         lattice,
+        real_positions=list(itertools.product((0.0, 0.5), repeat=3)),
         real_type_numbers=[26] * 8,
-        point_operations=_signed_permutation_operations(),
+        space_operations=_signed_permutation_operations(),
     )
 
     assert np.allclose(result["cell"][0], lattice)
@@ -83,8 +89,9 @@ def test_determinant_one_basis_change_keeps_submitted_lattice():
 
     result = build_submitted_analysis_cell(
         submitted,
-        real_type_numbers=[64, 79, 32],
-        point_operations=submitted_operations,
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[64],
+        space_operations=submitted_operations,
     )
 
     assert round(np.linalg.det(transform)) == 1
@@ -100,22 +107,63 @@ def test_artificial_type_is_positive_and_distinct_from_real_types():
             [0.3, 5.0, 0.0],
             [0.2, 0.4, 6.0],
         ]),
+        real_positions=[
+            [0.0, 0.0, 0.0],
+            [0.13, 0.27, 0.39],
+            [0.31, 0.18, 0.44],
+            [0.42, 0.36, 0.21],
+        ],
         real_type_numbers=[1, 2, 3, 118],
-        point_operations=[np.eye(3, dtype=int)],
+        space_operations=[np.eye(3, dtype=int)],
     )
 
-    marker_types = set(result["cell"][2])
-    assert marker_types == {result["marker_type"]}
+    all_types = set(result["cell"][2])
+    assert all_types == {1, 2, 3, 118, result["marker_type"]}
     assert result["marker_type"] > 0
     assert result["marker_type"] not in {1, 2, 3, 118}
+
+
+def test_nonsymmorphic_translation_is_retained_in_marker_orbit():
+    fourfold = np.array([
+        [0, -1, 0],
+        [1, 0, 0],
+        [0, 0, 1],
+    ])
+    screw_operations = [
+        {
+            "real_rotation": np.linalg.matrix_power(fourfold, power),
+            "translation": [0.0, 0.0, power / 4],
+        }
+        for power in range(4)
+    ]
+
+    result = build_submitted_analysis_cell(
+        np.diag([4.0, 4.0, 7.0]),
+        real_positions=[
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.25],
+            [0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.75],
+        ],
+        real_type_numbers=[26] * 4,
+        space_operations=screw_operations,
+    )
+    dataset = spglib.get_symmetry_dataset(result["cell"])
+
+    assert dataset.number == 76
+    assert dataset.international == "P4_1"
+    assert result["intended_space_operation_count"] == 4
+    assert result["detected_space_operation_count"] == 4
+    assert result["volume_original_wrt_prim"] == 1.0
 
 
 def test_anisotropic_supercell_keeps_its_full_submitted_volume():
     lattice = np.diag([8.0, 15.0, 6.0])
     result = build_submitted_analysis_cell(
         lattice,
-        real_type_numbers=[26] * 6,
-        point_operations=_orthorhombic_operations(),
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[26],
+        space_operations=_orthorhombic_operations(),
     )
 
     assert result["seekpath_bravais"] == "oP1"
@@ -130,8 +178,13 @@ def test_q_nonzero_enlarged_cell_is_not_returned_to_a_parent_period():
     lattice = np.diag([12.0, 4.0, 4.0])
     result = build_submitted_analysis_cell(
         lattice,
+        real_positions=[
+            [0.0, 0.0, 0.0],
+            [1 / 3, 0.0, 0.0],
+            [2 / 3, 0.0, 0.0],
+        ],
         real_type_numbers=[25, 25, 25],
-        point_operations=_orthorhombic_operations(),
+        space_operations=_orthorhombic_operations(),
     )
 
     assert np.allclose(result["cell"][0], lattice)
@@ -169,16 +222,18 @@ def test_rhombohedral_primitive_and_hexagonal_conventional_inputs_keep_distinct_
 
     primitive = build_submitted_analysis_cell(
         a_rhombohedral,
+        real_positions=np.zeros((1, 3)),
         real_type_numbers=[26],
-        point_operations=structural_rotations(
+        space_operations=structural_rotations(
             a_rhombohedral, np.zeros((1, 3))
         ),
         symprec=1e-5,
     )
     conventional = build_submitted_analysis_cell(
         a_hex,
+        real_positions=hex_positions,
         real_type_numbers=[26, 26, 26],
-        point_operations=structural_rotations(a_hex, hex_positions),
+        space_operations=structural_rotations(a_hex, hex_positions),
         symprec=1e-5,
     )
 
@@ -214,6 +269,23 @@ def test_no_moments_supercell_uses_the_same_submitted_cell_helper(tmp_path):
 
     assert result["sc_type"] == "cP2"
     assert np.allclose(result["b_matrix_input"], np.eye(3) * np.pi / 4)
+    analysis_types = preparation["analysis_cell"][2]
+    assert analysis_types.count(26) == 8
+    assert preparation["analysis_marker_type"] in analysis_types
     assert not (tmp_path / "POSCAR_seekpath_standard.vasp").exists()
     assert (tmp_path / "POSCAR_seekpath_basis_mapping.txt").exists()
     assert not (tmp_path / "POSCAR_magnetic_primitive.mcif").exists()
+
+
+def test_no_moments_221_retains_screw_and_glide_translations():
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "SUPERCELL_221.vasp")
+    )
+
+    assert preparation["analysis_symmetry"]["number"] == 186
+    assert preparation["analysis_symmetry"]["symbol"] == "P6_3mc"
+    assert preparation["summary"]["intended_space_operations"] == 12
+    assert preparation["summary"]["detected_space_operations"] == 12
+    assert np.isclose(
+        preparation["summary"]["volume_original_wrt_prim"], 1.0
+    )

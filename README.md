@@ -158,10 +158,14 @@ basis change is also kept exactly as submitted. AlterSeeK-Path never replaces
 the calculation POSCAR or emits a replacement MAGMOM handoff.
 
 For magnetic input, FindSpinGroup still supplies G0 and the spin operations.
-AlterSeeK-Path encodes the compatible magnetic point operations as validated
-generic marker orbits in an in-memory SeeK-path cell using the submitted lattice. The
-helper deliberately contains no hidden smaller-cell translations and is
-accepted only when its detected point operations match and SeeK-path reports
+AlterSeeK-Path transforms FindSpinGroup's magnetic-primitive spatial Seitz
+operations `(R|t)` into the submitted basis and generates validated generic
+marker orbits with `Rr+t` alongside the submitted real atoms in an in-memory
+SeeK-path cell. This is the same symmetry construction formerly used by the He
+helper; only the chemical marker is replaced by one artificial type. Hidden
+smaller-cell translation copies are excluded without discarding nonsymmorphic
+screw or glide translations. The helper is accepted only when its detected
+full spatial operations match and SeeK-path reports
 `volume_original_wrt_prim = 1`. The FindSpinGroup magnetic primitive cell is
 retained separately as the `*_magnetic_primitive.mcif` diagnostic.
 

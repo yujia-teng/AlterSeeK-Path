@@ -911,20 +911,6 @@ MSG without SOC: {msg_without_soc_label}"""
         'spin_split_diagnostic': spin_split_diagnostic,
         'spin_flip_operations': flip_count,
         'spin_preserve_operations': preserve_count,
-        # Keep the submitted-setting operations in memory for the downstream
-        # marker-orbit helper.  They are already deduplicated for collinear
-        # spin-only copies and use the submitted structure's fractional basis.
-        'input_setting_operations': [
-            {
-                'index': index + 1,
-                'real_rotation': np.array(rotation, dtype=float),
-                'translation': np.array(translation, dtype=float),
-                'spin_rotation': np.array(spin_rotation, dtype=float),
-            }
-            for index, (rotation, translation, spin_rotation) in enumerate(
-                zip(rotations, translations, spin_rotations)
-            )
-        ],
         'saved_files': [
             os.path.join(output_dir, 'spin_operations.txt'),
             flip_filename,
