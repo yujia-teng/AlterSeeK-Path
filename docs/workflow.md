@@ -109,28 +109,30 @@ record files go into `alterseek_output/`.
 
 ## Submitted-Cell Analysis Contract
 
-The submitted translation lattice is authoritative. It defines the BZ, IBZ,
-centroid, high-symmetry path, Figures 1-4, and the reciprocal basis of final
-VASP/QE output. A true integer supercell receives its own native submitted-cell
-BZ rather than a primitive path folded into supercell coordinates. A
-determinant-one basis change likewise remains the calculation and output cell.
-AlterSeeK-Path never emits a replacement calculation POSCAR or MAGMOM file.
+The submitted structure remains the calculation and output cell. Its complete
+space group determines the translation lattice used for the BZ, IBZ, centroid,
+high-symmetry path, and Figures 1-4. A true primitive-lattice supercell receives
+its own BZ, while a centered conventional setting is reduced to its
+crystallographic primitive lattice by SeeK-path. A determinant-one basis change
+likewise remains the calculation and output cell. AlterSeeK-Path never emits a
+replacement calculation POSCAR or MAGMOM file.
 
-For magnetic input, FindSpinGroup still determines G0 and the spin operations.
-Its magnetic-primitive spatial Seitz operations `(R|t)` are transformed into
-the submitted basis and applied to deterministic generic seeds as `Rr+t` in an
-in-memory SeeK-path cell alongside the submitted real atoms. This retains the
-old He helper's symmetry construction while replacing its chemical marker with
-one positive artificial type distinct from the real atom types. Every complete
-operation returned in the magnetic-primitive set is retained, including screw,
-glide, and centering translations. Before the helper can be used, spglib must
-recover exactly the intended full spatial operation set. A
-`volume_original_wrt_prim` greater than one is valid and expected for a
-centered conventional setting; for example, the GdAuGe 211 `Cmc2_1` helper has
-ratio two. SeeK-path determines the HPKOT labels and fractional geometry, but
-the BZ, IBZ, centroid, and path remain in SeeK-path's standardized primitive
-basis. For VASP or QE output, those fractional triples are reused unchanged in
-the submitted reciprocal basis. No Cartesian-preserving basis conversion is
+For magnetic input, FindSpinGroup determines G0, its setting transforms, and
+the spin operations. The magnetic-primitive representatives identify the
+compatible standard Hall setting. AlterSeeK-Path then transforms the complete
+G0 database operation set `(R|t)` into the submitted basis and applies it to
+deterministic generic seeds as `Rr+t` in an in-memory SeeK-path cell alongside
+the submitted real atoms. This retains screw, glide, and genuine
+Bravais-centering operations without importing extra smaller-parent
+translations that are not in G0. The no-moments route performs the same
+complete-operation construction from spglib's detected Hall setting. Before
+the helper can be used, spglib must recover exactly the intended operation set
+and expected space group. A `volume_original_wrt_prim` greater than one is
+therefore required for a centered conventional setting: two for GdAuGe 211
+`Cmc2_1` and three for conventional-hexagonal R3c BiFeO3. SeeK-path determines
+the HPKOT labels and fractional geometry in its standardized primitive basis.
+For VASP or QE output, those fractional triples are reused unchanged in the
+submitted reciprocal basis. No Cartesian-preserving basis conversion is
 applied; different bases therefore generally give different Cartesian
 k-points. The same analysis/output separation is used for magnetic, q != 0,
 and no-moments inputs.

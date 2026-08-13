@@ -99,16 +99,58 @@ def _space_operation_keys(rotations, translations, tol=1e-7):
     }
 
 
-def _one_full_operation_per_rotation(space_operations):
-    """Remove supercell translation copies without discarding Seitz shifts."""
-    selected = []
-    rotation_keys = set()
-    for operation in _validated_space_operations(space_operations):
-        rotation_key = tuple(operation["real_rotation"].ravel())
-        if rotation_key not in rotation_keys:
-            rotation_keys.add(rotation_key)
-            selected.append(operation)
-    return selected
+def _database_operations_in_input_basis(
+    hall_number,
+    input_to_standard,
+    origin_shift,
+    *,
+    tol=1e-6,
+):
+    """Transform one complete standard Hall operation set to the input."""
+    input_to_standard = np.asarray(input_to_standard, dtype=float)
+    origin_shift = np.asarray(origin_shift, dtype=float)
+    if (
+        input_to_standard.shape != (3, 3)
+        or origin_shift.shape != (3,)
+        or not np.all(np.isfinite(input_to_standard))
+        or not np.all(np.isfinite(origin_shift))
+        or abs(np.linalg.det(input_to_standard)) < 1e-12
+    ):
+        raise RuntimeError("Invalid input-to-standard setting transformation.")
+
+    database = spglib.get_symmetry_from_database(int(hall_number))
+    if database is None:
+        raise RuntimeError(
+            f"spglib has no operation set for Hall number {hall_number}."
+        )
+    standard_to_input = np.linalg.inv(input_to_standard)
+    transformed = []
+    for rotation_standard, translation_standard in zip(
+        database["rotations"], database["translations"]
+    ):
+        rotation_standard = np.asarray(rotation_standard, dtype=float)
+        translation_standard = np.asarray(translation_standard, dtype=float)
+        rotation_input = (
+            standard_to_input
+            @ rotation_standard
+            @ input_to_standard
+        )
+        if not np.allclose(
+            rotation_input, np.rint(rotation_input), atol=tol, rtol=0.0
+        ):
+            raise RuntimeError(
+                f"Hall {hall_number} produces a nonintegral input rotation."
+            )
+        translation_input = standard_to_input @ (
+            rotation_standard @ origin_shift
+            + translation_standard
+            - origin_shift
+        )
+        transformed.append({
+            "real_rotation": rotation_input,
+            "translation": translation_input,
+        })
+    return _validated_space_operations(transformed, tol=tol)
 
 
 def _magnetic_primitive_nssg_operations(result):
@@ -127,7 +169,7 @@ def _magnetic_primitive_nssg_operations(result):
 
 
 def _magnetic_operations_in_submitted_basis(result):
-    """Transform FindSpinGroup's full primitive Seitz operations to input."""
+    """Transform FindSpinGroup's primitive Seitz representatives to input."""
     transform = result.get("T_input_to_acc_primitive")
     if not transform or len(transform) != 2:
         raise RuntimeError(
@@ -167,6 +209,124 @@ def _magnetic_operations_in_submitted_basis(result):
     return _validated_space_operations(operations)
 
 
+def _g0_spacegroup_number(result):
+    details = result.get("identify_index_details")
+    number = details.get("G0_id") if isinstance(details, dict) else None
+    try:
+        number = int(number)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "FindSpinGroup did not return a valid G0 space-group number."
+        ) from exc
+    if not 1 <= number <= 230:
+        raise RuntimeError(
+            f"FindSpinGroup returned invalid G0 space-group number {number}."
+        )
+    return number
+
+
+def _input_to_g0_standard_transform(result):
+    """Compose input -> magnetic primitive -> G0 standard coordinates."""
+    transforms = []
+    for key in ("T_input_to_acc_primitive", "T_acc_primitive_to_G0std"):
+        transform = result.get(key)
+        if not transform or len(transform) != 2:
+            raise RuntimeError(
+                f"FindSpinGroup did not return the required {key} transform."
+            )
+        matrix = np.asarray(transform[0], dtype=float)
+        shift = np.asarray(transform[1], dtype=float)
+        if (
+            matrix.shape != (3, 3)
+            or shift.shape != (3,)
+            or not np.all(np.isfinite(matrix))
+            or not np.all(np.isfinite(shift))
+            or abs(np.linalg.det(matrix)) < 1e-12
+        ):
+            raise RuntimeError(
+                f"FindSpinGroup returned an invalid {key} transform."
+            )
+        transforms.append((matrix, shift))
+
+    (input_to_primitive, input_shift), (
+        primitive_to_standard,
+        primitive_shift,
+    ) = transforms
+    return (
+        primitive_to_standard @ input_to_primitive,
+        primitive_to_standard @ input_shift + primitive_shift,
+    )
+
+
+def _complete_magnetic_operations_in_submitted_basis(result, tol=1e-6):
+    """Return the complete G0 Seitz set in the submitted setting.
+
+    FindSpinGroup's magnetic-primitive view contains one operation per
+    primitive-cell representative.  Transforming that list alone cannot
+    recover a centered conventional target.  Use those representatives only
+    to identify the matching standard Hall setting, then transform the full
+    crystallographic database operation set into the submitted basis.
+    """
+    g0_number = _g0_spacegroup_number(result)
+    representatives = _magnetic_operations_in_submitted_basis(result)
+    representative_keys = _space_operation_keys(
+        [operation["real_rotation"] for operation in representatives],
+        [operation["translation"] for operation in representatives],
+        tol=tol,
+    )
+    input_to_standard, origin_shift = _input_to_g0_standard_transform(result)
+    distinct_candidates = {}
+    failures = []
+    for hall_number in range(1, 531):
+        spacegroup_type = spglib.get_spacegroup_type(hall_number)
+        if (
+            spacegroup_type is None
+            or int(spacegroup_type.number) != g0_number
+        ):
+            continue
+        try:
+            operations = _database_operations_in_input_basis(
+                hall_number,
+                input_to_standard,
+                origin_shift,
+                tol=tol,
+            )
+        except RuntimeError as exc:
+            failures.append(str(exc))
+            continue
+        operation_keys = _space_operation_keys(
+            [operation["real_rotation"] for operation in operations],
+            [operation["translation"] for operation in operations],
+            tol=tol,
+        )
+        if not representative_keys.issubset(operation_keys):
+            failures.append(
+                f"Hall {hall_number}: does not contain the transformed "
+                "magnetic-primitive representatives"
+            )
+            continue
+        distinct_candidates.setdefault(
+            frozenset(operation_keys), (hall_number, operations)
+        )
+
+    if not distinct_candidates:
+        raise RuntimeError(
+            "Could not reconstruct the complete G0 operation set in the "
+            f"submitted basis for space group {g0_number}. "
+            f"{' ; '.join(failures)}"
+        )
+    if len(distinct_candidates) != 1:
+        hall_numbers = sorted(
+            hall_number
+            for hall_number, _operations in distinct_candidates.values()
+        )
+        raise RuntimeError(
+            "Multiple inequivalent standard Hall settings match the "
+            f"submitted G0 operation representatives: {hall_numbers}."
+        )
+    return next(iter(distinct_candidates.values()))[1]
+
+
 def _seekpath_lattice_tag(lattice, symprec):
     """Return the HPKOT tag of a primitive lattice from its metric alone."""
     metric_cell = (
@@ -198,6 +358,7 @@ def build_submitted_analysis_cell(
     space_operations,
     *,
     symprec=1e-3,
+    expected_spacegroup_number=None,
 ):
     """Build and validate an in-memory marker cell in the submitted lattice.
 
@@ -258,6 +419,16 @@ def build_submitted_analysis_cell(
                 f"seeds {seed_label}: intended "
                 f"{len(intended_space_keys)} full spatial operations but "
                 f"detected {len(detected_space_keys)}"
+            )
+            continue
+        if (
+            expected_spacegroup_number is not None
+            and int(dataset.number) != int(expected_spacegroup_number)
+        ):
+            failures.append(
+                f"seeds {seed_label}: expected space group "
+                f"{int(expected_spacegroup_number)} but detected "
+                f"{int(dataset.number)}"
             )
             continue
         with warnings.catch_warnings():
@@ -341,25 +512,25 @@ def prepare_submitted_cell_analysis(
             moments,
             input_spin_setting=spin_setting,
         )
-        space_operations = _magnetic_operations_in_submitted_basis(fsg_result)
+        expected_spacegroup_number = _g0_spacegroup_number(fsg_result)
+        space_operations = _complete_magnetic_operations_in_submitted_basis(
+            fsg_result
+        )
     else:
-        symmetry = spglib.get_symmetry(
+        dataset = spglib.get_symmetry_dataset(
             (lattice, positions, real_types),
             symprec=symprec,
         )
-        if symmetry is None:
+        if dataset is None:
             raise RuntimeError(
                 "Could not determine submitted-cell structural operations."
             )
-        space_operations = _one_full_operation_per_rotation([
-            {
-                "real_rotation": rotation,
-                "translation": translation,
-            }
-            for rotation, translation in zip(
-                symmetry["rotations"], symmetry["translations"]
-            )
-        ])
+        expected_spacegroup_number = int(dataset.number)
+        space_operations = _database_operations_in_input_basis(
+            dataset.hall_number,
+            dataset.transformation_matrix,
+            dataset.origin_shift,
+        )
 
     helper = build_submitted_analysis_cell(
         lattice,
@@ -367,6 +538,7 @@ def prepare_submitted_cell_analysis(
         real_types,
         space_operations,
         symprec=symprec,
+        expected_spacegroup_number=expected_spacegroup_number,
     )
     basename = os.path.splitext(os.path.basename(structure_file))[0]
     result = {

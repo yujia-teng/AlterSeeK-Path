@@ -149,31 +149,35 @@ for the vacuum-axis detection details and output figures.
 
 ---
 
-## Submitted-Cell Brillouin Zone
+## Cell Setting and Brillouin Zone
 
-The structure you submit defines the translation lattice used for the BZ,
-IBZ, centroid, SeeK-path labels, figures, and final VASP/QE coordinates. A
-true supercell therefore receives its own native BZ and path; a determinant-one
-basis change is also kept exactly as submitted. AlterSeeK-Path never replaces
-the calculation POSCAR or emits a replacement MAGMOM handoff.
+The submitted structure remains the calculation and output cell. Its complete
+space group determines the translation lattice used for the BZ, IBZ, centroid,
+SeeK-path labels, and figures. A true primitive-lattice supercell therefore
+receives its own BZ and path, while a centered conventional setting is reduced
+to its crystallographic primitive lattice by SeeK-path. A determinant-one
+basis change is kept exactly as submitted. AlterSeeK-Path never replaces the
+calculation POSCAR or emits a replacement MAGMOM handoff.
 
-For magnetic input, FindSpinGroup still supplies G0 and the spin operations.
-AlterSeeK-Path transforms FindSpinGroup's magnetic-primitive spatial Seitz
-operations `(R|t)` into the submitted basis and generates validated generic
-marker orbits with `Rr+t` alongside the submitted real atoms in an in-memory
-SeeK-path cell. This is the same symmetry construction formerly used by the He
-helper; only the chemical marker is replaced by one artificial type. Hidden
-translations absent from FindSpinGroup's magnetic-primitive operation set are
-not reintroduced, but every returned operation is retained—including
-nonsymmorphic screw/glide shifts and legitimate centering translations. The
-helper is accepted when spglib detects exactly that full spatial operation set;
-`volume_original_wrt_prim` may therefore exceed one for a centered conventional
-setting. SeeK-path constructs the BZ, IBZ, centroid, and HPKOT path in its
-standardized primitive basis. The workflow then reuses those fractional
-coordinates unchanged in the submitted structure's reciprocal basis; it does
-not transform them to preserve the standardized Cartesian k-points. The
-FindSpinGroup magnetic primitive cell is
-retained separately as the `*_magnetic_primitive.mcif` diagnostic.
+For magnetic input, FindSpinGroup still supplies G0, its setting transforms,
+and the spin operations. AlterSeeK-Path obtains the complete standard Hall
+operation set of G0, transforms every Seitz operation `(R|t)` into the
+submitted basis, and generates validated generic marker orbits with `Rr+t`
+alongside the submitted real atoms in an in-memory SeeK-path cell. The
+magnetic-primitive representatives select the compatible Hall setting; they
+are not treated as the complete conventional-cell operation set. This retains
+nonsymmorphic screw/glide shifts and genuine Bravais-centering copies, while
+excluding extra smaller-parent translations that are not members of G0. The
+no-moments route uses the same complete-operation construction from spglib's
+detected Hall setting. The helper is accepted only when spglib recovers exactly
+that operation set and the expected space group. `volume_original_wrt_prim`
+therefore equals two for C-centered GdAuGe 211 and three for
+conventional-hexagonal R3c BiFeO3. SeeK-path constructs the BZ, IBZ, centroid,
+and HPKOT path in its standardized primitive basis. The workflow then reuses
+those fractional coordinates unchanged in the submitted structure's reciprocal
+basis; it does not transform them to preserve the standardized Cartesian
+k-points. The FindSpinGroup magnetic primitive cell is retained separately as
+the `*_magnetic_primitive.mcif` diagnostic.
 
 ---
 

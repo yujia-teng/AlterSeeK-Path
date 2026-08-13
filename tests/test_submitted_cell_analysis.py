@@ -1,4 +1,4 @@
-"""The submitted translation lattice defines the analyzed Brillouin zone."""
+"""The submitted setting supplies complete operations and output fractions."""
 
 import itertools
 from pathlib import Path
@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 import spglib
 from ase import Atoms
-from ase.io import write
+from ase.build import make_supercell
+from ase.io import read, write
 from scipy.spatial import ConvexHull
 
 from alterseek.compute_centroid_hybrid import run as compute_centroid
@@ -196,7 +197,7 @@ def test_q_nonzero_enlarged_cell_is_not_returned_to_a_parent_period():
     )
 
 
-def test_rhombohedral_primitive_and_hexagonal_conventional_inputs_keep_distinct_bzs():
+def test_rhombohedral_primitive_and_hexagonal_settings_preserve_centering():
     a_hex = np.array([
         [5.0, 0.0, 0.0],
         [-2.5, 2.5 * np.sqrt(3.0), 0.0],
@@ -214,18 +215,26 @@ def test_rhombohedral_primitive_and_hexagonal_conventional_inputs_keep_distinct_
         [1 / 3, 2 / 3, 2 / 3],
     ])
 
-    def structural_rotations(lattice, positions):
+    def structural_operations(lattice, positions):
         symmetry = spglib.get_symmetry(
             (lattice, positions, [26] * len(positions)),
             symprec=1e-5,
         )
-        return symmetry["rotations"]
+        return [
+            {
+                "real_rotation": rotation,
+                "translation": translation,
+            }
+            for rotation, translation in zip(
+                symmetry["rotations"], symmetry["translations"]
+            )
+        ]
 
     primitive = build_submitted_analysis_cell(
         a_rhombohedral,
         real_positions=np.zeros((1, 3)),
         real_type_numbers=[26],
-        space_operations=structural_rotations(
+        space_operations=structural_operations(
             a_rhombohedral, np.zeros((1, 3))
         ),
         symprec=1e-5,
@@ -234,13 +243,13 @@ def test_rhombohedral_primitive_and_hexagonal_conventional_inputs_keep_distinct_
         a_hex,
         real_positions=hex_positions,
         real_type_numbers=[26, 26, 26],
-        space_operations=structural_rotations(a_hex, hex_positions),
+        space_operations=structural_operations(a_hex, hex_positions),
         symprec=1e-5,
     )
 
     assert np.isclose(np.linalg.det(a_hex) / np.linalg.det(a_rhombohedral), 3)
     assert np.isclose(primitive["volume_original_wrt_prim"], 1.0)
-    assert np.isclose(conventional["volume_original_wrt_prim"], 1.0)
+    assert np.isclose(conventional["volume_original_wrt_prim"], 3.0)
     assert np.isclose(
         primitive["submitted_bz_volume"],
         3 * conventional["submitted_bz_volume"],
@@ -326,3 +335,80 @@ def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
         + bz_hull.equations[:, -1]
     )
     assert np.all(signed_distances <= 1e-8)
+
+
+def test_bifeo3_rhombohedral_and_hexagonal_settings_keep_complete_r3c(
+    tmp_path,
+):
+    primitive_path = REFERENCES / "BiFeO3_R3c_primitive.vasp"
+    primitive = read(primitive_path)
+    primitive.set_initial_magnetic_moments([4.0, -4.0] + [0.0] * 8)
+    transform = np.array([
+        [1, -1, 0],
+        [0, 1, -1],
+        [1, 1, 1],
+    ])
+    conventional = make_supercell(
+        primitive, transform, order="cell-major", wrap=True
+    )
+    species_order = {"Fe": 0, "Bi": 1, "O": 2}
+    conventional = conventional[sorted(
+        range(len(conventional)),
+        key=lambda index: species_order[conventional[index].symbol],
+    )]
+    conventional_path = tmp_path / "BiFeO3_hexagonal.vasp"
+    write(
+        conventional_path,
+        conventional,
+        format="vasp",
+        direct=True,
+        vasp5=True,
+    )
+    conventional_moments = " ".join(
+        f"{moment:g}"
+        for moment in conventional.get_initial_magnetic_moments()
+    )
+
+    primitive_result = prepare_submitted_cell_analysis(
+        str(primitive_path),
+        moments_str="4 -4 8*0",
+        spin_axis_cart="0 0 1",
+    )
+    conventional_result = prepare_submitted_cell_analysis(
+        str(conventional_path),
+        moments_str=conventional_moments,
+        spin_axis_cart="0 0 1",
+    )
+    nonmagnetic_conventional = prepare_submitted_cell_analysis(
+        str(conventional_path)
+    )
+
+    assert primitive_result["analysis_symmetry"]["number"] == 161
+    assert primitive_result["analysis_symmetry"]["symbol"] == "R3c"
+    assert primitive_result["summary"]["intended_space_operations"] == 6
+    assert primitive_result["summary"]["detected_space_operations"] == 6
+    assert np.isclose(
+        primitive_result["summary"]["volume_original_wrt_prim"], 1.0
+    )
+
+    assert conventional_result["analysis_symmetry"]["number"] == 161
+    assert conventional_result["analysis_symmetry"]["symbol"] == "R3c"
+    assert conventional_result["analysis_symmetry"][
+        "seekpath_bravais"
+    ] == "hR1"
+    assert conventional_result["summary"]["intended_space_operations"] == 18
+    assert conventional_result["summary"]["detected_space_operations"] == 18
+    assert np.isclose(
+        conventional_result["summary"]["volume_original_wrt_prim"], 3.0
+    )
+    assert nonmagnetic_conventional["analysis_symmetry"]["number"] == 161
+    assert nonmagnetic_conventional["summary"][
+        "intended_space_operations"
+    ] == 18
+    assert nonmagnetic_conventional["summary"][
+        "detected_space_operations"
+    ] == 18
+    assert np.isclose(
+        nonmagnetic_conventional["summary"]["volume_original_wrt_prim"],
+        3.0,
+    )

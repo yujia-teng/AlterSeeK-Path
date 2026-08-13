@@ -43,5 +43,6 @@ python -m alterseek.compute_centroid_hybrid POSCAR
 
 The internal path conventions follow SeeK-path labels and reciprocal bases.
 A custom path is read in the reciprocal fractional basis of the submitted
-structure. When writing VASP or Quantum ESPRESSO output, the final numerical
-coordinates are converted back into that same submitted-cell reciprocal basis.
+structure. For the generated path, SeeK-path fractional triples are reused
+unchanged in that submitted reciprocal basis; no Cartesian-preserving basis
+conversion is applied.
