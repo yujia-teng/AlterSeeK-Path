@@ -9,6 +9,7 @@ from typing import List, Optional
 import numpy as np
 
 import matplotlib.pyplot as plt
+from scipy.spatial import ConvexHull
 
 from .find_sf_operations import SpinSymmetryError, run as find_sf_run
 from .compute_centroid_hybrid import run as compute_centroid
@@ -565,7 +566,9 @@ class KPointsModifier:
     def insert_general_kpoints(self,
                                general_kpoint: List[float],
                                transformation_matrix: np.ndarray,
-                               extra_general_points: Optional[List[List]] = None) -> List[List]:
+                               extra_general_points: Optional[List[List]] = None,
+                               *,
+                               report: bool = True) -> List[List]:
         """
         Insert general k-points into every segment of the high symmetry path.
         Per-segment butterfly: for each (A,B) segment:
@@ -656,8 +659,12 @@ class KPointsModifier:
             # Skip degenerate chains whose points all share the same coordinates, such as U_0--T for certain lattice parameters.
             if len(unique) < 2:
                 labels = [p[3] for p in chain]
-                print(f"  [Note] Part {ci+1} ({' - '.join(labels)}) skipped: "
-                      f"endpoints coincide in coordinates")
+                if report:
+                    print(
+                        f"  [Note] Part {ci+1} "
+                        f"({' - '.join(labels)}) skipped: "
+                        "endpoints coincide in coordinates"
+                    )
                 continue
 
             if ci > 0:
@@ -769,13 +776,16 @@ class KPointsModifier:
             display = " | ".join(display_segments[:3] + ["..."] + display_segments[-3:])
         else:
             display = " | ".join(display_segments)
-        print(f"Generated path: {display}")
+        if report:
+            print(f"Generated path: {display}")
 
         generated_segments = self._count_written_segments(path_sequence)
         generated_points = sum(1 for pt in path_sequence if pt is not None)
-        print(f"Full path: {len(seg_pairs)} original segments -> "
-              f"{generated_segments} generated segments, {generated_points} k-points")
-        if extra_general_points:
+        if report:
+            print(f"Full path: {len(seg_pairs)} original segments -> "
+                  f"{generated_segments} generated segments, "
+                  f"{generated_points} k-points")
+        if report and extra_general_points:
             labels = ", ".join(str(pt[3]) for pt in extra_general_points)
             print(f"Added doubled-IBZ general-k: {labels}")
 
@@ -1081,6 +1091,11 @@ class KPointsModifier:
                     "BZ figure geometry is unavailable."
                 )
                 return
+            self._validate_standardized_spin_map(
+                centroid_result,
+                R_for_kpts,
+                R_cart_for_plot,
+            )
             basename = (os.path.splitext(os.path.basename(struct_file))[0]
                         if struct_file else 'output')
             sc_type = centroid_result.get('sc_type', 'BZ')
@@ -1155,6 +1170,50 @@ class KPointsModifier:
                         display_figures.append(fig)
                 except Exception as _e:
                     print(f"[Warning] Could not generate {fig_name} figure: {_e}")
+
+    @staticmethod
+    def _validate_standardized_spin_map(
+        centroid_result,
+        operation,
+        cartesian_operation=None,
+    ):
+        """Require the mapped IBZ to remain inside the standardized BZ."""
+        hull_points = centroid_result.get("hull_pts")
+        bz_loops = centroid_result.get("bz_loops")
+        if hull_points is None or bz_loops is None:
+            return
+
+        b_matrix = np.asarray(centroid_result["b_matrix"], dtype=float)
+        if cartesian_operation is None:
+            b_transpose = b_matrix.T
+            cartesian_operation = (
+                b_transpose
+                @ np.linalg.inv(np.asarray(operation, dtype=float)).T
+                @ np.linalg.inv(b_transpose)
+            )
+        else:
+            cartesian_operation = np.asarray(
+                cartesian_operation, dtype=float
+            )
+        mapped_points = (
+            cartesian_operation @ np.asarray(hull_points, dtype=float).T
+        ).T
+        bz_points = np.vstack(bz_loops)
+        bz_hull = ConvexHull(bz_points)
+        signed_distances = (
+            mapped_points @ bz_hull.equations[:, :-1].T
+            + bz_hull.equations[:, -1]
+        )
+        scale = max(
+            1.0,
+            float(np.max(np.linalg.norm(bz_points, axis=1))),
+        )
+        if float(np.max(signed_distances)) > 1e-7 * scale:
+            raise RuntimeError(
+                "The selected spin operation maps the standardized IBZ "
+                "outside the standardized first BZ. This indicates a "
+                "reciprocal-basis mismatch."
+            )
 
     def _select_spin_flip_operation(
         self,
@@ -1250,22 +1309,15 @@ class KPointsModifier:
     ):
         """Prepare operations in the fractional basis used for path work.
 
-        Submitted-cell analysis keeps the input-basis matrices unchanged.
-        Other callers convert them into the SeeK-path primitive basis and
-        annotate the files with both representations.
+        The BZ and all figures use SeeK-path's standardized primitive basis,
+        so submitted-basis operations must always be converted for internal
+        geometry. Output may separately apply the original matrix after the
+        standardized fractions are reused in the submitted basis.
         """
         # FindSpinGroup operations use the submitted fractional basis, whereas IBZ coordinates use the SeeK-path primitive reciprocal basis.
         # Convert through Cartesian k-space so k', Figure 2, and the path use the same physical operation.
         #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
         #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
-        if (
-            centroid_result is not None
-            and centroid_result.get(
-                'reuse_seekpath_fractions_in_submitted_basis', False
-            )
-        ):
-            return R, None, flip_ops, preserve_ops
-
         R_cart_for_plot = None
         flip_ops_for_plot = flip_ops
         preserve_ops_for_plot = preserve_ops
@@ -1321,18 +1373,34 @@ class KPointsModifier:
                 except Exception as exc:
                     print(f"[Warning] Could not write {filename}: {exc}")
 
-            _annotate_ops_with_standardized_basis(
-                os.path.join(OUTPUT_DIR, "spin_flip_operations.txt"),
-                flip_ops,
-                flip_ops_for_plot,
-                "spin-flipping",
+            operation_basis_changed = (
+                not np.allclose(R, R_for_kpts)
+                or any(
+                    not np.allclose(input_op, standard_op)
+                    for input_op, standard_op in zip(
+                        flip_ops, flip_ops_for_plot
+                    )
+                )
+                or any(
+                    not np.allclose(input_op, standard_op)
+                    for input_op, standard_op in zip(
+                        preserve_ops, preserve_ops_for_plot
+                    )
+                )
             )
-            _annotate_ops_with_standardized_basis(
-                os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt"),
-                preserve_ops,
-                preserve_ops_for_plot,
-                "spin-preserving",
-            )
+            if operation_basis_changed:
+                _annotate_ops_with_standardized_basis(
+                    os.path.join(OUTPUT_DIR, "spin_flip_operations.txt"),
+                    flip_ops,
+                    flip_ops_for_plot,
+                    "spin-flipping",
+                )
+                _annotate_ops_with_standardized_basis(
+                    os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt"),
+                    preserve_ops,
+                    preserve_ops_for_plot,
+                    "spin-preserving",
+                )
         else:
             R_for_kpts = R
         return R_for_kpts, R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot
@@ -1974,24 +2042,45 @@ class KPointsModifier:
             centroid_result,
             operation_basis_label,
         )
-        # Calculate and show k'
-        k_prime = self.transform_kpoint(general_kpoint, R_for_kpts)
+        reuse_fractions = bool(
+            centroid_result is not None
+            and centroid_result.get(
+                'reuse_seekpath_fractions_in_submitted_basis', False
+            )
+        )
+        R_for_output = R if reuse_fractions else R_for_kpts
+
+        # Report the partner that will actually be written to KPOINTS.
+        k_prime = self.transform_kpoint(general_kpoint, R_for_output)
         print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")
 
-        new_kpoints = self.insert_general_kpoints(
+        figure_kpoints = self.insert_general_kpoints(
             general_kpoint, R_for_kpts, self.extra_general_points
         )
-        if not new_kpoints:
+        if not figure_kpoints:
             print("[Error] Failed to build a nonempty altermagnetic path.")
             return False
+        output_kpoints = figure_kpoints
+        if reuse_fractions and not np.allclose(R_for_output, R_for_kpts):
+            output_kpoints = self.insert_general_kpoints(
+                general_kpoint,
+                R_for_output,
+                self.extra_general_points,
+                report=False,
+            )
+            if not output_kpoints:
+                print("[Error] Failed to build the submitted-basis path.")
+                return False
 
         try:
             self._generate_spin_figures(
                 centroid_result, struct_file, general_kpoint, R_for_kpts,
                 R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot,
-                new_kpoints, display_figures, save_pdf=save_pdf)
+                figure_kpoints, display_figures, save_pdf=save_pdf)
         except Exception as exc:
             print(f"[Warning] Could not generate spin figures: {exc}")
 
         # Step 5: Save modified file
-        return _save_and_finish(new_kpoints, R, selected_transformation_label)
+        return _save_and_finish(
+            output_kpoints, R, selected_transformation_label
+        )

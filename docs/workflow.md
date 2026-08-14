@@ -134,8 +134,12 @@ the HPKOT labels and fractional geometry in its standardized primitive basis.
 For VASP or QE output, those fractional triples are reused unchanged in the
 submitted reciprocal basis. No Cartesian-preserving basis conversion is
 applied; different bases therefore generally give different Cartesian
-k-points. The same analysis/output separation is used for magnetic, q != 0,
-and no-moments inputs.
+k-points. Figures 2-4 use spin operations transformed into the standardized
+primitive basis, so mapped IBZ sectors remain inside the plotted first BZ.
+KPOINTS construction separately applies the original submitted-basis operation
+after the fractional reuse, so its `k` and `k'` remain actual spin partners in
+the calculation cell. The same analysis/output separation is used for
+magnetic, q != 0, and no-moments inputs.
 
 The marker cell is never written. Because a marker-only SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not

@@ -176,8 +176,12 @@ conventional-hexagonal R3c BiFeO3. SeeK-path constructs the BZ, IBZ, centroid,
 and HPKOT path in its standardized primitive basis. The workflow then reuses
 those fractional coordinates unchanged in the submitted structure's reciprocal
 basis; it does not transform them to preserve the standardized Cartesian
-k-points. The FindSpinGroup magnetic primitive cell is retained separately as
-the `*_magnetic_primitive.mcif` diagnostic.
+k-points. Spin figures use the spin operations transformed into that
+standardized basis, while the written KPOINTS spin partners use the original
+submitted-basis operations after the fractional reuse. This keeps the mapped
+IBZ inside the plotted first BZ and keeps `k` and `k'` symmetry-related in the
+calculation cell. The FindSpinGroup magnetic primitive cell is retained
+separately as the `*_magnetic_primitive.mcif` diagnostic.
 
 ---
 

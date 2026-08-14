@@ -5,7 +5,10 @@ from pathlib import Path
 import sys
 
 import numpy as np
+import pytest
+from ase.build import make_supercell
 from ase.io import read
+from ase.io import write
 
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 
@@ -14,6 +17,7 @@ REFERENCES = Path(__file__).parent / "references"
 SUPERCELL_211 = REFERENCES / "SUPERCELL_211.vasp"
 SUPERCELL_221 = REFERENCES / "SUPERCELL_221.vasp"
 CHANGED_CELL_AM = REFERENCES / "case15_changed_cell_altermagnet.vasp"
+BIFEO3_PRIMITIVE = REFERENCES / "BiFeO3_R3c_primitive.vasp"
 
 
 def _mapping_matrix(path, key):
@@ -179,3 +183,106 @@ def test_211_reuses_seekpath_fractions_without_preserving_cartesian_points(
     standardized_cart = expected_fraction @ b_primitive @ rotation
     submitted_cart = expected_fraction @ b_submitted
     assert not np.allclose(submitted_cart, standardized_cart, atol=1e-8)
+
+
+def test_bifeo3_uses_separate_standardized_figure_and_submitted_output_ops(
+    tmp_path, monkeypatch
+):
+    primitive = read(BIFEO3_PRIMITIVE)
+    primitive.set_initial_magnetic_moments([4.0, -4.0] + [0.0] * 8)
+    conventional = make_supercell(
+        primitive,
+        np.array([
+            [1, -1, 0],
+            [0, 1, -1],
+            [1, 1, 1],
+        ]),
+        order="cell-major",
+        wrap=True,
+    )
+    species_order = {"Fe": 0, "Bi": 1, "O": 2}
+    conventional = conventional[sorted(
+        range(len(conventional)),
+        key=lambda index: species_order[conventional[index].symbol],
+    )]
+    structure = tmp_path / "BiFeO3_hexagonal.vasp"
+    write(structure, conventional, format="vasp", direct=True, vasp5=True)
+    moments = " ".join(
+        f"{moment:g}"
+        for moment in conventional.get_initial_magnetic_moments()
+    )
+
+    captured = {}
+
+    def capture_spin_figures(
+        self,
+        centroid_result,
+        struct_file,
+        general_kpoint,
+        operation,
+        cartesian_operation,
+        flip_operations,
+        preserve_operations,
+        path_points,
+        display_figures,
+        save_pdf=False,
+    ):
+        captured["centroid_result"] = centroid_result
+        captured["general_kpoint"] = np.asarray(general_kpoint, dtype=float)
+        captured["operation"] = np.asarray(operation, dtype=float)
+        captured["path_points"] = path_points
+        self._validate_standardized_spin_map(
+            centroid_result, operation, cartesian_operation
+        )
+
+    monkeypatch.setattr(
+        KPointsModifier,
+        "_generate_spin_figures",
+        capture_spin_figures,
+    )
+    _run(
+        monkeypatch,
+        tmp_path,
+        structure,
+        moments,
+        operation="1",
+    )
+
+    kpoints = tmp_path / "KPOINTS_alter"
+    header = kpoints.read_text(encoding="utf-8").splitlines()[0]
+    submitted_operation = np.array([
+        float(value) for value in header.split("basis:", 1)[1].split()
+    ]).reshape(3, 3)
+    standardized_operation = captured["operation"]
+    assert not np.allclose(submitted_operation, standardized_operation)
+
+    with pytest.raises(RuntimeError, match="outside the standardized first BZ"):
+        KPointsModifier._validate_standardized_spin_map(
+            captured["centroid_result"], submitted_operation
+        )
+    KPointsModifier._validate_standardized_spin_map(
+        captured["centroid_result"], standardized_operation
+    )
+
+    rows = _kpoint_rows(kpoints)
+    output_k = np.array(next(row[:3] for row in rows if row[3] == "k"))
+    output_k_prime = np.array(
+        next(row[:3] for row in rows if row[3] == "k'")
+    )
+    assert np.allclose(
+        output_k_prime,
+        np.linalg.inv(submitted_operation).T @ output_k,
+        atol=1e-8,
+    )
+
+    figure_k_prime = np.array(next(
+        point[:3]
+        for point in captured["path_points"]
+        if point is not None and point[3] == "k'"
+    ))
+    assert np.allclose(
+        figure_k_prime,
+        np.linalg.inv(standardized_operation).T
+        @ captured["general_kpoint"],
+        atol=1e-8,
+    )
