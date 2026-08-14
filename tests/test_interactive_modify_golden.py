@@ -44,7 +44,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     assert "Nonmagnetic primitive cell:   SG P4_2/mnm (136)" in stdout
     assert "Magnetic primitive cell:      SG P4_2/mnm (136)" in stdout
     assert "[6 atoms, tP1]" in stdout
-    assert "Submitted analysis cell:" in stdout
+    assert "Conventional/supercell BZ:" in stdout
     assert "SG P4_2/mnm (136)" in stdout
 
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
@@ -62,8 +62,8 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         "fractional basis (a1, a2, a3)."
     )
     assert (
-        "General k-point (IBZ centroid, SeeK-path fractions reused in "
-        "submitted-cell basis)" in full_text
+        "General k-point (IBZ centroid, standardized primitive basis)"
+        in full_text
     )
     assert flip_headers == [
         "# Basis: submitted structure 'case12_POSCAR' real-space "

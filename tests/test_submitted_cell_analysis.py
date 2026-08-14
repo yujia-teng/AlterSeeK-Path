@@ -1,4 +1,4 @@
-"""The submitted setting supplies complete operations and output fractions."""
+"""The submitted translation lattice defines the conventional/supercell BZ."""
 
 import itertools
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import spglib
 from ase import Atoms
-from ase.build import make_supercell
+from ase.build import bulk, make_supercell
 from ase.io import read, write
 from scipy.spatial import ConvexHull
 
@@ -16,6 +16,16 @@ from alterseek.ssg_setting import build_submitted_analysis_cell
 
 
 REFERENCES = Path(__file__).parent / "references"
+
+
+def _assert_ibz_volume_matches_k_group(result):
+    bz_volume = abs(float(np.linalg.det(result["b_matrix"])))
+    assert np.isclose(
+        result["ibz_volume"] * result["n_symmetry_ops"],
+        bz_volume,
+        rtol=1e-7,
+        atol=1e-10,
+    )
 
 
 def _signed_permutation_operations():
@@ -76,6 +86,87 @@ def test_true_222_supercell_keeps_its_native_bz():
     assert np.isclose(result["submitted_bz_volume"], expected_bz_volume)
 
 
+def test_cubic_221_supercell_has_tetragonal_bz_proxy():
+    result = build_submitted_analysis_cell(
+        np.diag([8.0, 8.0, 4.0]),
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[26],
+        space_operations=_signed_permutation_operations(),
+    )
+
+    assert result["analysis_spacegroup_symbol"] == "P4/mmm"
+    assert result["seekpath_bravais"].startswith("tP")
+    assert result["intended_point_operation_count"] == 16
+    assert result["source_space_operation_count"] == 48
+    assert result["compatible_space_operation_count"] == 16
+    assert result["volume_original_wrt_prim"] == 1.0
+
+
+def test_cubic_321_supercell_has_orthorhombic_bz_proxy():
+    result = build_submitted_analysis_cell(
+        np.diag([12.0, 8.0, 4.0]),
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[26],
+        space_operations=_signed_permutation_operations(),
+    )
+
+    assert result["analysis_spacegroup_symbol"] == "Pmmm"
+    assert result["seekpath_bravais"] == "oP1"
+    assert result["intended_point_operation_count"] == 8
+    assert result["compatible_space_operation_count"] == 8
+
+
+def test_fd3m_uses_closed_pure_rotation_proxy_in_conventional_cube():
+    fd3m = spglib.get_symmetry_from_database(525)
+    physical_operations = [
+        {"real_rotation": rotation, "translation": translation}
+        for rotation, translation in zip(
+            fd3m["rotations"], fd3m["translations"]
+        )
+    ]
+    result = build_submitted_analysis_cell(
+        np.eye(3) * 8.0,
+        real_positions=[[0.0, 0.0, 0.0]],
+        real_type_numbers=[14],
+        space_operations=physical_operations,
+    )
+
+    assert len(physical_operations) == 192
+    assert result["source_space_operation_count"] == 192
+    assert result["intended_point_operation_count"] == 48
+    assert result["analysis_spacegroup_symbol"] == "Pm-3m"
+    assert result["seekpath_bravais"] == "cP2"
+    assert result["volume_original_wrt_prim"] == 1.0
+
+
+def test_conventional_diamond_keeps_fd3m_but_uses_cP_bz(tmp_path):
+    structure = bulk("Si", "diamond", a=5.43, cubic=True)
+    path = tmp_path / "Si_diamond_conventional.vasp"
+    write(path, structure, format="vasp", direct=True, vasp5=True)
+
+    preparation = prepare_submitted_cell_analysis(str(path), symprec=1e-5)
+    result = compute_centroid(
+        str(path),
+        output_dir=str(tmp_path),
+        show_plot=False,
+        verbose=False,
+        analysis_cell=preparation["analysis_cell"],
+        analysis_marker_type=preparation["analysis_marker_type"],
+        symprec=1e-5,
+    )
+
+    assert preparation["physical_symmetry"]["number"] == 227
+    assert preparation["physical_symmetry"]["symbol"] == "Fd-3m"
+    assert preparation["bz_helper_symmetry"]["number"] == 221
+    assert preparation["bz_helper_symmetry"]["symbol"] == "Pm-3m"
+    assert preparation["bz_helper_symmetry"]["seekpath_bravais"] == "cP2"
+    assert preparation["summary"]["physical_space_operations"] == 192
+    assert preparation["summary"]["intended_point_operations"] == 48
+    assert preparation["summary"]["volume_original_wrt_prim"] == 1.0
+    assert result["sc_type"] == "cP2"
+    _assert_ibz_volume_matches_k_group(result)
+
+
 def test_determinant_one_basis_change_keeps_submitted_lattice():
     orthorhombic = np.diag([4.0, 5.0, 6.0])
     transform = np.array([
@@ -120,12 +211,13 @@ def test_artificial_type_is_positive_and_distinct_from_real_types():
     )
 
     all_types = set(result["cell"][2])
-    assert all_types == {1, 2, 3, 118, result["marker_type"]}
+    assert all_types == set(result["marker_types"])
+    assert all_types.isdisjoint({1, 2, 3, 118})
     assert result["marker_type"] > 0
     assert result["marker_type"] not in {1, 2, 3, 118}
 
 
-def test_nonsymmorphic_translation_is_retained_in_marker_orbit():
+def test_nonsymmorphic_translation_is_removed_only_from_bz_proxy():
     fourfold = np.array([
         [0, -1, 0],
         [1, 0, 0],
@@ -152,10 +244,15 @@ def test_nonsymmorphic_translation_is_retained_in_marker_orbit():
     )
     dataset = spglib.get_symmetry_dataset(result["cell"])
 
-    assert dataset.number == 76
-    assert dataset.international == "P4_1"
+    assert dataset.number == 75
+    assert dataset.international == "P4"
     assert result["intended_space_operation_count"] == 4
     assert result["detected_space_operation_count"] == 4
+    assert result["source_space_operation_count"] == 4
+    assert all(
+        np.allclose(translation, 0.0)
+        for translation in dataset.translations
+    )
     assert result["volume_original_wrt_prim"] == 1.0
 
 
@@ -197,7 +294,7 @@ def test_q_nonzero_enlarged_cell_is_not_returned_to_a_parent_period():
     )
 
 
-def test_rhombohedral_primitive_and_hexagonal_settings_preserve_centering():
+def test_rhombohedral_primitive_and_hexagonal_settings_use_own_lattices():
     a_hex = np.array([
         [5.0, 0.0, 0.0],
         [-2.5, 2.5 * np.sqrt(3.0), 0.0],
@@ -249,7 +346,8 @@ def test_rhombohedral_primitive_and_hexagonal_settings_preserve_centering():
 
     assert np.isclose(np.linalg.det(a_hex) / np.linalg.det(a_rhombohedral), 3)
     assert np.isclose(primitive["volume_original_wrt_prim"], 1.0)
-    assert np.isclose(conventional["volume_original_wrt_prim"], 3.0)
+    assert np.isclose(conventional["volume_original_wrt_prim"], 1.0)
+    assert conventional["seekpath_bravais"].startswith("hP")
     assert np.isclose(
         primitive["submitted_bz_volume"],
         3 * conventional["submitted_bz_volume"],
@@ -280,40 +378,121 @@ def test_no_moments_supercell_uses_the_same_submitted_cell_helper(tmp_path):
     assert result["sc_type"] == "cP2"
     assert np.allclose(result["b_matrix_input"], np.eye(3) * np.pi / 4)
     analysis_types = preparation["analysis_cell"][2]
-    assert analysis_types.count(26) == 8
-    assert preparation["analysis_marker_type"] in analysis_types
+    assert 26 not in analysis_types
+    assert set(analysis_types) == set(
+        preparation["summary"]["marker_types"]
+    )
     assert not (tmp_path / "POSCAR_seekpath_standard.vasp").exists()
     assert (tmp_path / "POSCAR_seekpath_basis_mapping.txt").exists()
     assert not (tmp_path / "POSCAR_magnetic_primitive.mcif").exists()
 
 
-def test_no_moments_221_retains_screw_and_glide_translations():
+def test_no_moments_cubic_221_uses_tetragonal_submitted_cell_bz(tmp_path):
+    structure = Atoms(
+        symbols=["Fe"] * 4,
+        scaled_positions=[
+            [0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0],
+            [0.0, 0.5, 0.0],
+            [0.5, 0.5, 0.0],
+        ],
+        cell=np.diag([8.0, 8.0, 4.0]),
+        pbc=True,
+    )
+    path = tmp_path / "POSCAR_221"
+    write(path, structure, format="vasp", direct=True, vasp5=True)
+
+    preparation = prepare_submitted_cell_analysis(str(path))
+    result = compute_centroid(
+        str(path),
+        output_dir=str(tmp_path),
+        show_plot=False,
+        verbose=False,
+        analysis_cell=preparation["analysis_cell"],
+        analysis_marker_type=preparation["analysis_marker_type"],
+    )
+
+    assert preparation["physical_symmetry"]["number"] == 221
+    assert preparation["physical_symmetry"]["point_group"] == "m-3m"
+    assert preparation["bz_helper_symmetry"]["number"] == 123
+    assert preparation["bz_helper_symmetry"]["symbol"] == "P4/mmm"
+    assert preparation["bz_helper_symmetry"]["seekpath_bravais"].startswith(
+        "tP"
+    )
+    assert preparation["summary"]["physical_space_operations"] == 64
+    assert preparation["summary"]["intended_point_operations"] == 16
+    assert preparation["summary"]["volume_original_wrt_prim"] == 1.0
+    assert result["sc_type"].startswith("tP")
+    _assert_ibz_volume_matches_k_group(result)
+    assert np.allclose(
+        result["b_matrix_input"],
+        np.diag([np.pi / 4, np.pi / 4, np.pi / 2]),
+    )
+
+
+def test_magnetic_cubic_221_uses_compatible_tetragonal_point_group(tmp_path):
+    structure = Atoms(
+        symbols=["Fe"] * 4,
+        scaled_positions=[
+            [0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0],
+            [0.0, 0.5, 0.0],
+            [0.5, 0.5, 0.0],
+        ],
+        cell=np.diag([8.0, 8.0, 4.0]),
+        pbc=True,
+    )
+    path = tmp_path / "POSCAR_221_magnetic"
+    write(path, structure, format="vasp", direct=True, vasp5=True)
+
+    preparation = prepare_submitted_cell_analysis(
+        str(path),
+        moments_str="1 -1 -1 1",
+        spin_axis_cart="0 0 1",
+    )
+
+    assert preparation["physical_symmetry"]["number"] == 123
+    assert preparation["physical_symmetry"]["symbol"] == "P4/mmm"
+    assert preparation["bz_helper_symmetry"]["number"] == 123
+    assert preparation["bz_helper_symmetry"]["seekpath_bravais"].startswith(
+        "tP"
+    )
+    assert preparation["summary"]["intended_point_operations"] == 16
+    assert preparation["summary"]["volume_original_wrt_prim"] == 1.0
+
+
+def test_no_moments_221_uses_pure_rotation_hP_proxy():
     preparation = prepare_submitted_cell_analysis(
         str(REFERENCES / "SUPERCELL_221.vasp")
     )
 
-    assert preparation["analysis_symmetry"]["number"] == 186
-    assert preparation["analysis_symmetry"]["symbol"] == "P6_3mc"
+    assert preparation["analysis_symmetry"]["number"] == 183
+    assert preparation["analysis_symmetry"]["symbol"] == "P6mm"
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "hP2"
     assert preparation["summary"]["intended_space_operations"] == 12
     assert preparation["summary"]["detected_space_operations"] == 12
+    assert preparation["summary"]["physical_space_operations"] == 48
+    assert preparation["summary"]["physical_operation_set_verified"] is True
     assert np.isclose(
         preparation["summary"]["volume_original_wrt_prim"], 1.0
     )
 
 
-def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
+def test_magnetic_211_uses_primitive_orthorhombic_bz_proxy(tmp_path):
     preparation = prepare_submitted_cell_analysis(
         str(REFERENCES / "SUPERCELL_211.vasp"),
         moments_str="1 -1 1 -1",
         spin_axis_cart="0 0 1",
     )
 
-    assert preparation["analysis_symmetry"]["number"] == 36
-    assert preparation["analysis_symmetry"]["symbol"] == "Cmc2_1"
-    assert preparation["summary"]["intended_space_operations"] == 8
-    assert preparation["summary"]["detected_space_operations"] == 8
+    assert preparation["analysis_symmetry"]["number"] == 25
+    assert preparation["analysis_symmetry"]["symbol"] == "Pmm2"
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oP1"
+    assert preparation["summary"]["intended_space_operations"] == 4
+    assert preparation["summary"]["detected_space_operations"] == 4
+    assert preparation["summary"]["physical_space_operations"] == 8
     assert np.isclose(
-        preparation["summary"]["volume_original_wrt_prim"], 2.0
+        preparation["summary"]["volume_original_wrt_prim"], 1.0
     )
 
     result = compute_centroid(
@@ -324,9 +503,8 @@ def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
         analysis_cell=preparation["analysis_cell"],
         analysis_marker_type=preparation["analysis_marker_type"],
     )
-    assert result["sc_type"] == "oC1"
-    assert not np.allclose(result["b_matrix"], result["b_matrix_input"])
-    assert np.allclose(result["sp_point_coords"]["Y"], [-0.5, 0.5, 0.0])
+    assert result["sc_type"] == "oP1"
+    _assert_ibz_volume_matches_k_group(result)
 
     bz_hull = ConvexHull(np.vstack(result["bz_loops"]))
     ibz_cart = np.array(result["hull_pts"])
@@ -337,7 +515,7 @@ def test_magnetic_211_retains_c_centering_and_expected_reduction(tmp_path):
     assert np.all(signed_distances <= 1e-8)
 
 
-def test_bifeo3_rhombohedral_and_hexagonal_settings_keep_complete_r3c(
+def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(
     tmp_path,
 ):
     primitive_path = REFERENCES / "BiFeO3_R3c_primitive.vasp"
@@ -383,32 +561,37 @@ def test_bifeo3_rhombohedral_and_hexagonal_settings_keep_complete_r3c(
         str(conventional_path)
     )
 
-    assert primitive_result["analysis_symmetry"]["number"] == 161
-    assert primitive_result["analysis_symmetry"]["symbol"] == "R3c"
+    assert primitive_result["analysis_symmetry"]["number"] == 160
+    assert primitive_result["analysis_symmetry"]["symbol"] == "R3m"
+    assert primitive_result["analysis_symmetry"]["seekpath_bravais"] == "hR1"
     assert primitive_result["summary"]["intended_space_operations"] == 6
     assert primitive_result["summary"]["detected_space_operations"] == 6
     assert np.isclose(
         primitive_result["summary"]["volume_original_wrt_prim"], 1.0
     )
 
-    assert conventional_result["analysis_symmetry"]["number"] == 161
-    assert conventional_result["analysis_symmetry"]["symbol"] == "R3c"
+    assert conventional_result["analysis_symmetry"]["number"] == 156
+    assert conventional_result["analysis_symmetry"]["symbol"] == "P3m1"
     assert conventional_result["analysis_symmetry"][
         "seekpath_bravais"
-    ] == "hR1"
-    assert conventional_result["summary"]["intended_space_operations"] == 18
-    assert conventional_result["summary"]["detected_space_operations"] == 18
+    ] == "hP2"
+    assert conventional_result["summary"]["intended_space_operations"] == 6
+    assert conventional_result["summary"]["detected_space_operations"] == 6
+    assert conventional_result["summary"]["physical_space_operations"] == 18
     assert np.isclose(
-        conventional_result["summary"]["volume_original_wrt_prim"], 3.0
+        conventional_result["summary"]["volume_original_wrt_prim"], 1.0
     )
-    assert nonmagnetic_conventional["analysis_symmetry"]["number"] == 161
+    assert nonmagnetic_conventional["analysis_symmetry"]["number"] == 156
     assert nonmagnetic_conventional["summary"][
         "intended_space_operations"
-    ] == 18
+    ] == 6
     assert nonmagnetic_conventional["summary"][
         "detected_space_operations"
+    ] == 6
+    assert nonmagnetic_conventional["summary"][
+        "physical_space_operations"
     ] == 18
     assert np.isclose(
         nonmagnetic_conventional["summary"]["volume_original_wrt_prim"],
-        3.0,
+        1.0,
     )

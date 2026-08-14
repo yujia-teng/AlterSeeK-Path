@@ -99,6 +99,58 @@ def _space_operation_keys(rotations, translations, tol=1e-7):
     }
 
 
+def _compatible_point_operations(lattice, space_operations, tol=1e-7):
+    """Return the closed point group compatible with the submitted lattice.
+
+    The submitted fractional basis represents a lattice automorphism only when
+    its rotation matrix is integral and unimodular.  ``_validated_space_operations``
+    performs that compatibility filter.  Translation columns are deliberately
+    discarded here: they remain part of the physical symmetry data, but the
+    conventional/supercell BZ proxy is the symmorphic group ``(R, 0)`` built on
+    the submitted edge-vector translation lattice.
+    """
+    lattice = np.asarray(lattice, dtype=float)
+    metric = lattice @ lattice.T
+    candidates = _validated_space_operations(space_operations, tol=tol)
+    compatible = []
+    metric_atol = tol * max(1.0, float(np.max(np.abs(metric))))
+    for operation in candidates:
+        rotation = np.asarray(operation["real_rotation"], dtype=int)
+        if np.allclose(
+            rotation.T @ metric @ rotation,
+            metric,
+            atol=metric_atol,
+            rtol=0.0,
+        ):
+            compatible.append(operation)
+    if not compatible:
+        raise RuntimeError(
+            "No point operation preserves the submitted cell metric."
+        )
+    rotations = {}
+    for operation in compatible:
+        rotation = np.asarray(operation["real_rotation"], dtype=int)
+        rotations.setdefault(tuple(rotation.ravel()), rotation)
+
+    identity_key = tuple(np.eye(3, dtype=int).ravel())
+    if identity_key not in rotations:
+        raise RuntimeError(
+            "Submitted-cell compatible point operations do not contain the "
+            "identity."
+        )
+
+    keys = set(rotations)
+    for left in rotations.values():
+        for right in rotations.values():
+            product_key = tuple((left @ right).ravel())
+            if product_key not in keys:
+                raise RuntimeError(
+                    "Submitted-cell compatible rotations do not form a "
+                    "closed point group."
+                )
+    return list(rotations.values()), compatible, candidates
+
+
 def _database_operations_in_input_basis(
     hall_number,
     input_to_standard,
@@ -351,6 +403,65 @@ def _seekpath_lattice_tag(lattice, symprec):
     return result["bravais_lattice_extended"]
 
 
+def _physical_symmetry_from_operations(
+    lattice,
+    operations,
+    expected_number,
+    symprec,
+):
+    """Identify the unchanged physical Seitz set separately from the BZ proxy."""
+    spacegroup_type = spglib.get_spacegroup_type_from_symmetry(
+        [operation["real_rotation"] for operation in operations],
+        [operation["translation"] for operation in operations],
+        lattice=np.asarray(lattice, dtype=float),
+        symprec=symprec,
+    )
+    if spacegroup_type is None:
+        raise RuntimeError(
+            "Could not identify the complete physical space-group operation "
+            "set in the submitted basis."
+        )
+    if int(spacegroup_type.number) != int(expected_number):
+        raise RuntimeError(
+            "Physical operation-set identification changed the expected "
+            f"space-group number {int(expected_number)} to "
+            f"{int(spacegroup_type.number)}."
+        )
+    return {
+        "number": int(spacegroup_type.number),
+        "symbol": str(spacegroup_type.international_short),
+        "point_group": str(spacegroup_type.pointgroup_international),
+        "hall_number": int(spacegroup_type.hall_number),
+    }
+
+
+def _standard_physical_symmetry(spacegroup_number):
+    """Return a conventional database label when a supercell hides the setting."""
+    fallback = None
+    for hall_number in range(1, 531):
+        spacegroup_type = spglib.get_spacegroup_type(hall_number)
+        if (
+            spacegroup_type is None
+            or int(spacegroup_type.number) != int(spacegroup_number)
+        ):
+            continue
+        candidate = {
+            "number": int(spacegroup_type.number),
+            "symbol": str(spacegroup_type.international_short),
+            "point_group": str(spacegroup_type.pointgroup_international),
+            "hall_number": int(spacegroup_type.hall_number),
+        }
+        if fallback is None:
+            fallback = candidate
+        if str(spacegroup_type.choice) == "":
+            return candidate
+    if fallback is None:
+        raise RuntimeError(
+            f"No spglib setting exists for space group {spacegroup_number}."
+        )
+    return fallback
+
+
 def build_submitted_analysis_cell(
     lattice,
     real_positions,
@@ -358,14 +469,13 @@ def build_submitted_analysis_cell(
     space_operations,
     *,
     symprec=1e-3,
-    expected_spacegroup_number=None,
 ):
-    """Build and validate an in-memory marker cell in the submitted lattice.
+    """Build the conventional/supercell-BZ proxy in the submitted lattice.
 
-    This is the old marker-helper construction in memory: every generic seed
-    is transformed by the complete compatible Seitz operations ``R r + t``.
-    The artificial type replaces He chemistry; the symmetry construction is
-    otherwise unchanged.
+    The proxy is marker-only.  Real sites generally obey nonsymmorphic
+    ``(R, t)`` operations and therefore cannot be mixed into an artificial
+    symmorphic ``(R, 0)`` orbit.  The physical sites and complete Seitz set are
+    retained by the caller for magnetic and diagnostic uses.
     """
     lattice = np.asarray(lattice, dtype=float)
     if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
@@ -386,24 +496,42 @@ def build_submitted_analysis_cell(
     while marker_type in real_types or marker_type <= 0:
         marker_type += 1
 
-    operations = _validated_space_operations(space_operations)
-    rotations = [operation["real_rotation"] for operation in operations]
-    translations = [operation["translation"] for operation in operations]
+    rotations, compatible_space_operations, source_space_operations = (
+        _compatible_point_operations(
+            lattice, space_operations
+        )
+    )
+    translations = [np.zeros(3) for _rotation in rotations]
+    operations = [
+        {"real_rotation": rotation, "translation": np.zeros(3)}
+        for rotation in rotations
+    ]
     intended_keys = _point_operation_keys(rotations)
     intended_space_keys = _space_operation_keys(rotations, translations)
     failures = []
     for seeds in _MARKER_SEED_SETS:
-        markers = _dedupe_frac_positions([
-            seed @ rotation.T + translation
-            for seed in seeds
-            for rotation, translation in zip(rotations, translations)
-        ])
-        helper_positions = [*real_positions.tolist(), *markers]
+        helper_positions = []
+        helper_types = []
+        marker_types = []
+        used_types = set(real_types)
+        next_marker_type = marker_type
+        for seed in seeds:
+            orbit = _dedupe_frac_positions([
+                seed @ rotation.T for rotation in rotations
+            ])
+            while next_marker_type in used_types or next_marker_type <= 0:
+                next_marker_type += 1
+            orbit_type = next_marker_type
+            used_types.add(orbit_type)
+            next_marker_type += 1
+            marker_types.append(orbit_type)
+            helper_positions.extend(orbit)
+            helper_types.extend([orbit_type] * len(orbit))
         cell = (
             lattice.tolist(),
             [np.asarray(position, dtype=float).tolist()
              for position in helper_positions],
-            [*real_type_numbers, *([marker_type] * len(markers))],
+            helper_types,
         )
         dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
         seed_label = [seed.tolist() for seed in seeds]
@@ -419,16 +547,6 @@ def build_submitted_analysis_cell(
                 f"seeds {seed_label}: intended "
                 f"{len(intended_space_keys)} full spatial operations but "
                 f"detected {len(detected_space_keys)}"
-            )
-            continue
-        if (
-            expected_spacegroup_number is not None
-            and int(dataset.number) != int(expected_spacegroup_number)
-        ):
-            failures.append(
-                f"seeds {seed_label}: expected space group "
-                f"{int(expected_spacegroup_number)} but detected "
-                f"{int(dataset.number)}"
             )
             continue
         with warnings.catch_warnings():
@@ -452,17 +570,30 @@ def build_submitted_analysis_cell(
                 f"{volume_ratio!r}"
             )
             continue
+        if not np.isclose(volume_ratio, 1.0, atol=1e-6, rtol=0.0):
+            failures.append(
+                f"seeds {seed_label}: helper reduced the submitted "
+                f"translation lattice, volume_original_wrt_prim="
+                f"{volume_ratio!r}"
+            )
+            continue
         reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
         return {
             "cell": cell,
             "marker_type": marker_type,
+            "marker_types": marker_types,
             "marker_seeds": [seed.copy() for seed in seeds],
-            "marker_count": len(markers),
+            "marker_count": len(helper_positions),
             "marker_min_distance": _min_periodic_cart_distance(
                 helper_positions, lattice
             ),
             "point_operations": rotations,
             "space_operations": operations,
+            "source_space_operations": source_space_operations,
+            "source_space_operation_count": len(source_space_operations),
+            "compatible_space_operation_count": len(
+                compatible_space_operations
+            ),
             "intended_point_operation_count": len(intended_keys),
             "detected_point_operation_count": len(detected_keys),
             "intended_space_operation_count": len(intended_space_keys),
@@ -513,9 +644,31 @@ def prepare_submitted_cell_analysis(
             input_spin_setting=spin_setting,
         )
         expected_spacegroup_number = _g0_spacegroup_number(fsg_result)
-        space_operations = _complete_magnetic_operations_in_submitted_basis(
-            fsg_result
-        )
+        # Magnetic-primitive representatives contain every G0 point part.
+        # Transform them directly and keep only rotations compatible with the
+        # submitted lattice; arbitrary supercells need not admit all parent
+        # rotations as integral lattice automorphisms.
+        space_operations = _magnetic_operations_in_submitted_basis(fsg_result)
+        try:
+            physical_operations = (
+                _complete_magnetic_operations_in_submitted_basis(fsg_result)
+            )
+            physical_symmetry = _physical_symmetry_from_operations(
+                lattice,
+                physical_operations,
+                expected_spacegroup_number,
+                symprec,
+            )
+            physical_operation_set_verified = True
+        except RuntimeError:
+            # The complete conventional Hall set need not embed integrally in
+            # an anisotropic or non-diagonal supercell.  This does not affect
+            # the BZ helper, which needs only compatible point representatives.
+            physical_operations = space_operations
+            physical_symmetry = _standard_physical_symmetry(
+                expected_spacegroup_number
+            )
+            physical_operation_set_verified = False
     else:
         dataset = spglib.get_symmetry_dataset(
             (lattice, positions, real_types),
@@ -526,11 +679,31 @@ def prepare_submitted_cell_analysis(
                 "Could not determine submitted-cell structural operations."
             )
         expected_spacegroup_number = int(dataset.number)
-        space_operations = _database_operations_in_input_basis(
-            dataset.hall_number,
-            dataset.transformation_matrix,
-            dataset.origin_shift,
+        symmetry = spglib.get_symmetry(
+            (lattice, positions, real_types),
+            symprec=symprec,
         )
+        if symmetry is None:
+            raise RuntimeError(
+                "Could not determine submitted-cell structural operations."
+            )
+        space_operations = _validated_space_operations([
+            {
+                "real_rotation": rotation,
+                "translation": translation,
+            }
+            for rotation, translation in zip(
+                symmetry["rotations"], symmetry["translations"]
+            )
+        ])
+        physical_operations = space_operations
+        physical_operation_set_verified = True
+        physical_symmetry = {
+            "number": int(dataset.number),
+            "symbol": str(dataset.international),
+            "point_group": str(dataset.pointgroup),
+            "hall_number": int(dataset.hall_number),
+        }
 
     helper = build_submitted_analysis_cell(
         lattice,
@@ -538,8 +711,13 @@ def prepare_submitted_cell_analysis(
         real_types,
         space_operations,
         symprec=symprec,
-        expected_spacegroup_number=expected_spacegroup_number,
     )
+    bz_helper_symmetry = {
+        "number": helper["analysis_spacegroup_number"],
+        "symbol": helper["analysis_spacegroup_symbol"],
+        "point_group": helper["analysis_point_group"],
+        "seekpath_bravais": helper["seekpath_bravais"],
+    }
     basename = os.path.splitext(os.path.basename(structure_file))[0]
     result = {
         "analysis_cell": helper["cell"],
@@ -549,18 +727,17 @@ def prepare_submitted_cell_analysis(
         "operation_basis_label": (
             f"submitted structure '{os.path.basename(structure_file)}'"
         ),
-        "analysis_symmetry": {
-            "number": helper["analysis_spacegroup_number"],
-            "symbol": helper["analysis_spacegroup_symbol"],
-            "point_group": helper["analysis_point_group"],
-            "seekpath_bravais": helper["seekpath_bravais"],
-        },
+        "physical_symmetry": physical_symmetry,
+        "bz_helper_symmetry": bz_helper_symmetry,
+        # Compatibility alias for internal callers during this redesign.
+        "analysis_symmetry": bz_helper_symmetry,
         "summary": {
             "marker_seeds": [
                 seed.tolist() for seed in helper["marker_seeds"]
             ],
             "marker_count": helper["marker_count"],
             "marker_type": helper["marker_type"],
+            "marker_types": helper["marker_types"],
             "marker_min_distance": helper["marker_min_distance"],
             "intended_point_operations": helper[
                 "intended_point_operation_count"
@@ -574,11 +751,23 @@ def prepare_submitted_cell_analysis(
             "detected_space_operations": helper[
                 "detected_space_operation_count"
             ],
+            "source_space_operations": helper[
+                "source_space_operation_count"
+            ],
+            "compatible_space_operations": helper[
+                "compatible_space_operation_count"
+            ],
             "volume_original_wrt_prim": helper[
                 "volume_original_wrt_prim"
             ],
         },
     }
+    result["summary"]["physical_space_operations"] = len(
+        physical_operations
+    )
+    result["summary"]["physical_operation_set_verified"] = (
+        physical_operation_set_verified
+    )
 
     if write_magnetic_diagnostic:
         if fsg_result is None:

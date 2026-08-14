@@ -1022,11 +1022,6 @@ def run(
         'seekpath_rotation_matrix': np.array(
             analysis_result['sp_result']['rotation_matrix']
         ),
-        # The BZ/IBZ geometry above remains in SeeK-path's standardized
-        # primitive basis. The workflow deliberately reuses those fractional
-        # triples unchanged in the submitted calculation-cell basis instead
-        # of preserving their Cartesian reciprocal-space positions.
-        'reuse_seekpath_fractions_in_submitted_basis': analysis_cell is not None,
         'standardized_structure_path': diagnostic_result[
             'standardized_structure_path'
         ],
