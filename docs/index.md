@@ -43,6 +43,6 @@ python -m alterseek.compute_centroid_hybrid POSCAR
 
 The internal path conventions follow SeeK-path labels and reciprocal bases.
 A custom path is read in the reciprocal fractional basis of the submitted
-structure. For the generated path, SeeK-path fractional triples are reused
-unchanged in that submitted reciprocal basis; no Cartesian-preserving basis
-conversion is applied.
+structure. SeeK-path may use a standardized basis internally; generated points
+are converted through Cartesian reciprocal space into the submitted VASP or QE
+basis so both fractions describe the same k-vector.

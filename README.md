@@ -90,7 +90,7 @@ Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 
 Input structure: POSCAR, 6 atoms
 Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Magnetic primitive cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
-Submitted analysis cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
+Conventional/supercell BZ:    SG P6mm (183)    PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L
 SSG Symbol (Chen-Liu): P -1|6_{3} 1|m -1|c infinity_{001}m|1
@@ -103,7 +103,7 @@ Press [Enter] to use this path, or type a filename to load your own:
 Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
-IBZ centroid (SeeK-path fractions reused in submitted-cell basis): [0.277778, 0.111111, 0.250000]
+IBZ centroid (standardized basis): [0.277778, 0.111111, 0.250000]
 IBZ centroid (KPOINTS output basis): [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Spin-flip operation
@@ -151,37 +151,32 @@ for the vacuum-axis detection details and output figures.
 
 ## Cell Setting and Brillouin Zone
 
-The submitted structure remains the calculation and output cell. Its complete
-space group determines the translation lattice used for the BZ, IBZ, centroid,
-SeeK-path labels, and figures. A true primitive-lattice supercell therefore
-receives its own BZ and path, while a centered conventional setting is reduced
-to its crystallographic primitive lattice by SeeK-path. A determinant-one
-basis change is kept exactly as submitted. AlterSeeK-Path never replaces the
-calculation POSCAR or emits a replacement MAGMOM handoff.
+The submitted structure remains the calculation and output cell. Its three
+edge vectors, without hidden centering or smaller-cell translations, define
+the translation lattice used for the conventional/supercell BZ. Consequently,
+a standard conventional cP, cI, or cF cube has a cP calculation-cell BZ; a
+conventional R-centered hexagonal cell has an hP BZ; and a cubic-parent
+`2 x 2 x 1` supercell has a tetragonal BZ. Non-diagonal and distorted cells
+are classified from their actual submitted metric.
 
-For magnetic input, FindSpinGroup still supplies G0, its setting transforms,
-and the spin operations. AlterSeeK-Path obtains the complete standard Hall
-operation set of G0, transforms every Seitz operation `(R|t)` into the
-submitted basis, and generates validated generic marker orbits with `Rr+t`
-alongside the submitted real atoms in an in-memory SeeK-path cell. The
-magnetic-primitive representatives select the compatible Hall setting; they
-are not treated as the complete conventional-cell operation set. This retains
-nonsymmorphic screw/glide shifts and genuine Bravais-centering copies, while
-excluding extra smaller-parent translations that are not members of G0. The
-no-moments route uses the same complete-operation construction from spglib's
-detected Hall setting. The helper is accepted only when spglib recovers exactly
-that operation set and the expected space group. `volume_original_wrt_prim`
-therefore equals two for C-centered GdAuGe 211 and three for
-conventional-hexagonal R3c BiFeO3. SeeK-path constructs the BZ, IBZ, centroid,
-and HPKOT path in its standardized primitive basis. The workflow then reuses
-those fractional coordinates unchanged in the submitted structure's reciprocal
-basis; it does not transform them to preserve the standardized Cartesian
-k-points. Spin figures use the spin operations transformed into that
-standardized basis, while the written KPOINTS spin partners use the original
-submitted-basis operations after the fractional reuse. This keeps the mapped
-IBZ inside the plotted first BZ and keeps `k` and `k'` symmetry-related in the
-calculation cell. The FindSpinGroup magnetic primitive cell is retained
-separately as the `*_magnetic_primitive.mcif` diagnostic.
+FindSpinGroup still supplies physical G0 and the spin operations. For BZ
+analysis, AlterSeeK-Path transforms the G0 point parts into the submitted basis,
+retains the integral metric-preserving rotations, and constructs a marker-only
+in-memory proxy from pure `(R|0)` operations. Spglib must recover exactly that
+closed point group, no fractional translations, and
+`volume_original_wrt_prim = 1`. The complete physical `(R|t)` operations remain
+separate for spin transformations, nonsymmorphic information, and diagnostics;
+the proxy space-group symbol is never presented as the physical crystal's
+space group.
+
+SeeK-path supplies the HPKOT BZ, IBZ, centroid, labels, and path after internally
+standardizing this proxy. Generated k-points are converted through Cartesian
+reciprocal space into the submitted output basis, rather than reusing unrelated
+fractional triples. Submitted-basis and standardized-basis spin matrices are
+therefore two representations of the same `k' = R^(-T) k` mapping. The
+FindSpinGroup magnetic primitive cell remains a separate
+`*_magnetic_primitive.mcif` diagnostic; AlterSeeK-Path never replaces the
+calculation structure or emits a replacement MAGMOM handoff.
 
 ---
 

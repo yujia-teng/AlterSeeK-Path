@@ -109,39 +109,37 @@ record files go into `alterseek_output/`.
 
 ## Submitted-Cell Analysis Contract
 
-The submitted structure remains the calculation and output cell. Its complete
-space group determines the translation lattice used for the BZ, IBZ, centroid,
-high-symmetry path, and Figures 1-4. A true primitive-lattice supercell receives
-its own BZ, while a centered conventional setting is reduced to its
-crystallographic primitive lattice by SeeK-path. A determinant-one basis change
-likewise remains the calculation and output cell. AlterSeeK-Path never emits a
-replacement calculation POSCAR or MAGMOM file.
+The submitted structure remains the calculation and output cell. Its three
+edge-vector translations, without hidden centering or smaller-cell
+translations, define the reciprocal lattice and conventional/supercell BZ.
+The submitted metric and the point rotations compatible with that lattice
+therefore determine the IBZ, centroid, high-symmetry path, and Figures 1-4. A
+standard conventional cP, cI, or cF cube has a cP calculation-cell BZ; a
+conventional R-centered hexagonal cell has an hP BZ; and an axis-aligned cubic
+`2 x 2 x 1` supercell has a tetragonal BZ. AlterSeeK-Path never emits a
+replacement calculation structure or MAGMOM file.
 
-For magnetic input, FindSpinGroup determines G0, its setting transforms, and
-the spin operations. The magnetic-primitive representatives identify the
-compatible standard Hall setting. AlterSeeK-Path then transforms the complete
-G0 database operation set `(R|t)` into the submitted basis and applies it to
-deterministic generic seeds as `Rr+t` in an in-memory SeeK-path cell alongside
-the submitted real atoms. This retains screw, glide, and genuine
-Bravais-centering operations without importing extra smaller-parent
-translations that are not in G0. The no-moments route performs the same
-complete-operation construction from spglib's detected Hall setting. Before
-the helper can be used, spglib must recover exactly the intended operation set
-and expected space group. A `volume_original_wrt_prim` greater than one is
-therefore required for a centered conventional setting: two for GdAuGe 211
-`Cmc2_1` and three for conventional-hexagonal R3c BiFeO3. SeeK-path determines
-the HPKOT labels and fractional geometry in its standardized primitive basis.
-For VASP or QE output, those fractional triples are reused unchanged in the
-submitted reciprocal basis. No Cartesian-preserving basis conversion is
-applied; different bases therefore generally give different Cartesian
-k-points. Figures 2-4 use spin operations transformed into the standardized
-primitive basis, so mapped IBZ sectors remain inside the plotted first BZ.
-KPOINTS construction separately applies the original submitted-basis operation
-after the fractional reuse, so its `k` and `k'` remain actual spin partners in
-the calculation cell. The same analysis/output separation is used for
-magnetic, q != 0, and no-moments inputs.
+For magnetic input, FindSpinGroup determines physical G0, its setting
+transforms, and the spin operations. AlterSeeK-Path transforms the G0 point
+parts into the submitted fractional basis, retains only integral unimodular
+rotations that preserve the submitted metric, and verifies multiplication
+closure. It applies each retained rotation to deterministic generic seeds as
+`Rr` in a marker-only in-memory SeeK-path proxy. Each seed orbit has a distinct
+artificial type so accidental orbit exchange cannot add symmetry. Spglib must
+recover exactly the intended `(R|0)` set, no fractional translations, and
+`volume_original_wrt_prim = 1` before the proxy is accepted.
 
-The marker cell is never written. Because a marker-only SeeK-path standard
+The proxy is a reciprocal-space/path construction, not a relabeling of the
+physical crystal. Complete physical `(R|t)` operations remain separate for
+spin transformations, nonsymmorphic phases, and diagnostics. SeeK-path may
+standardize the proxy internally; all generated points are converted through
+Cartesian reciprocal space into the submitted VASP or QE basis. Figures use
+the corresponding standardized-basis spin matrices, while output coordinates
+and operation logs retain the submitted basis. Both representations describe
+the same `k' = R^(-T) k` mapping. The same contract applies to magnetic,
+q != 0, and no-moments inputs.
+
+The marker cell is never written. Because its SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not
 publish `*_seekpath_standard.vasp`. The direct FindSpinGroup
 `*_magnetic_primitive.mcif` remains as an internal-symmetry reference, and the
@@ -258,7 +256,7 @@ the magnetic point symmetry inside it. MnSe2 illustrates why those roles must
 remain separate: the submitted magnetic cell has a cubic moment-free parent,
 but G0 is orthorhombic `Pbca` (61, Laue `mmm`). Step 0 therefore reports the
 nonmagnetic primitive cell, the FindSpinGroup magnetic primitive cell, and the
-submitted analysis cell as distinct concepts.
+conventional/supercell BZ helper as distinct concepts.
 
 ## Next Step
 
