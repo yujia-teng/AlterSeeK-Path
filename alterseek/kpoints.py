@@ -126,7 +126,7 @@ def _cell_suffix(sites, lattice_tag):
     return f"[{', '.join(parts)}]" if parts else ""
 
 
-def _print_cell_rows(rows, note_after_first=None):
+def _print_cell_rows(rows, note=None, note_after_index=0):
     """Print the cell comparison with every field in its own column.
 
     Space-group symbols and numbers vary in width (``P6_3mc (186)`` against
@@ -141,8 +141,8 @@ def _print_cell_rows(rows, note_after_first=None):
         line = (f"{label:<{_CELL_LABEL_WIDTH}}"
                 f"SG {sg:<{sg_w}}  PG {pg:<{pg_w}}  Laue {laue:<{laue_w}}  {suffix}")
         print(line.rstrip())
-        if index == 0 and note_after_first:
-            print(f"{'':<{_CELL_LABEL_WIDTH}}{note_after_first}")
+        if index == note_after_index and note:
+            print(f"{'':<{_CELL_LABEL_WIDTH}}{note}")
 
 
 def _g0_symmetry(sf_result, sites=None):
@@ -1587,7 +1587,24 @@ class KPointsModifier:
                         'sc_type', centroid_result.get('seekpath_bravais', 'unknown'))
                 print(f"\nInput structure: {sf_result['structure_file']}, "
                       f"{sf_result['num_atoms']} atoms")
+                input_cell_symmetry = analysis_preparation.get(
+                    "input_cell_symmetry"
+                ) or analysis_preparation.get(
+                    "physical_symmetry"
+                ) or analysis_preparation["analysis_symmetry"]
                 cell_rows = [(
+                    'Input cell:',
+                    f"{input_cell_symmetry['symbol']} "
+                    f"({input_cell_symmetry['number']})",
+                    input_cell_symmetry['point_group'],
+                    laue_group_from_spacegroup_number(
+                        input_cell_symmetry['number']
+                    ) or "Unknown",
+                    _cell_suffix(
+                        sf_result.get('num_atoms'),
+                        input_cell_symmetry.get('seekpath_bravais'),
+                    ),
+                ), (
                     'Nonmagnetic primitive cell:',
                     sf_result['space_group'],
                     sf_result['point_group'],
@@ -1609,30 +1626,16 @@ class KPointsModifier:
                             ),
                         ),
                     ))
-                    input_cell_symmetry = analysis_preparation.get(
-                        "input_cell_symmetry"
-                    ) or analysis_preparation.get(
-                        "physical_symmetry"
-                    ) or analysis_preparation["analysis_symmetry"]
-                    cell_rows.append((
-                        'Input cell:',
-                        f"{input_cell_symmetry['symbol']} "
-                        f"({input_cell_symmetry['number']})",
-                        input_cell_symmetry['point_group'],
-                        laue_group_from_spacegroup_number(
-                            input_cell_symmetry['number']
-                        ) or "Unknown",
-                        _cell_suffix(
-                            sf_result.get('num_atoms'),
-                            input_cell_symmetry.get('seekpath_bravais'),
-                        ),
-                    ))
                 recovery_note = None
                 if parent_recovery:
                     recovery_note = (
                         "recovered from the input cell at symprec="
                         f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
-                _print_cell_rows(cell_rows, note_after_first=recovery_note)
+                _print_cell_rows(
+                    cell_rows,
+                    note=recovery_note,
+                    note_after_index=1,
+                )
                 if analysis_preparation.get(
                     "uses_conventional_supercell_bz", False
                 ):

@@ -46,6 +46,11 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     assert "[6 atoms, tP1]" in stdout
     assert "Input cell:" in stdout
     assert "SG P4_2/mnm (136)" in stdout
+    assert (
+        stdout.index("Input cell:")
+        < stdout.index("Nonmagnetic primitive cell:")
+        < stdout.index("Magnetic primitive cell:")
+    )
 
     produced = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8")
     expected = REFERENCE.read_text(encoding="utf-8")

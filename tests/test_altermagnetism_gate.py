@@ -188,16 +188,18 @@ def test_cell_rows_align_every_field_into_columns(capsys):
         assert lines[0].index(token) == lines[1].index(token), token
 
 
-def test_cell_rows_place_a_note_under_the_first_row(capsys):
+def test_cell_rows_place_a_note_under_the_selected_row(capsys):
     from alterseek.kpoints import _print_cell_rows
 
-    _print_cell_rows([('Nonmagnetic primitive cell:', 'Pa-3 (205)', 'm-3', 'm-3', '[12 atoms]')],
-                     note_after_first="recovered from the input cell")
+    _print_cell_rows([
+        ('Input cell:', 'Pbca (61)', 'mmm', 'mmm', '[24 atoms, oP1]'),
+        ('Nonmagnetic primitive cell:', 'Pa-3 (205)', 'm-3', 'm-3', '[12 atoms]'),
+    ], note="recovered from the input cell", note_after_index=1)
     lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 2
+    assert len(lines) == 3
     # Indented into the field column, not hanging off the label.
-    assert lines[1].startswith(" " * 30)
-    assert lines[1].strip() == "recovered from the input cell"
+    assert lines[2].startswith(" " * 30)
+    assert lines[2].strip() == "recovered from the input cell"
 
 
 def test_cell_rows_leave_no_trailing_whitespace(capsys):
