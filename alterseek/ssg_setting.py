@@ -776,6 +776,7 @@ def prepare_submitted_cell_analysis(
     )
     real_types = [atomic_numbers[str(element)] for element in elements]
     fsg_result = None
+    nonmagnetic_primitive_symmetry = None
     has_magnetic_moments = bool(np.any(
         np.linalg.norm(np.asarray(moments, dtype=float), axis=1) > 1e-10
     ))
@@ -875,6 +876,20 @@ def prepare_submitted_cell_analysis(
                 "Could not determine the physical primitive translation "
                 "cell of the submitted structure."
             )
+        primitive_dataset = spglib.get_symmetry_dataset(
+            primitive,
+            symprec=symprec,
+        )
+        if primitive_dataset is None:
+            raise RuntimeError(
+                "Could not determine nonmagnetic primitive-cell symmetry."
+            )
+        nonmagnetic_primitive_symmetry = {
+            "number": int(primitive_dataset.number),
+            "symbol": str(primitive_dataset.international),
+            "point_group": str(primitive_dataset.pointgroup),
+            "sites": len(primitive[1]),
+        }
         translation_index, translation_volume_ratio = (
             _submitted_to_primitive_volume_index(lattice, primitive[0])
         )
@@ -915,6 +930,10 @@ def prepare_submitted_cell_analysis(
         if physical_helper is not None
         else None
     )
+    if nonmagnetic_primitive_symmetry is not None:
+        nonmagnetic_primitive_symmetry["seekpath_bravais"] = (
+            input_cell_symmetry["seekpath_bravais"]
+        )
     bz_helper_symmetry = {
         "number": helper["analysis_spacegroup_number"],
         "symbol": helper["analysis_spacegroup_symbol"],
@@ -932,6 +951,7 @@ def prepare_submitted_cell_analysis(
         ),
         "physical_symmetry": physical_symmetry,
         "input_cell_symmetry": input_cell_symmetry,
+        "nonmagnetic_primitive_symmetry": nonmagnetic_primitive_symmetry,
         "bz_helper_symmetry": bz_helper_symmetry,
         "uses_conventional_supercell_bz": uses_conventional_supercell_bz,
         # Compatibility alias for internal callers during this redesign.

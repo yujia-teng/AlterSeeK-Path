@@ -173,10 +173,12 @@ always remain available for spin transformations, nonsymmorphic information,
 and diagnostics; a proxy symbol is never presented as the physical crystal's
 space group.
 
-The console retains an `Input cell` row for that physical full-Seitz analysis.
-When the volume index is above one, a separate line reports only
-the resulting lattice tag, for example `Conventional/supercell BZ: oP1`.
-Artificial proxy symbols such as `Pmm2` and `P6mm` remain internal.
+The console reports `Input cell`, `Nonmagnetic primitive cell`, and, for a
+magnetic run, `Magnetic primitive cell`. A no-moments run prints the same cell
+summary without the magnetic row. When a conventional/supercell BZ is active,
+a notice directly below `Input structure` states how many applicable primitive
+cells the input contains, and `Conventional/supercell BZ` reports the resulting
+lattice tag. Artificial proxy symbols such as `Pmm2` and `P6mm` remain internal.
 
 SeeK-path supplies the HPKOT BZ, IBZ, centroid, labels, and path after internally
 standardizing this proxy. Generated k-points are converted through Cartesian

@@ -1505,7 +1505,6 @@ class KPointsModifier:
                 standard_path_reason = "No magnetic moments entered."
                 standard_path_reason_reported = True
                 _step0_wrote_flip_file = False
-                print(f"{BOLD}[Note] {standard_path_reason}{RESET} Ordinary structural path will be written.")
             else:
                 try:
                     sf_result = find_sf_run(
@@ -1722,9 +1721,62 @@ class KPointsModifier:
                 "b_matrix_input"
             ]
             display_figures.extend(centroid_result.get('display_figures', []))
+            lattice_tag = centroid_result.get(
+                'sc_type', centroid_result.get('seekpath_bravais', 'unknown')
+            )
             print(
-                "Lattice type: "
-                f"{centroid_result.get('sc_type', centroid_result.get('seekpath_bravais', 'unknown'))}"
+                f"\nInput structure: {os.path.basename(struct_file)}, "
+                f"{analysis_preparation['submitted_sites']} atoms"
+            )
+            if analysis_preparation.get(
+                "uses_conventional_supercell_bz", False
+            ):
+                primitive_count = analysis_preparation["summary"][
+                    "submitted_to_primitive_volume_index"
+                ]
+                print(
+                    "Conventional/supercell detected: input contains "
+                    f"{primitive_count} nonmagnetic primitive cells"
+                )
+            input_cell_symmetry = analysis_preparation["input_cell_symmetry"]
+            primitive_symmetry = analysis_preparation[
+                "nonmagnetic_primitive_symmetry"
+            ]
+            _print_cell_rows([(
+                'Input cell:',
+                f"{input_cell_symmetry['symbol']} "
+                f"({input_cell_symmetry['number']})",
+                input_cell_symmetry['point_group'],
+                laue_group_from_spacegroup_number(
+                    input_cell_symmetry['number']
+                ) or "Unknown",
+                _cell_suffix(
+                    analysis_preparation['submitted_sites'],
+                    input_cell_symmetry.get('seekpath_bravais'),
+                ),
+            ), (
+                'Nonmagnetic primitive cell:',
+                f"{primitive_symmetry['symbol']} "
+                f"({primitive_symmetry['number']})",
+                primitive_symmetry['point_group'],
+                laue_group_from_spacegroup_number(
+                    primitive_symmetry['number']
+                ) or "Unknown",
+                _cell_suffix(
+                    primitive_symmetry['sites'],
+                    primitive_symmetry.get('seekpath_bravais'),
+                ),
+            )])
+            if analysis_preparation.get(
+                "uses_conventional_supercell_bz", False
+            ):
+                print(
+                    f"{'Conventional/supercell BZ:':<{_CELL_LABEL_WIDTH}}"
+                    f"{lattice_tag}"
+                )
+            print(
+                f"{BOLD}[Note] {standard_path_reason}{RESET} Ordinary "
+                "structural path will be written."
             )
         if self.mode_2d:
             try:

@@ -144,6 +144,24 @@ def test_true_221_supercell_gets_native_hexagonal_labels_and_basis(
     )
 
 
+def test_no_moments_reports_the_same_cell_summary_without_magnetic_row(
+    tmp_path, monkeypatch, capsys
+):
+    _run(monkeypatch, tmp_path, SUPERCELL_221, "")
+    stdout = capsys.readouterr().out
+
+    assert "Input structure: SUPERCELL_221.vasp, 24 atoms" in stdout
+    assert (
+        "Conventional/supercell detected: input contains 4 nonmagnetic "
+        "primitive cells"
+    ) in stdout
+    assert "Input cell:                   SG P6_3mc (186)" in stdout
+    assert "Nonmagnetic primitive cell:   SG P6_3mc (186)" in stdout
+    assert "Magnetic primitive cell:" not in stdout
+    assert "Conventional/supercell BZ:    hP2" in stdout
+    assert "Lattice type:" not in stdout
+
+
 def test_same_volume_case15_never_replaces_the_calculation_cell(
     tmp_path, monkeypatch, capsys
 ):

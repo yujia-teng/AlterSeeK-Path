@@ -44,7 +44,25 @@ def _synthetic_analysis_preparation():
         ),
         "analysis_marker_type": 119,
         "submitted_lattice": np.eye(3),
+        "submitted_sites": 2,
         "magnetic_primitive_sites": 2,
+        "uses_conventional_supercell_bz": False,
+        "summary": {
+            "submitted_to_primitive_volume_index": 1,
+        },
+        "input_cell_symmetry": {
+            "number": 47,
+            "symbol": "Pmmm",
+            "point_group": "mmm",
+            "seekpath_bravais": "oP1",
+        },
+        "nonmagnetic_primitive_symmetry": {
+            "number": 47,
+            "symbol": "Pmmm",
+            "point_group": "mmm",
+            "seekpath_bravais": "oP1",
+            "sites": 2,
+        },
         "analysis_symmetry": {
             "number": 47,
             "symbol": "Pmmm",

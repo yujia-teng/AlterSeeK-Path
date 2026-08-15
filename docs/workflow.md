@@ -143,10 +143,13 @@ and operation logs retain the submitted basis. Both representations describe
 the same `k' = R^(-T) k` mapping. The same contract applies to magnetic,
 q != 0, and no-moments inputs.
 
-The console's `Input cell` row continues to report the physical full-Seitz
-analysis. For a nonprimitive input, a separate line reports only the new BZ
-lattice tag, such as `Conventional/supercell BZ: oP1`; the artificial proxy
-space-group symbol is not printed.
+The console reports `Input cell`, `Nonmagnetic primitive cell`, and, when
+magnetic moments are present, `Magnetic primitive cell`. The no-moments route
+prints the same summary without the magnetic row. For a conventional/supercell
+input, a detection notice directly below `Input structure` states how many
+magnetic or nonmagnetic primitive cells it contains, and
+`Conventional/supercell BZ` reports the new BZ lattice tag. The artificial
+proxy space-group symbol is not printed.
 
 The marker cell is never written. Because its SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not
