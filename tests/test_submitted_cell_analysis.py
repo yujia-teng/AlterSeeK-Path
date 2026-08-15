@@ -478,21 +478,25 @@ def test_no_moments_221_uses_pure_rotation_hP_proxy():
     )
 
 
-def test_magnetic_211_uses_primitive_orthorhombic_bz_proxy(tmp_path):
+def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
     preparation = prepare_submitted_cell_analysis(
         str(REFERENCES / "SUPERCELL_211.vasp"),
         moments_str="1 -1 1 -1",
         spin_axis_cart="0 0 1",
     )
 
-    assert preparation["analysis_symmetry"]["number"] == 25
-    assert preparation["analysis_symmetry"]["symbol"] == "Pmm2"
-    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oP1"
-    assert preparation["summary"]["intended_space_operations"] == 4
-    assert preparation["summary"]["detected_space_operations"] == 4
+    assert preparation["uses_conventional_supercell_bz"] is False
+    assert preparation["summary"][
+        "submitted_to_primitive_volume_index"
+    ] == 1
+    assert preparation["analysis_symmetry"]["number"] == 36
+    assert preparation["analysis_symmetry"]["symbol"] == "Cmc2_1"
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oC1"
+    assert preparation["summary"]["intended_space_operations"] == 8
+    assert preparation["summary"]["detected_space_operations"] == 8
     assert preparation["summary"]["physical_space_operations"] == 8
     assert np.isclose(
-        preparation["summary"]["volume_original_wrt_prim"], 1.0
+        preparation["summary"]["volume_original_wrt_prim"], 2.0
     )
 
     result = compute_centroid(
@@ -503,7 +507,7 @@ def test_magnetic_211_uses_primitive_orthorhombic_bz_proxy(tmp_path):
         analysis_cell=preparation["analysis_cell"],
         analysis_marker_type=preparation["analysis_marker_type"],
     )
-    assert result["sc_type"] == "oP1"
+    assert result["sc_type"] == "oC1"
     _assert_ibz_volume_matches_k_group(result)
 
     bz_hull = ConvexHull(np.vstack(result["bz_loops"]))
@@ -561,8 +565,12 @@ def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(
         str(conventional_path)
     )
 
-    assert primitive_result["analysis_symmetry"]["number"] == 160
-    assert primitive_result["analysis_symmetry"]["symbol"] == "R3m"
+    assert primitive_result["uses_conventional_supercell_bz"] is False
+    assert primitive_result["summary"][
+        "submitted_to_primitive_volume_index"
+    ] == 1
+    assert primitive_result["analysis_symmetry"]["number"] == 161
+    assert primitive_result["analysis_symmetry"]["symbol"] == "R3c"
     assert primitive_result["analysis_symmetry"]["seekpath_bravais"] == "hR1"
     assert primitive_result["summary"]["intended_space_operations"] == 6
     assert primitive_result["summary"]["detected_space_operations"] == 6
@@ -578,6 +586,10 @@ def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(
     assert conventional_result["summary"]["intended_space_operations"] == 6
     assert conventional_result["summary"]["detected_space_operations"] == 6
     assert conventional_result["summary"]["physical_space_operations"] == 18
+    assert conventional_result["uses_conventional_supercell_bz"] is True
+    assert conventional_result["summary"][
+        "submitted_to_primitive_volume_index"
+    ] == 3
     assert np.isclose(
         conventional_result["summary"]["volume_original_wrt_prim"], 1.0
     )

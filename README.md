@@ -90,7 +90,7 @@ Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 
 Input structure: POSCAR, 6 atoms
 Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Magnetic primitive cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
-Conventional/supercell BZ:    SG P6mm (183)    PG 6mm  Laue 6/mmm  [6 atoms, hP2]
+Submitted-cell BZ:            SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L
 SSG Symbol (Chen-Liu): P -1|6_{3} 1|m -1|c infinity_{001}m|1
@@ -151,22 +151,26 @@ for the vacuum-axis detection details and output figures.
 
 ## Cell Setting and Brillouin Zone
 
-The submitted structure remains the calculation and output cell. Its three
-edge vectors, without hidden centering or smaller-cell translations, define
-the translation lattice used for the conventional/supercell BZ. Consequently,
-a standard conventional cP, cI, or cF cube has a cP calculation-cell BZ; a
-conventional R-centered hexagonal cell has an hP BZ; and a cubic-parent
+The submitted structure remains the calculation and output cell. First,
+AlterSeeK-Path compares its volume with the physical primitive translation
+cell. An integer index of one is only a change of basis, so the ordinary full
+physical `(R|t)` helper is retained. An index above one activates the
+conventional/supercell BZ mode: the submitted edge vectors, without hidden
+centering or smaller-cell translations, define its calculation-cell BZ.
+Consequently, a standard conventional cI or cF cube has a cP calculation-cell
+BZ; a conventional R-centered hexagonal cell has an hP BZ; and a cubic-parent
 `2 x 2 x 1` supercell has a tetragonal BZ. Non-diagonal and distorted cells
 are classified from their actual submitted metric.
 
-FindSpinGroup still supplies physical G0 and the spin operations. For BZ
-analysis, AlterSeeK-Path transforms the G0 point parts into the submitted basis,
-retains the integral metric-preserving rotations, and constructs a marker-only
-in-memory proxy from pure `(R|0)` operations. Spglib must recover exactly that
-closed point group, no fractional translations, and
-`volume_original_wrt_prim = 1`. The complete physical `(R|t)` operations remain
-separate for spin transformations, nonsymmorphic information, and diagnostics;
-the proxy space-group symbol is never presented as the physical crystal's
+FindSpinGroup still supplies physical G0 and the spin operations. When the
+volume index is above one, AlterSeeK-Path transforms the G0 point parts into
+the submitted basis, retains the integral metric-preserving rotations, and
+constructs a marker-only in-memory proxy from pure `(R|0)` operations. Spglib
+must recover exactly that closed point group, no fractional translations, and
+`volume_original_wrt_prim = 1`. For an index of one, the physical nonsymmorphic
+or symmorphic `(R|t)` helper is used directly. The complete physical operations
+always remain available for spin transformations, nonsymmorphic information,
+and diagnostics; a proxy symbol is never presented as the physical crystal's
 space group.
 
 SeeK-path supplies the HPKOT BZ, IBZ, centroid, labels, and path after internally

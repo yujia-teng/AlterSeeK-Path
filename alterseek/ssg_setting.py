@@ -613,6 +613,152 @@ def build_submitted_analysis_cell(
     )
 
 
+def _build_physical_analysis_cell(
+    lattice,
+    real_positions,
+    real_type_numbers,
+    space_operations,
+    *,
+    symprec=1e-3,
+    expected_spacegroup_number=None,
+):
+    """Build the ordinary full-Seitz helper for a primitive submitted cell."""
+    lattice = np.asarray(lattice, dtype=float)
+    real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
+    real_type_numbers = [int(value) for value in real_type_numbers]
+    real_types = set(real_type_numbers)
+    marker_type = max(real_types, default=0) + 1
+    while marker_type in real_types or marker_type <= 0:
+        marker_type += 1
+
+    operations = _validated_space_operations(space_operations)
+    rotations = [operation["real_rotation"] for operation in operations]
+    translations = [operation["translation"] for operation in operations]
+    intended_keys = _point_operation_keys(rotations)
+    intended_space_keys = _space_operation_keys(rotations, translations)
+    failures = []
+    for seeds in _MARKER_SEED_SETS:
+        markers = _dedupe_frac_positions([
+            seed @ rotation.T + translation
+            for seed in seeds
+            for rotation, translation in zip(rotations, translations)
+        ])
+        helper_positions = [*real_positions.tolist(), *markers]
+        cell = (
+            lattice.tolist(),
+            [
+                np.asarray(position, dtype=float).tolist()
+                for position in helper_positions
+            ],
+            [*real_type_numbers, *([marker_type] * len(markers))],
+        )
+        dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
+        seed_label = [seed.tolist() for seed in seeds]
+        if dataset is None:
+            failures.append(f"seeds {seed_label}: spglib found no symmetry")
+            continue
+        detected_keys = _point_operation_keys(dataset.rotations)
+        detected_space_keys = _space_operation_keys(
+            dataset.rotations, dataset.translations
+        )
+        if detected_space_keys != intended_space_keys:
+            failures.append(
+                f"seeds {seed_label}: intended "
+                f"{len(intended_space_keys)} full spatial operations but "
+                f"detected {len(detected_space_keys)}"
+            )
+            continue
+        if (
+            expected_spacegroup_number is not None
+            and int(dataset.number) != int(expected_spacegroup_number)
+        ):
+            failures.append(
+                f"seeds {seed_label}: expected space group "
+                f"{int(expected_spacegroup_number)} but detected "
+                f"{int(dataset.number)}"
+            )
+            continue
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=r".*dict interface is deprecated.*"
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"seekpath\.hpkot(\..*)?",
+            )
+            sp_result = seekpath.get_path(
+                cell,
+                with_time_reversal=True,
+                symprec=symprec,
+            )
+        volume_ratio = float(sp_result["volume_original_wrt_prim"])
+        if not np.isfinite(volume_ratio) or volume_ratio <= 0.0:
+            failures.append(
+                f"seeds {seed_label}: invalid volume_original_wrt_prim="
+                f"{volume_ratio!r}"
+            )
+            continue
+        reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
+        return {
+            "cell": cell,
+            "marker_type": marker_type,
+            "marker_types": [marker_type],
+            "marker_seeds": [seed.copy() for seed in seeds],
+            "marker_count": len(markers),
+            "marker_min_distance": _min_periodic_cart_distance(
+                helper_positions, lattice
+            ),
+            "point_operations": rotations,
+            "space_operations": operations,
+            "source_space_operations": operations,
+            "source_space_operation_count": len(operations),
+            "compatible_space_operation_count": len(operations),
+            "intended_point_operation_count": len(intended_keys),
+            "detected_point_operation_count": len(detected_keys),
+            "intended_space_operation_count": len(intended_space_keys),
+            "detected_space_operation_count": len(detected_space_keys),
+            "volume_original_wrt_prim": volume_ratio,
+            "submitted_bz_volume": abs(float(np.linalg.det(reciprocal))),
+            "seekpath_bravais": sp_result["bravais_lattice_extended"],
+            "point_coords": dict(sp_result["point_coords"]),
+            "analysis_spacegroup_number": int(dataset.number),
+            "analysis_spacegroup_symbol": str(dataset.international),
+            "analysis_point_group": str(dataset.pointgroup),
+        }
+
+    raise RuntimeError(
+        "Could not validate the primitive-cell full-Seitz marker helper. "
+        f"{'; '.join(failures)}"
+    )
+
+
+def _submitted_to_primitive_volume_index(
+    submitted_lattice,
+    primitive_lattice,
+    *,
+    tol=1e-5,
+):
+    """Return the integer submitted/primitive translation-volume index."""
+    submitted_volume = abs(float(np.linalg.det(submitted_lattice)))
+    primitive_volume = abs(float(np.linalg.det(primitive_lattice)))
+    if (
+        not np.isfinite(submitted_volume)
+        or not np.isfinite(primitive_volume)
+        or submitted_volume <= 0.0
+        or primitive_volume <= 0.0
+    ):
+        raise RuntimeError("Cannot compare invalid submitted/primitive cells.")
+    ratio = submitted_volume / primitive_volume
+    index = int(round(ratio))
+    if index < 1 or not np.isclose(ratio, index, atol=tol, rtol=tol):
+        raise RuntimeError(
+            "The submitted-cell volume is not an integer multiple of the "
+            f"physical primitive-cell volume (ratio={ratio:.12g})."
+        )
+    return index, ratio
+
+
 def prepare_submitted_cell_analysis(
     structure_file,
     *,
@@ -644,6 +790,15 @@ def prepare_submitted_cell_analysis(
             input_spin_setting=spin_setting,
         )
         expected_spacegroup_number = _g0_spacegroup_number(fsg_result)
+        magnetic_primitive_lattice = np.asarray(
+            fsg_result["acc_primitive_cell_detail"]["lattice"],
+            dtype=float,
+        )
+        translation_index, translation_volume_ratio = (
+            _submitted_to_primitive_volume_index(
+                lattice, magnetic_primitive_lattice
+            )
+        )
         # Magnetic-primitive representatives contain every G0 point part.
         # Transform them directly and keep only rotations compatible with the
         # submitted lattice; arbitrary supercells need not admit all parent
@@ -661,6 +816,12 @@ def prepare_submitted_cell_analysis(
             )
             physical_operation_set_verified = True
         except RuntimeError:
+            if translation_index == 1:
+                raise RuntimeError(
+                    "Could not construct the complete physical G0 Seitz set "
+                    "for a primitive submitted cell. The pure-rotation "
+                    "conventional/supercell proxy is not applicable."
+                )
             # The complete conventional Hall set need not embed integrally in
             # an anisotropic or non-diagonal supercell.  This does not affect
             # the BZ helper, which needs only compatible point representatives.
@@ -705,13 +866,37 @@ def prepare_submitted_cell_analysis(
             "hall_number": int(dataset.hall_number),
         }
 
-    helper = build_submitted_analysis_cell(
-        lattice,
-        positions,
-        real_types,
-        space_operations,
-        symprec=symprec,
-    )
+        primitive = spglib.find_primitive(
+            (lattice, positions, real_types),
+            symprec=symprec,
+        )
+        if primitive is None:
+            raise RuntimeError(
+                "Could not determine the physical primitive translation "
+                "cell of the submitted structure."
+            )
+        translation_index, translation_volume_ratio = (
+            _submitted_to_primitive_volume_index(lattice, primitive[0])
+        )
+
+    uses_conventional_supercell_bz = translation_index > 1
+    if uses_conventional_supercell_bz:
+        helper = build_submitted_analysis_cell(
+            lattice,
+            positions,
+            real_types,
+            space_operations,
+            symprec=symprec,
+        )
+    else:
+        helper = _build_physical_analysis_cell(
+            lattice,
+            positions,
+            real_types,
+            physical_operations,
+            symprec=symprec,
+            expected_spacegroup_number=expected_spacegroup_number,
+        )
     bz_helper_symmetry = {
         "number": helper["analysis_spacegroup_number"],
         "symbol": helper["analysis_spacegroup_symbol"],
@@ -729,6 +914,7 @@ def prepare_submitted_cell_analysis(
         ),
         "physical_symmetry": physical_symmetry,
         "bz_helper_symmetry": bz_helper_symmetry,
+        "uses_conventional_supercell_bz": uses_conventional_supercell_bz,
         # Compatibility alias for internal callers during this redesign.
         "analysis_symmetry": bz_helper_symmetry,
         "summary": {
@@ -760,6 +946,13 @@ def prepare_submitted_cell_analysis(
             "volume_original_wrt_prim": helper[
                 "volume_original_wrt_prim"
             ],
+            "submitted_to_primitive_volume_index": translation_index,
+            "submitted_to_primitive_volume_ratio": (
+                translation_volume_ratio
+            ),
+            "uses_conventional_supercell_bz": (
+                uses_conventional_supercell_bz
+            ),
         },
     }
     result["summary"]["physical_space_operations"] = len(

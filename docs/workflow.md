@@ -109,28 +109,32 @@ record files go into `alterseek_output/`.
 
 ## Submitted-Cell Analysis Contract
 
-The submitted structure remains the calculation and output cell. Its three
-edge-vector translations, without hidden centering or smaller-cell
-translations, define the reciprocal lattice and conventional/supercell BZ.
-The submitted metric and the point rotations compatible with that lattice
-therefore determine the IBZ, centroid, high-symmetry path, and Figures 1-4. A
-standard conventional cP, cI, or cF cube has a cP calculation-cell BZ; a
-conventional R-centered hexagonal cell has an hP BZ; and an axis-aligned cubic
-`2 x 2 x 1` supercell has a tetragonal BZ. AlterSeeK-Path never emits a
-replacement calculation structure or MAGMOM file.
+The submitted structure remains the calculation and output cell. Its volume is
+first compared with the physical primitive translation cell. An integer volume
+index of one is a change of basis and keeps the ordinary physical `(R|t)`
+analysis. An index above one activates the conventional/supercell mode: the
+submitted edge-vector translations, without hidden centering or smaller-cell
+translations, define the reciprocal lattice and calculation-cell BZ. The
+submitted metric and compatible point rotations then determine the IBZ,
+centroid, high-symmetry path, and Figures 1-4. A conventional cI or cF cube has
+a cP calculation-cell BZ; a conventional R-centered hexagonal cell has an hP
+BZ; and an axis-aligned cubic `2 x 2 x 1` supercell has a tetragonal BZ.
+AlterSeeK-Path never emits a replacement calculation structure or MAGMOM file.
 
-For magnetic input, FindSpinGroup determines physical G0, its setting
-transforms, and the spin operations. AlterSeeK-Path transforms the G0 point
-parts into the submitted fractional basis, retains only integral unimodular
-rotations that preserve the submitted metric, and verifies multiplication
-closure. It applies each retained rotation to deterministic generic seeds as
-`Rr` in a marker-only in-memory SeeK-path proxy. Each seed orbit has a distinct
-artificial type so accidental orbit exchange cannot add symmetry. Spglib must
-recover exactly the intended `(R|0)` set, no fractional translations, and
-`volume_original_wrt_prim = 1` before the proxy is accepted.
+For magnetic input, FindSpinGroup determines physical G0, its magnetic
+primitive cell, setting transforms, and spin operations. For volume index one,
+AlterSeeK-Path constructs the ordinary helper from the complete physical Seitz
+set, including screw and glide columns. For an index above one, it transforms
+the G0 point parts into the submitted fractional basis, retains only integral
+unimodular rotations that preserve the submitted metric, and verifies
+multiplication closure. It applies each retained rotation to deterministic
+generic seeds as `Rr` in a marker-only in-memory SeeK-path proxy. Each seed
+orbit has a distinct artificial type so accidental orbit exchange cannot add
+symmetry. Spglib must recover exactly the intended `(R|0)` set, no fractional
+translations, and `volume_original_wrt_prim = 1` before the proxy is accepted.
 
-The proxy is a reciprocal-space/path construction, not a relabeling of the
-physical crystal. Complete physical `(R|t)` operations remain separate for
+The nonprimitive-cell proxy is a reciprocal-space/path construction, not a
+relabeling of the physical crystal. Complete physical `(R|t)` operations remain separate for
 spin transformations, nonsymmorphic phases, and diagnostics. SeeK-path may
 standardize the proxy internally; all generated points are converted through
 Cartesian reciprocal space into the submitted VASP or QE basis. Figures use

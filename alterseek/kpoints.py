@@ -1612,8 +1612,15 @@ class KPointsModifier:
                     submitted_analysis_symmetry = analysis_preparation.get(
                         "bz_helper_symmetry"
                     ) or analysis_preparation["analysis_symmetry"]
+                    analysis_label = (
+                        'Conventional/supercell BZ:'
+                        if analysis_preparation.get(
+                            "uses_conventional_supercell_bz", False
+                        )
+                        else 'Submitted-cell BZ:'
+                    )
                     cell_rows.append((
-                        'Conventional/supercell BZ:',
+                        analysis_label,
                         f"{submitted_analysis_symmetry['symbol']} "
                         f"({submitted_analysis_symmetry['number']})",
                         submitted_analysis_symmetry['point_group'],
