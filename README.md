@@ -151,43 +151,18 @@ for the vacuum-axis detection details and output figures.
 
 ## Cell Setting and Brillouin Zone
 
-The submitted structure remains the calculation and output cell. First,
-AlterSeeK-Path compares its volume with the physical primitive translation
-cell. An integer index of one is only a change of basis, so the ordinary full
-physical `(R|t)` helper is retained. An index above one activates the
-conventional/supercell BZ mode: the submitted edge vectors, without hidden
-centering or smaller-cell translations, define its calculation-cell BZ.
-Consequently, a standard conventional cI or cF cube has a cP calculation-cell
-BZ; a conventional R-centered hexagonal cell has an hP BZ; and a cubic-parent
-`2 x 2 x 1` supercell has a tetragonal BZ. Non-diagonal and distorted cells
-are classified from their actual submitted metric.
+The submitted structure remains the calculation and output cell. A
+determinant-one basis change keeps the ordinary physical BZ, while a larger
+conventional or supercell uses its submitted lattice vectors to define the
+smaller, folded BZ. Magnetic inputs are compared with the magnetic primitive
+cell; no-moments inputs use the nonmagnetic structural primitive.
 
-FindSpinGroup still supplies physical G0 and the spin operations. When the
-volume index is above one, AlterSeeK-Path transforms the G0 point parts into
-the submitted basis, retains the integral metric-preserving rotations, and
-constructs a marker-only in-memory proxy from pure `(R|0)` operations. Spglib
-must recover exactly that closed point group, no fractional translations, and
-`volume_original_wrt_prim = 1`. For an index of one, the physical nonsymmorphic
-or symmorphic `(R|t)` helper is used directly. The complete physical operations
-always remain available for spin transformations, nonsymmorphic information,
-and diagnostics; a proxy symbol is never presented as the physical crystal's
-space group.
-
-The console reports `Input cell`, `Nonmagnetic primitive cell`, and, for a
-magnetic run, `Magnetic primitive cell`. A no-moments run prints the same cell
-summary without the magnetic row. When a conventional/supercell BZ is active,
-a notice directly below `Input structure` states how many applicable primitive
-cells the input contains, and `Conventional/supercell BZ` reports the resulting
-lattice tag. Artificial proxy symbols such as `Pmm2` and `P6mm` remain internal.
-
-SeeK-path supplies the HPKOT BZ, IBZ, centroid, labels, and path after internally
-standardizing this proxy. Generated k-points are converted through Cartesian
-reciprocal space into the submitted output basis, rather than reusing unrelated
-fractional triples. Submitted-basis and standardized-basis spin matrices are
-therefore two representations of the same `k' = R^(-T) k` mapping. The
-FindSpinGroup magnetic primitive cell remains a separate
-`*_magnetic_primitive.mcif` diagnostic; AlterSeeK-Path never replaces the
-calculation structure or emits a replacement MAGMOM handoff.
+SeeK-path still generates the HPKOT BZ, IBZ, centroid, labels, and path, and
+the resulting k-points are converted into the submitted reciprocal basis.
+Complete physical `(R|t)` operations remain available for symmetry and spin
+analysis. The console identifies the input and primitive cells and, when
+applicable, reports the `Conventional/supercell BZ`. The input structure is
+never replaced.
 
 ---
 
