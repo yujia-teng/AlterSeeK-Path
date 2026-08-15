@@ -1587,6 +1587,16 @@ class KPointsModifier:
                         'sc_type', centroid_result.get('seekpath_bravais', 'unknown'))
                 print(f"\nInput structure: {sf_result['structure_file']}, "
                       f"{sf_result['num_atoms']} atoms")
+                if analysis_preparation.get(
+                    "uses_conventional_supercell_bz", False
+                ):
+                    primitive_count = analysis_preparation["summary"][
+                        "submitted_to_primitive_volume_index"
+                    ]
+                    print(
+                        "Conventional/supercell detected: input contains "
+                        f"{primitive_count} magnetic primitive cells"
+                    )
                 input_cell_symmetry = analysis_preparation.get(
                     "input_cell_symmetry"
                 ) or analysis_preparation.get(

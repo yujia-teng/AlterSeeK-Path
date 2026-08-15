@@ -87,6 +87,7 @@ def test_determinant_one_211_basis_is_the_native_output_cell(
     assert "Magnetic primitive cell:      SG Cmc2_1 (36)" in stdout
     assert "[12 atoms, oP1]" in stdout
     assert "Input cell:                   SG Cmc2_1 (36)" in stdout
+    assert "Conventional/supercell detected:" not in stdout
     assert "Conventional/supercell BZ:" not in stdout
     assert "Pmm2" not in stdout
     assert "SG SG" not in stdout
@@ -202,7 +203,7 @@ def test_211_converts_seekpath_points_to_submitted_basis_preserving_cartesian(
 
 
 def test_bifeo3_hP_proxy_preserves_figure_and_output_spin_relations(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     primitive = read(BIFEO3_PRIMITIVE)
     primitive.set_initial_magnetic_moments([4.0, -4.0] + [0.0] * 8)
@@ -262,6 +263,16 @@ def test_bifeo3_hP_proxy_preserves_figure_and_output_spin_relations(
         structure,
         moments,
         operation="1",
+    )
+    stdout = capsys.readouterr().out
+    assert (
+        "Conventional/supercell detected: input contains 3 magnetic "
+        "primitive cells"
+    ) in stdout
+    assert (
+        stdout.index("Input structure:")
+        < stdout.index("Conventional/supercell detected:")
+        < stdout.index("Input cell:")
     )
 
     kpoints = tmp_path / "KPOINTS_alter"
