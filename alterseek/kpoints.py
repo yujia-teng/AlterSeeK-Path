@@ -1609,27 +1609,22 @@ class KPointsModifier:
                             ),
                         ),
                     ))
-                    submitted_analysis_symmetry = analysis_preparation.get(
-                        "bz_helper_symmetry"
+                    input_cell_symmetry = analysis_preparation.get(
+                        "input_cell_symmetry"
+                    ) or analysis_preparation.get(
+                        "physical_symmetry"
                     ) or analysis_preparation["analysis_symmetry"]
-                    analysis_label = (
-                        'Conventional/supercell BZ:'
-                        if analysis_preparation.get(
-                            "uses_conventional_supercell_bz", False
-                        )
-                        else 'Submitted-cell BZ:'
-                    )
                     cell_rows.append((
-                        analysis_label,
-                        f"{submitted_analysis_symmetry['symbol']} "
-                        f"({submitted_analysis_symmetry['number']})",
-                        submitted_analysis_symmetry['point_group'],
+                        'Input cell:',
+                        f"{input_cell_symmetry['symbol']} "
+                        f"({input_cell_symmetry['number']})",
+                        input_cell_symmetry['point_group'],
                         laue_group_from_spacegroup_number(
-                            submitted_analysis_symmetry['number']
+                            input_cell_symmetry['number']
                         ) or "Unknown",
                         _cell_suffix(
                             sf_result.get('num_atoms'),
-                            lattice_tag,
+                            input_cell_symmetry.get('seekpath_bravais'),
                         ),
                     ))
                 recovery_note = None
@@ -1638,6 +1633,13 @@ class KPointsModifier:
                         "recovered from the input cell at symprec="
                         f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
                 _print_cell_rows(cell_rows, note_after_first=recovery_note)
+                if analysis_preparation.get(
+                    "uses_conventional_supercell_bz", False
+                ):
+                    print(
+                        f"{'Conventional/supercell BZ:':<{_CELL_LABEL_WIDTH}}"
+                        f"{lattice_tag}"
+                    )
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")
                 print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")

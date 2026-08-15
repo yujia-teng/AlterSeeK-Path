@@ -134,14 +134,19 @@ symmetry. Spglib must recover exactly the intended `(R|0)` set, no fractional
 translations, and `volume_original_wrt_prim = 1` before the proxy is accepted.
 
 The nonprimitive-cell proxy is a reciprocal-space/path construction, not a
-relabeling of the physical crystal. Complete physical `(R|t)` operations remain separate for
-spin transformations, nonsymmorphic phases, and diagnostics. SeeK-path may
+relabeling of the physical crystal. Complete physical `(R|t)` operations
+remain separate for spin transformations, nonsymmorphic phases, and diagnostics. SeeK-path may
 standardize the proxy internally; all generated points are converted through
 Cartesian reciprocal space into the submitted VASP or QE basis. Figures use
 the corresponding standardized-basis spin matrices, while output coordinates
 and operation logs retain the submitted basis. Both representations describe
 the same `k' = R^(-T) k` mapping. The same contract applies to magnetic,
 q != 0, and no-moments inputs.
+
+The console's `Input cell` row continues to report the physical full-Seitz
+analysis. For a nonprimitive input, a separate line reports only the new BZ
+lattice tag, such as `Conventional/supercell BZ: oP1`; the artificial proxy
+space-group symbol is not printed.
 
 The marker cell is never written. Because its SeeK-path standard
 would not be an honest transformed real structure, the workflow also does not

@@ -495,6 +495,11 @@ def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
     assert preparation["summary"]["intended_space_operations"] == 8
     assert preparation["summary"]["detected_space_operations"] == 8
     assert preparation["summary"]["physical_space_operations"] == 8
+    assert preparation["input_cell_symmetry"]["number"] == 36
+    assert preparation["input_cell_symmetry"]["symbol"] == "Cmc2_1"
+    assert preparation["input_cell_symmetry"][
+        "seekpath_bravais"
+    ] == "oC1"
     assert np.isclose(
         preparation["summary"]["volume_original_wrt_prim"], 2.0
     )
@@ -586,6 +591,10 @@ def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(
     assert conventional_result["summary"]["intended_space_operations"] == 6
     assert conventional_result["summary"]["detected_space_operations"] == 6
     assert conventional_result["summary"]["physical_space_operations"] == 18
+    assert conventional_result["input_cell_symmetry"]["number"] == 161
+    assert conventional_result["input_cell_symmetry"][
+        "seekpath_bravais"
+    ] == "hR1"
     assert conventional_result["uses_conventional_supercell_bz"] is True
     assert conventional_result["summary"][
         "submitted_to_primitive_volume_index"

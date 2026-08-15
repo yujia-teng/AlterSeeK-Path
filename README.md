@@ -90,7 +90,7 @@ Magnetic moments along this axis (atom order, trailing atoms auto-fill to 0): 8 
 Input structure: POSCAR, 6 atoms
 Nonmagnetic primitive cell:   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Magnetic primitive cell:      SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
-Submitted-cell BZ:            SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
+Input cell:                   SG P6_3mc (186)  PG 6mm  Laue 6/mmm  [6 atoms, hP2]
 Phase: AFM(Altermagnet)
 Oriented SSG: 186.156.1.1.L
 SSG Symbol (Chen-Liu): P -1|6_{3} 1|m -1|c infinity_{001}m|1
@@ -172,6 +172,11 @@ or symmorphic `(R|t)` helper is used directly. The complete physical operations
 always remain available for spin transformations, nonsymmorphic information,
 and diagnostics; a proxy symbol is never presented as the physical crystal's
 space group.
+
+The console retains an `Input cell` row for that physical full-Seitz analysis.
+When the volume index is above one, a separate line reports only
+the resulting lattice tag, for example `Conventional/supercell BZ: oP1`.
+Artificial proxy symbols such as `Pmm2` and `P6mm` remain internal.
 
 SeeK-path supplies the HPKOT BZ, IBZ, centroid, labels, and path after internally
 standardizing this proxy. Generated k-points are converted through Cartesian

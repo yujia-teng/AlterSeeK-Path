@@ -879,6 +879,21 @@ def prepare_submitted_cell_analysis(
             _submitted_to_primitive_volume_index(lattice, primitive[0])
         )
 
+    physical_helper = None
+    if physical_operation_set_verified:
+        try:
+            physical_helper = _build_physical_analysis_cell(
+                lattice,
+                positions,
+                real_types,
+                physical_operations,
+                symprec=symprec,
+                expected_spacegroup_number=expected_spacegroup_number,
+            )
+        except RuntimeError:
+            if translation_index == 1:
+                raise
+
     uses_conventional_supercell_bz = translation_index > 1
     if uses_conventional_supercell_bz:
         helper = build_submitted_analysis_cell(
@@ -889,14 +904,17 @@ def prepare_submitted_cell_analysis(
             symprec=symprec,
         )
     else:
-        helper = _build_physical_analysis_cell(
-            lattice,
-            positions,
-            real_types,
-            physical_operations,
-            symprec=symprec,
-            expected_spacegroup_number=expected_spacegroup_number,
-        )
+        if physical_helper is None:
+            raise RuntimeError(
+                "Could not validate the physical input-cell analysis."
+            )
+        helper = physical_helper
+    input_cell_symmetry = dict(physical_symmetry)
+    input_cell_symmetry["seekpath_bravais"] = (
+        physical_helper["seekpath_bravais"]
+        if physical_helper is not None
+        else None
+    )
     bz_helper_symmetry = {
         "number": helper["analysis_spacegroup_number"],
         "symbol": helper["analysis_spacegroup_symbol"],
@@ -913,6 +931,7 @@ def prepare_submitted_cell_analysis(
             f"submitted structure '{os.path.basename(structure_file)}'"
         ),
         "physical_symmetry": physical_symmetry,
+        "input_cell_symmetry": input_cell_symmetry,
         "bz_helper_symmetry": bz_helper_symmetry,
         "uses_conventional_supercell_bz": uses_conventional_supercell_bz,
         # Compatibility alias for internal callers during this redesign.
