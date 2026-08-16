@@ -1056,10 +1056,8 @@ class KPointsModifier:
             print("Error writing ABINIT KPOINTS: path contains no writable segments.")
             return False
 
-        # Build the same sequential waypoint chain as the QE writer: one
-        # entry per point, each carrying the division count for the segment
-        # that follows it. ABINIT's ndivk is this same per-segment count,
-        # listed separately from kptbounds rather than inline per point.
+        # Build the same sequential waypoint chain as the QE writer: one entry per point, each carrying the division count for the segment that follows it.
+        # ABINIT's ndivk is this same per-segment count, listed separately from kptbounds rather than inline per point.
         waypoints = []
         for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(valid_pairs):
             if idx == 0:

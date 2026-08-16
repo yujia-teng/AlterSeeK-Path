@@ -263,9 +263,7 @@ def write_abinit_bandplot_config(filename="alterband_abinit.toml"):
         _atomic_write_text(
             filename,
             "# AlterSeeK ABINIT band-plot settings\n"
-            "# Reads: EIG, KPOINTS_alter_abinit, POSCAR, and abo (the ABINIT .abo\n"
-            "# output file, used to read and convert the Fermi level automatically --\n"
-            "# set fermi_ev directly instead only if abo isn't available)\n",
+            "# Reads: EIG, KPOINTS_alter_abinit, POSCAR, and abo (the ABINIT .abo output file, used to read and convert the Fermi level automatically -- set fermi_ev directly instead only if abo isn't available)\n",
         )
         print(f"Band plot config created: {filename}")
     except Exception as exc:
