@@ -73,11 +73,12 @@ cell's reciprocal basis at output time.
 
 ## Step 5: Save Outputs
 
-Choose VASP (the default) or Quantum ESPRESSO. The workflow writes the fixed
-filename `KPOINTS_alter` or `KPOINTS_alter_qe`; it does not ask for an output
-filename. It also creates or updates the corresponding plotting configuration,
-`alterband.toml` or `alterband_qe.toml`. See Output Files below for the full
-list, including figures.
+Choose VASP (the default), Quantum ESPRESSO, or ABINIT. The workflow writes
+the fixed filename `KPOINTS_alter`, `KPOINTS_alter_qe`, or
+`KPOINTS_alter_abinit`; it does not ask for an output filename. It also
+creates or updates the corresponding plotting configuration —
+`alterband.toml`, `alterband_qe.toml`, or `alterband_abinit.toml`. See
+Output Files below for the full list, including figures.
 
 ## Output Files
 
@@ -90,8 +91,10 @@ record files go into `alterseek_output/`.
 |------|-------------|
 | `KPOINTS_alter` | Altermagnetic k-path for VASP line-mode band calculations |
 | `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
+| `KPOINTS_alter_abinit` | Altermagnetic k-path as an ABINIT `kptopt`/`ndivk`/`kptbounds` block |
 | `alterband.toml` | VASP band-plot configuration; the band plotter reads it from here |
 | `alterband_qe.toml` | QE band-plot configuration; likewise |
+| `alterband_abinit.toml` | ABINIT band-plot configuration; likewise |
 
 **`alterseek_output/`**
 
@@ -137,7 +140,7 @@ The nonprimitive-cell proxy is a reciprocal-space/path construction, not a
 relabeling of the physical crystal. Complete physical `(R|t)` operations
 remain separate for spin transformations, nonsymmorphic phases, and diagnostics. SeeK-path may
 standardize the proxy internally; all generated points are converted through
-Cartesian reciprocal space into the submitted VASP or QE basis. Figures use
+Cartesian reciprocal space into the submitted VASP, QE, or ABINIT basis. Figures use
 the corresponding standardized-basis spin matrices, while output coordinates
 and operation logs retain the submitted basis. Both representations describe
 the same `k' = R^(-T) k` mapping. The same contract applies to magnetic,

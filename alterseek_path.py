@@ -10,7 +10,7 @@ def main():
     argv = sys.argv[1:]
     # Forward the bandplot subcommand untouched so plot_alterband parses its own options, including --help.
     if argv and argv[0].lower() in {"bandplot", "plot-band", "plot"}:
-        from plot_alterband import main as plot_alterband_main
+        from plotting.plot_alterband import main as plot_alterband_main
         plot_alterband_main(argv[1:])
         return 0
 

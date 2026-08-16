@@ -2,13 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plot_alterband import (
+from plotting.plot_alterband import (
     _draw_panel,
     _format_tick_label,
     _validate_plot_config,
     plot_alterband,
 )
-from plot_alterband_qe import (
+from plotting.plot_alterband_qe import (
     _format_tick_label as _format_qe_tick_label,
     _validate_plot_config as _validate_qe_plot_config,
 )
@@ -129,7 +129,7 @@ def test_plot_config_rejects_unknown_or_invalid_settings(validator, config, tmp_
         validator(config, tmp_path / "plot.toml")
 
 
-@pytest.mark.parametrize("module_name", ["plot_alterband", "plot_alterband_qe"])
+@pytest.mark.parametrize("module_name", ["plotting.plot_alterband", "plotting.plot_alterband_qe"])
 def test_main_reports_bad_config_without_traceback(module_name, tmp_path):
     import importlib
 
@@ -142,7 +142,7 @@ def test_main_reports_bad_config_without_traceback(module_name, tmp_path):
 
 
 def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
-    from plot_alterband import main as vasp_main
+    from plotting.plot_alterband import main as vasp_main
 
     klabels = tmp_path / "KLABELS"
     klabels.write_text("A 0.0\nB 1.0\n", encoding="utf-8")
@@ -174,7 +174,7 @@ def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
     [("k", "k'", "k|k'"), ("k'", "k", "k'|k")],
 )
 def test_qe_build_tick_data_merges_gap_pairs_in_either_order(first, second, merged):
-    from plot_alterband_qe import _build_tick_data
+    from plotting.plot_alterband_qe import _build_tick_data
 
     kpath = np.array([0.0, 1.0, 3.0, 4.0])
     waypoints = [("GAMMA", 30, 0), (first, 30, 1), (second, 1, 2), ("M", 30, 3)]
@@ -186,7 +186,7 @@ def test_qe_build_tick_data_merges_gap_pairs_in_either_order(first, second, merg
 
 
 def test_qe_build_tick_data_keeps_unpaired_helper_labels():
-    from plot_alterband_qe import _build_tick_data
+    from plotting.plot_alterband_qe import _build_tick_data
 
     kpath = np.array([0.0, 1.0, 2.0])
     waypoints = [("k", 1, 0), ("M", 30, 1), ("k'", 30, 2)]
@@ -198,7 +198,7 @@ def test_qe_build_tick_data_keeps_unpaired_helper_labels():
 
 
 def test_qe_build_tick_data_rejects_out_of_range_gap_partner():
-    from plot_alterband_qe import _build_tick_data
+    from plotting.plot_alterband_qe import _build_tick_data
 
     waypoints = [("k", 30, 0), ("k'", 1, 2)]
 
@@ -207,7 +207,7 @@ def test_qe_build_tick_data_rejects_out_of_range_gap_partner():
 
 
 def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
-    from plot_alterband_qe import _parse_kpoints_qe
+    from plotting.plot_alterband_qe import _parse_kpoints_qe
 
     bad = tmp_path / "KPOINTS_alter_qe"
     bad.write_text("K_POINTS crystal_b\n", encoding="utf-8")
@@ -216,7 +216,7 @@ def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
 
 
 def test_qe_parse_kpoints_rejects_missing_waypoint_rows(tmp_path):
-    from plot_alterband_qe import _parse_kpoints_qe
+    from plotting.plot_alterband_qe import _parse_kpoints_qe
 
     bad = tmp_path / "KPOINTS_alter_qe"
     bad.write_text(
@@ -233,7 +233,7 @@ def test_qe_parse_kpoints_rejects_missing_waypoint_rows(tmp_path):
 
 
 def test_qe_parse_kpoints_malformed_waypoint_raises_value_error(tmp_path):
-    from plot_alterband_qe import _parse_kpoints_qe
+    from plotting.plot_alterband_qe import _parse_kpoints_qe
 
     bad = tmp_path / "KPOINTS_alter_qe"
     bad.write_text(

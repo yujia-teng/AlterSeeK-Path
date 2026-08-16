@@ -59,8 +59,8 @@ before_style = {key: mpl.rcParams[key] for key in style}
 
 import alterseek.compute_centroid_hybrid
 import alterseek.find_sf_operations
-import plot_alterband
-import plot_alterband_qe
+import plotting.plot_alterband
+import plotting.plot_alterband_qe
 
 after_style = {key: mpl.rcParams[key] for key in style}
 print(json.dumps({
@@ -207,8 +207,8 @@ def test_seekpath_lattice_tag_still_reports_unrelated_warnings():
 
 
 def test_band_plotters_restore_caller_style_on_repeated_runs(tmp_path):
-    from plot_alterband import plot_alterband
-    from plot_alterband_qe import plot_alterband_qe
+    from plotting.plot_alterband import plot_alterband
+    from plotting.plot_alterband_qe import plot_alterband_qe
 
     klabels = tmp_path / "KLABELS"
     klabels.write_text("A 0.0\nB 1.0\n", encoding="utf-8")

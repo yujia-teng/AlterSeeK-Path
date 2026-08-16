@@ -13,7 +13,7 @@ from alterseek.find_sf_operations import SpinSymmetryError
 @pytest.mark.parametrize(
     "content, message",
     [
-        ('output_code = "abinit"\n', "output_code"),
+        ('output_code = "wien2k"\n', "output_code"),
         ('flip_option = 0\n', "flip_option"),
         ('save_pdf = "yes"\n', "save_pdf"),
         ('view_elev = 25\n', "supplied together"),

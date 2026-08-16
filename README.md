@@ -120,7 +120,7 @@ Generated path: GAMMA-M-k | k'-M'-K'-k' | k-K-GAMMA-k | ... | k-H-A | L-M | H-K
 Full path: 9 original segments -> 21 generated segments, 36 k-points
 
 >>> Step 5: Save
-Output code ([vasp]/qe): vasp
+Output code ([vasp]/qe/abinit): vasp
 Modified KPOINTS file written to: KPOINTS_alter
 Band plot config updated: alterband.toml (lattice_type = "hP2")
 

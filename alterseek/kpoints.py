@@ -40,6 +40,7 @@ from .atomic_write import (
 from .io import (
     write_bandplot_lattice_config,
     write_qe_bandplot_config,
+    write_abinit_bandplot_config,
 )
 
 
@@ -197,8 +198,8 @@ def _validate_input_config(config):
 
     if "output_code" in config:
         code = config["output_code"].strip().lower()
-        if code not in {"vasp", "qe"}:
-            raise ValueError("output_code must be \"vasp\" or \"qe\"")
+        if code not in {"vasp", "qe", "abinit"}:
+            raise ValueError("output_code must be \"vasp\", \"qe\", or \"abinit\"")
 
     if "flip_option" in config:
         choice = config["flip_option"]
@@ -1043,6 +1044,68 @@ class KPointsModifier:
         print(f"QE KPOINTS written to: {output_file}")
         return True
 
+    def write_kpoints_file_abinit(self, new_kpoints: List[List],
+                                  output_file: str = "KPOINTS_alter_abinit",
+                                  transformation_matrix: Optional[np.ndarray] = None,
+                                  transformation_label: Optional[str] = None,
+                                  ndivk: int = 30,
+                                  operation_basis_label: Optional[str] = None):
+        """Write the k-path as an ABINIT kptopt/kptbounds/ndivk block."""
+        valid_pairs = self._valid_segment_pairs(new_kpoints)
+        if not valid_pairs:
+            print("Error writing ABINIT KPOINTS: path contains no writable segments.")
+            return False
+
+        # Build the same sequential waypoint chain as the QE writer: one
+        # entry per point, each carrying the division count for the segment
+        # that follows it. ABINIT's ndivk is this same per-segment count,
+        # listed separately from kptbounds rather than inline per point.
+        waypoints = []
+        for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(valid_pairs):
+            if idx == 0:
+                waypoints.append((sp_out, ndivk))
+            elif break_before:
+                previous_point, _ = waypoints[-1]
+                waypoints[-1] = (previous_point, 1)
+                waypoints.append((sp_out, ndivk))
+            waypoints.append((ep_out, ndivk))
+        final_point, _ = waypoints[-1]
+        waypoints[-1] = (final_point, 1)
+
+        n_segments = len(waypoints) - 1
+        segment_divisions = [ni for _, ni in waypoints[:-1]]
+
+        lines = [
+            f"kptopt   -{n_segments}\n",
+            "ndivk    " + " ".join(str(ni) for ni in segment_divisions) + "\n",
+            "kptbounds\n",
+        ]
+        for pt_out, _ni in waypoints:
+            lbl = self._kpoints_label(pt_out[3])
+            lines.append(
+                f"   {_fmt_coord(pt_out[0])}   {_fmt_coord(pt_out[1])}   "
+                f"{_fmt_coord(pt_out[2])}   # {lbl}\n"
+            )
+        if transformation_matrix is not None:
+            flat = np.array(transformation_matrix).flatten()
+            mat_str = " ".join(f"{x:.8f}" for x in flat)
+            lbl = f" ({transformation_label})" if transformation_label else ""
+            # As in the VASP/QE writers, the Step-3 matrix uses the operation source's basis.
+            basis_name = operation_basis_label or "operation-source structure"
+            lines.append(
+                f"# Spin-flip operation{lbl} in {basis_name} "
+                f"real-space fractional basis: {mat_str}\n"
+            )
+
+        try:
+            _atomic_write_text(output_file, "".join(lines))
+        except (OSError, UnicodeError) as exc:
+            print(f"Error writing ABINIT KPOINTS: {exc}")
+            return False
+
+        print(f"ABINIT KPOINTS written to: {output_file}")
+        return True
+
     @alterseek_plot_style
     def _generate_spin_figures(self, centroid_result, struct_file, general_kpoint,
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
@@ -1415,10 +1478,10 @@ class KPointsModifier:
 
         def _choose_output_code():
             while True:
-                choice = _ask("Output code ([vasp]/qe): ", "output_code").lower() or "vasp"
-                if choice in {"vasp", "qe"}:
+                choice = _ask("Output code ([vasp]/qe/abinit): ", "output_code").lower() or "vasp"
+                if choice in {"vasp", "qe", "abinit"}:
                     return choice
-                print("Invalid output code. Enter 'vasp', 'qe', or press Enter for VASP.")
+                print("Invalid output code. Enter 'vasp', 'qe', 'abinit', or press Enter for VASP.")
 
         # Step 0: Compute spin-flip operations from structure
         print(f"\n{BOLD}>>> Step 0: Spin symmetry{RESET}")
@@ -1465,6 +1528,13 @@ class KPointsModifier:
                 )
                 if write_ok:
                     write_qe_bandplot_config()
+            elif code_choice == "abinit":
+                write_ok = self.write_kpoints_file_abinit(
+                    path_points, "KPOINTS_alter_abinit", R_matrix, R_label,
+                    operation_basis_label=operation_basis_label,
+                )
+                if write_ok:
+                    write_abinit_bandplot_config()
             else:
                 write_ok = self.write_kpoints_file(
                     path_points, "KPOINTS_alter", R_matrix, R_label,

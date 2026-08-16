@@ -1,0 +1,17 @@
+# AlterSeeK ABINIT band-plot settings
+#
+# NOTE: not converged (placeholder ecut/pawecutdg, light Gd PAW dataset) --
+# bands differ from the VASP/QE examples. Demonstrates the pipeline, not
+# trustworthy physics.
+eig = "EIG"
+kpoints_abinit = "KPOINTS_alter_abinit"
+poscar = "POSCAR"
+abo = "gdauge.abo"
+emin = -2
+emax = 2
+fig_width = 12
+fig_height = 5
+gap_width_inches = 0.05
+split_panels = 1
+output = "alterband_abinit.png"
+save_pdf = false

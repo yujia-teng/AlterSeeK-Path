@@ -73,8 +73,8 @@ save_pdf = false
 
 The plotter repairs known VASPKIT boundary-label and truncation errors in
 memory and reports any correction it uses. It does not rewrite `KLABELS`.
-Both VASP and QE plotting configurations are validated; malformed TOML,
-unknown settings, and invalid value types stop with an error.
+VASP, QE, and ABINIT plotting configurations are all validated; malformed
+TOML, unknown settings, and invalid value types stop with an error.
 
 Command-line flags override the TOML file, e.g.:
 
@@ -90,9 +90,9 @@ alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down RE
 
 ## Quantum ESPRESSO Band Plotting
 
-For QE workflows, use the separate `plot_alterband_qe.py` script (or
-`alterseek-bandplot-qe`) instead. It reads `bands.x` `.gnu` output and the
-`KPOINTS_alter_qe` waypoint file written by `alterseek-path`:
+For QE workflows, use the separate `plotting/plot_alterband_qe.py` script
+(or `alterseek-bandplot-qe`) instead. It reads `bands.x` `.gnu` output and
+the `KPOINTS_alter_qe` waypoint file written by `alterseek-path`:
 
 ```bash
 alterseek-bandplot-qe
@@ -131,3 +131,64 @@ save_pdf = false
 There is no `lattice_type` setting for QE plotting — it exists on the VASP
 side only to repair VASPKIT's truncated labels, which doesn't apply here
 since QE labels come from AlterSeeK-Path's own `KPOINTS_alter_qe` writer.
+
+## ABINIT Band Plotting
+
+For ABINIT workflows, use `plotting/plot_alterband_abinit.py` (or
+`alterseek-bandplot-abinit`). It reads ABINIT's plain-text `_EIG` output
+and the `KPOINTS_alter_abinit` waypoint file written by `alterseek-path`:
+
+```bash
+alterseek-bandplot-abinit
+```
+
+**Units: ABINIT's `_EIG` file reports eigenvalues in hartree, not eV.**
+The plotter converts hartree to eV internally (multiplying by
+27.211386245988) before applying the Fermi shift and plotting — this is
+handled automatically, not something the user needs to do.
+
+Unlike VASPKIT's reformatted output or QE's `bands.x` `.gnu` files, ABINIT
+never writes a physical k-space path distance anywhere (not in `_EIG`, not
+in `GSR.nc`, and not even in ABINIT's own auto-generated `_EBANDS.agr`
+plot file, which uses plain k-point index for its x-axis instead). The
+plotter computes it directly: it reads the real-space lattice from
+`POSCAR`, builds the reciprocal lattice, and accumulates the Cartesian
+distance between consecutive `_EIG` k-points — the same approach ABINIT's
+own official `abinit_eignc_to_bandstructure.py` post-processing script
+uses.
+
+Settings are config-file only (there is no CLI-flag equivalent besides
+`--config`/`-o`). If `alterband_abinit.toml` exists in the working
+directory, it is used automatically:
+
+```toml
+eig = "EIG"
+kpoints_abinit = "KPOINTS_alter_abinit"
+poscar = "POSCAR"
+abo = "abo"
+emin = -2
+emax = 2
+fig_width = 12
+fig_height = 5
+gap_width_inches = 0.05
+split_panels = 1
+output = "alterband_abinit.png"
+save_pdf = false
+```
+
+| Setting | Meaning |
+|---------|---------|
+| `eig` | ABINIT `_EIG` file (plain text, hartree, both spin channels) |
+| `kpoints_abinit` | The `kptopt`/`ndivk`/`kptbounds` waypoint file written by `alterseek-path` |
+| `poscar` | Structure file used to build the reciprocal lattice for the k-path distance |
+| `abo` | ABINIT `.abo` output file, used to read and convert the Fermi level ("Fermi (or HOMO) energy") automatically |
+| `fermi_ev` | Manual Fermi-level override in eV, if set. Takes priority over `abo` — only needed when the `.abo` file isn't available |
+| `emin`, `emax` | Energy window in eV |
+| `fig_width`, `fig_height` | Figure size in inches |
+| `gap_width_inches` | Same meaning as the VASP/QE plotters' setting |
+| `split_panels` | `1` for one panel, `2`/`3` for stacked panels |
+| `output` | Output image filename (`.png` or `.pdf`) |
+| `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` |
+
+As with QE, there is no `lattice_type` setting — ABINIT labels come from
+AlterSeeK-Path's own `KPOINTS_alter_abinit` writer, not VASPKIT.

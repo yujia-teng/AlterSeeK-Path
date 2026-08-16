@@ -1,0 +1,7 @@
+structure = "POSCAR"
+spin_axis = "0 0 1"
+moments = "8 -8 4*0"
+path = ""
+flip_option = 1
+output_code = "abinit"
+save_pdf = true

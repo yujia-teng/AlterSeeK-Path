@@ -1,0 +1,118 @@
+# GdAuGe (P6_3mc, 6-mmm/2212-B-g), altermagnetic band structure.
+# Dataset 1: SCF density. Dataset 2: NSCF band structure along the
+# AlterSeeK-generated k|k' path (KPOINTS_alter_abinit).
+#
+# ecut/pawecutdg are placeholders -- run a convergence check before
+# trusting the bands. k-mesh, nband, U/J, and smearing are carried over
+# from the existing VASP/QE setups for this same compound (INCAR, QE/scf.in)
+# for consistency, not independently reconverged here.
+
+# iomode 0: force plain Fortran binary I/O. This cluster's ABINIT build
+# defaults to NetCDF output, but its NetCDF library lacks MPI-IO support,
+# which aborts immediately on a multi-rank run otherwise.
+iomode 0
+
+ndtset 2
+
+# --- Dataset 1: SCF ---
+kptopt1  1
+ngkpt1   9 9 3
+nshiftk1 1
+shiftk1  0.0 0.0 0.0
+nstep1   100
+toldfe1  1.0d-9
+prtden1  1
+
+# --- Dataset 2: NSCF band structure (AlterSeeK k|k' path) ---
+iscf2     -2
+getden2   -1
+nstep2    100
+tolwfr2   1.0d-8
+
+kptopt2   -29
+ndivk2    30 30 1 30 30 30 1 30 30 30 1 30 30 30 1 30 30 30 1 30 30 30 1 30 30 1 30 1 30
+kptbounds2
+   0.0000000000   0.0000000000   0.0000000000   # GAMMA
+   0.5000000000   0.0000000000   0.0000000000   # M
+   0.2777777778   0.1111111111   0.2500000000   # k
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.0000000000   0.5000000000   0.0000000000   # M'
+  -0.3333333333   0.6666666667   0.0000000000   # K'
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.2777777778   0.1111111111   0.2500000000   # k
+   0.3333333333   0.3333333333   0.0000000000   # K
+   0.0000000000   0.0000000000   0.0000000000   # GAMMA
+   0.2777777778   0.1111111111   0.2500000000   # k
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.0000000000   0.0000000000   0.0000000000   # GAMMA
+   0.0000000000   0.0000000000   0.5000000000   # A'
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.2777777778   0.1111111111   0.2500000000   # k
+   0.0000000000   0.0000000000   0.5000000000   # A
+   0.5000000000   0.0000000000   0.5000000000   # L
+   0.2777777778   0.1111111111   0.2500000000   # k
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.0000000000   0.5000000000   0.5000000000   # L'
+  -0.3333333333   0.6666666667   0.5000000000   # H'
+  -0.1111111111   0.3888888889   0.2500000000   # k'
+   0.2777777778   0.1111111111   0.2500000000   # k
+   0.3333333333   0.3333333333   0.5000000000   # H
+   0.0000000000   0.0000000000   0.5000000000   # A
+   0.5000000000   0.0000000000   0.5000000000   # L
+   0.5000000000   0.0000000000   0.0000000000   # M
+   0.3333333333   0.3333333333   0.5000000000   # H
+   0.3333333333   0.3333333333   0.0000000000   # K
+# Spin-flip operation (Option 1) in submitted structure 'POSCAR' real-space
+# fractional basis: 1 -1 0 / 1 0 0 / 0 0 1
+
+nband  96
+
+# --- Structure: GdAuGe, P6_3mc (hex a=4.42799 A, c=7.41760 A) ---
+acell 8.36766  8.36766  14.01735
+rprim
+   1.0            0.0            0.0
+  -0.5            0.8660254038   0.0
+   0.0            0.0            1.0
+
+natom  6
+ntypat 3
+znucl  64 79 32
+typat  1 1 2 2 3 3
+
+xred
+   0.000000000  0.000000000  0.000000000
+   0.000000000  0.000000000  0.500000000
+   0.666666679  0.333333359  0.779680036
+   0.333333327  0.666666655  0.279680004
+   0.666666679  0.333333359  0.211399999
+   0.333333327  0.666666655  0.711400063
+
+# --- Magnetism: collinear AFM, matches VASP MAGMOM = 8 -8 4*0 ---
+nsppol 2
+spinat
+   0.0 0.0  8.0
+   0.0 0.0 -8.0
+   0.0 0.0  0.0
+   0.0 0.0  0.0
+   0.0 0.0  0.0
+   0.0 0.0  0.0
+
+# --- DFT+U on Gd 4f, matches VASP LDAUTYPE=2 U=6.0 eV J=0 / QE HUBBARD U=6.0 ---
+# usepawu 1 (FLL double counting) is the closest ABINIT analog to VASP's
+# Dudarev (LDAUTYPE=2); not a bit-for-bit equivalent formulation, check
+# if this matters for your comparison.
+usepawu 1
+lpawu    3   -1   -1
+upawu  6.0    0.0  0.0 eV
+jpawu  0.0    0.0  0.0 eV
+
+# --- Smearing, matches QE's gauss/degauss=1.0d-2 Ry = 0.005 Ha ---
+occopt 7
+tsmear 0.005
+
+# --- Cutoffs: placeholders, converge before trusting results ---
+ecut       24
+pawecutdg  60
+
+pp_dirpath "./"
+pseudos "Gd.xml, Au.xml, Ge.xml"

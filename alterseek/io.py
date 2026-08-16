@@ -253,3 +253,20 @@ def write_qe_bandplot_config(filename="alterband_qe.toml"):
         print(f"Band plot config created: {filename}")
     except Exception as exc:
         print(f"[Warning] Could not create band plot config '{filename}': {exc}")
+
+
+def write_abinit_bandplot_config(filename="alterband_abinit.toml"):
+    """Create the ABINIT band-plot config file with a header comment, if missing."""
+    if os.path.exists(filename):
+        return
+    try:
+        _atomic_write_text(
+            filename,
+            "# AlterSeeK ABINIT band-plot settings\n"
+            "# Reads: EIG, KPOINTS_alter_abinit, POSCAR, and abo (the ABINIT .abo\n"
+            "# output file, used to read and convert the Fermi level automatically --\n"
+            "# set fermi_ev directly instead only if abo isn't available)\n",
+        )
+        print(f"Band plot config created: {filename}")
+    except Exception as exc:
+        print(f"[Warning] Could not create band plot config '{filename}': {exc}")

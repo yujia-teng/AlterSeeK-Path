@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alterseek-path"
 version = "0.1.0"
-description = "Generate altermagnetic k-point paths for VASP and Quantum ESPRESSO workflows."
+description = "Generate altermagnetic k-point paths for VASP, Quantum ESPRESSO, and ABINIT workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,13 +22,12 @@ dependencies = [
 
 [project.scripts]
 alterseek-path = "alterseek_path:main"
-alterseek-bandplot = "plot_alterband:main"
-alterseek-bandplot-qe = "plot_alterband_qe:main"
+alterseek-bandplot = "plotting.plot_alterband:main"
+alterseek-bandplot-qe = "plotting.plot_alterband_qe:main"
+alterseek-bandplot-abinit = "plotting.plot_alterband_abinit:main"
 
 [tool.setuptools]
 py-modules = [
     "alterseek_path",
-    "plot_alterband",
-    "plot_alterband_qe",
 ]
-packages = ["alterseek"]
+packages = ["alterseek", "plotting"]
