@@ -454,11 +454,10 @@ def plot_alterband_qe(
     grid = fig.add_gridspec(n_panels, 1, hspace=DEFAULT_PANEL_GAP)
     flat_axes = []
     for row, span in enumerate(spans):
-        cell = grid[row, 0]
-        if max_span - span > 1e-9 * max_span:
-            cell = cell.subgridspec(
-                1, 2, width_ratios=[span, max_span - span]
-            )[0, 0]
+        # Every row is nested the same way, including the widest: nesting only some of them makes constrained_layout give those rows a different height.
+        cell = grid[row, 0].subgridspec(
+            1, 2, width_ratios=[span, max(max_span - span, 1e-6 * max_span)]
+        )[0, 0]
         flat_axes.append(
             fig.add_subplot(cell, sharey=flat_axes[0] if flat_axes else None)
         )
