@@ -67,25 +67,36 @@ def test_hp1_trigonal_keeps_seekpath_K_H2_segment():
     assert ("K", "H_2") not in lk.get_kpath("hP1", 191)
 
 
-def test_hp1_trigonal_hull_uses_A2_LA_general_points_and_keeps_H2():
-    # SG 149 family: copied general-k points A_2 and L_A; H_2 stays because it
-    # is path-used. Plain hP1 (e.g. SG 191) has no copied general-k points.
+def test_hp1_trigonal_hull_doubles_in_plane_with_KA_HA():
+    # SG 149 family: the second half is the in-plane image across Gamma-M, so
+    # the copies are K_A/H_A and H_2 at kz = -1/2 is outside the hull.
     keys_149 = sorted(lk.get_hull_kpoints("hP1", spacegroup_number=149))
-    assert keys_149 == sorted(["A", "A_2", "H", "H_2", "K", "L", "L_A", "M", GAMMA])
+    assert keys_149 == sorted(["A", "H", "H_A", "K", "K_A", "L", "M", GAMMA])
     keys_191 = sorted(lk.get_hull_kpoints("hP1", spacegroup_number=191))
     assert keys_191 == sorted(["A", "H", "K", "L", "M", GAMMA])
 
 
-def test_hp2_6m_hull_keeps_MA_LA():
-    # hP2 6/m doubled-IBZ uses M_A/L_A copied general-k points.
-    keys = sorted(lk.get_hull_kpoints("hP2", spacegroup_number=170))
-    assert keys == sorted(["A", "H", "K", "L", "L_A", "M", "M_A", GAMMA])
+def test_hp2_trigonal_and_hexagonal_share_MA_LA():
+    # hP2 uses the same in-plane copied sector across Gamma-K for trigonal
+    # -3m (e.g. SG 165) and hexagonal 6/m (e.g. SG 170).
+    expected = sorted(["A", "H", "K", "L", "L_A", "M", "M_A", GAMMA])
+    assert sorted(lk.get_hull_kpoints("hP2", spacegroup_number=170)) == expected
+    assert sorted(lk.get_hull_kpoints("hP2", spacegroup_number=165)) == expected
 
 
 def test_tp1_4m_hull_uses_RA_XA():
     # tP1 4/m doubled-IBZ adds R_A and X_A (path addition A-R_A-X_A-M).
     keys = sorted(lk.get_hull_kpoints("tP1", spacegroup_number=80))
     assert keys == sorted(["A", "M", "R", "R_A", "X", "X_A", "Z", GAMMA])
+
+
+def test_ti1_4m_hull_uses_XA_PA():
+    # tI1 4/m doubled-IBZ keeps every copy a corner of the doubled wedge:
+    # X_A/P_A (path addition N-P_A-X_A-M), not the M_A/N_A/Z_0A half.
+    keys = sorted(lk.get_hull_kpoints("tI1", 1.0, c=2.0, spacegroup_number=87))
+    assert keys == sorted(
+        ["M", "N", "P", "P_A", "X", "X_A", "Z", "Z_0", GAMMA]
+    )
 
 
 def test_ti2_literal_G_is_not_gamma():

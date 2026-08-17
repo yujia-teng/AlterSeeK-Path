@@ -109,9 +109,8 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "R_A": ("1/2", "0", "1/2"),
     },
     ("tI1", range(75, 89)): {
-        "M_A": ("1/2", "-1/2", "1/2"),
-        "N_A": ("1/2", "0", "0"),
-        "Z_0A": ("1-H", "-H", "H"),
+        "X_A": ("-1/2", "1/2", "0"),
+        "P_A": ("-1/4", "3/4", "-1/4"),
     },
     ("tI2", range(75, 89)): {
         "N_A": ("1/2", "0", "0"),
@@ -120,21 +119,15 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "R_A": ("Z", "-Z", "1/2"),
     },
 
-    # For the trigonal hP1/hP2 middle-row IBZ, retain the ordinary SeeK-path path and use lower/middle-row vertices as copied-sector general-k points.
-    # H_2 is already a SeeK-path path label for hP1, where K-H_2 is required by the k-vector table.
+    # The trigonal hP1 second half is the in-plane image across the Gamma-M plane, which is the only in-plane doubling the group allows here: M and L stay put and K, H are copied.
+    # H_2 of the SeeK-path k-vector table sits at kz = -1/2, outside this IBZ, and is symmetry-equivalent to the copied H_A.
     ("hP1", frozenset({149, 151, 153, 157, 159, 162, 163})): {
-        "A_2": ("0", "0", "-1/2"),
-        "L_A": ("1/2", "0", "-1/2"),
-        "H_2": ("1/3", "1/3", "-1/2"),
+        "K_A": ("2/3", "-1/3", "0"),
+        "H_A": ("2/3", "-1/3", "1/2"),
     },
 
-    # Trigonal 32, 3m, and -3m use the middle-row project IBZ, while hexagonal 6, -6, and 6/m retain the side copied-sector convention below.
-    ("hP2", range(149, 168)): {
-        "A_2": ("0", "0", "-1/2"),
-        "L_A": ("1/2", "0", "-1/2"),
-        "H_2": ("1/3", "1/3", "-1/2"),
-    },
-    ("hP2", range(168, 177)): {
+    # Trigonal 32, 3m, -3m and hexagonal 6, -6, 6/m share the same in-plane side copied sector across the Gamma-K plane.
+    ("hP2", range(149, 177)): {
         "M_A": ("0", "1/2", "0"),
         "L_A": ("0", "1/2", "1/2"),
     },
@@ -153,7 +146,7 @@ PROJECT_HULL_PATH_BY_SG = {
     ("tI1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"), ("M", "\u0393"), ("\u0393", "Z"),
         ("Z_0", "M"), ("X", "P"), ("P", "N"), ("N", "\u0393"),
-        ("P", "N_A"), ("X", "M_A"),
+        ("N", "P_A"), ("P_A", "X_A"), ("X_A", "M"),
     ],
     ("tI2", range(75, 89)): [
         ("\u0393", "X"), ("X", "P"), ("P", "N"), ("N", "\u0393"),
@@ -165,15 +158,10 @@ PROJECT_HULL_PATH_BY_SG = {
         ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
         ("A", "L"), ("L", "H"), ("H", "A"),
-        ("L", "M"), ("H", "K"), ("K", "H_2"),
-    ],
-    ("hP2", range(149, 168)): [
-        ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
-        ("\u0393", "A"),
-        ("A", "L"), ("L", "H"), ("H", "A"),
         ("L", "M"), ("H", "K"),
+        ("L", "H_A"), ("H_A", "K_A"), ("K_A", "M"),
     ],
-    ("hP2", range(168, 177)): [
+    ("hP2", range(149, 177)): [
         ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
         ("\u0393", "A"),
         ("A", "L"), ("L", "H"), ("H", "A"),

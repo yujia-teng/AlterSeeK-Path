@@ -3,13 +3,13 @@ from alterseek.symmetry import _doubled_ibz_extra_flags
 
 def test_ti_copied_sector_labels_include_zero_subscript_variants():
     ti1_labels = ["Gamma", "M", "X", "P", "Z", "Z_0", "N",
-                  "M_A", "N_A", "Z_0A"]
+                  "X_A", "P_A"]
     ti2_labels = ["Gamma", "M", "X", "P", "N", "S_0", "S", "R", "G",
                   "N_A", "S_0A", "S_A", "R_A"]
 
     assert [label for label, is_extra in zip(
         ti1_labels, _doubled_ibz_extra_flags(ti1_labels)
-    ) if is_extra] == ["M_A", "N_A", "Z_0A"]
+    ) if is_extra] == ["X_A", "P_A"]
     assert [label for label, is_extra in zip(
         ti2_labels, _doubled_ibz_extra_flags(ti2_labels)
     ) if is_extra] == ["N_A", "S_0A", "S_A", "R_A"]

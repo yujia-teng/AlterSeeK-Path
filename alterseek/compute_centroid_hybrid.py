@@ -366,22 +366,19 @@ def _analyze_kspace(
         print(f"With time-reversal: {len(unique_ops)}")
 
     doubled_ibz_case = (
-        75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}
-    ) or (168 <= sg <= 176 and sc_type == 'hP2')
+        (75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'})
+        or (149 <= sg <= 176 and sc_type == 'hP2')
+        or (sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163})
+    )
     band_kpath = list(hull_kpath if doubled_ibz_case else kpath)
     band_kpoints_frac = dict(path_kpoints_frac)
     extra_general_vertices = []
     if sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163}:
-        extra_general_vertices = ["H_2", "A_2", "L_A"]
+        extra_general_vertices = ["K_A", "H_A"]
         for label in extra_general_vertices:
             if label in kpoints_frac_centroid:
                 band_kpoints_frac[label] = kpoints_frac_centroid[label]
-    elif sc_type == 'hP2' and 149 <= sg <= 167:
-        extra_general_vertices = ["H_2", "A_2", "L_A"]
-        for label in extra_general_vertices:
-            if label in kpoints_frac_centroid:
-                band_kpoints_frac[label] = kpoints_frac_centroid[label]
-    elif sc_type == 'hP2' and 168 <= sg <= 176:
+    elif sc_type == 'hP2' and 149 <= sg <= 176:
         extra_general_vertices = ["M_A", "L_A"]
         for label in ("L_A", "M_A"):
             if label in kpoints_frac_centroid:
@@ -389,7 +386,7 @@ def _analyze_kspace(
     elif 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
         tetragonal_extra = {
             'tP1': ["X_A", "R_A"],
-            'tI1': ["M_A", "N_A", "Z_0A"],
+            'tI1': ["X_A", "P_A"],
             'tI2': ["R_A", "S_0A", "S_A", "N_A"],
         }
         extra_general_vertices = [
