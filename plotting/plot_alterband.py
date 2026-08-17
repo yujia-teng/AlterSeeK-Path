@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 from functools import wraps
-import math
 from pathlib import Path
 import tomllib
 from typing import Any
@@ -245,12 +244,13 @@ def _is_valid_split_label(label: str) -> bool:
     return label not in HELPER_LABELS
 
 
-def _split_indices(labels: list[str], split_panels: int) -> list[int]:
+def _split_indices(labels: list[str], positions: list[float], split_panels: int) -> list[int]:
     if split_panels in (None, 1):
         return []
     if split_panels not in {2, 3}:
         raise ValueError("split_panels must be 1, 2, or 3")
 
+    # k, k' and the merged k|k' ticks are helper labels, so a break never falls between a k and its k' partner.
     candidates = [
         i for i in range(1, len(labels) - 1)
         if _is_valid_split_label(labels[i])
@@ -258,7 +258,9 @@ def _split_indices(labels: list[str], split_panels: int) -> list[int]:
     if not candidates:
         return []
 
-    targets = [math.ceil(len(labels) / split_panels * i) for i in range(1, split_panels)]
+    # Panels share one k-scale, so balance them by k-path length rather than by label count.
+    start, end = positions[0], positions[-1]
+    targets = [start + (end - start) * i / split_panels for i in range(1, split_panels)]
     selected: list[int] = []
     for target in targets:
         options = [idx for idx in candidates if idx not in selected]
@@ -268,8 +270,11 @@ def _split_indices(labels: list[str], split_panels: int) -> list[int]:
         def score(idx: int) -> tuple[float, float, int]:
             trial = sorted(selected + [idx])
             bounds = [0, *trial, len(labels) - 1]
-            widths = [bounds[i + 1] - bounds[i] for i in range(len(bounds) - 1)]
-            return (abs(idx - target), max(widths) - min(widths), idx)
+            widths = [
+                positions[bounds[i + 1]] - positions[bounds[i]]
+                for i in range(len(bounds) - 1)
+            ]
+            return (abs(positions[idx] - target), max(widths) - min(widths), idx)
 
         selected.append(min(options, key=score))
 
@@ -277,7 +282,7 @@ def _split_indices(labels: list[str], split_panels: int) -> list[int]:
 
 
 def _panel_ranges(labels: list[str], positions: list[float], split_panels: int):
-    splits = _split_indices(labels, split_panels)
+    splits = _split_indices(labels, positions, split_panels)
     bounds = [0, *splits, len(labels) - 1]
     return [(positions[bounds[i]], positions[bounds[i + 1]]) for i in range(len(bounds) - 1)]
 
@@ -409,24 +414,25 @@ def plot_alterband(
     if n_panels > 1:
         total_size = (fig_size[0], fig_size[1] * n_panels)
     font_size = FONT_SIZE + (2 if n_panels > 1 else 0)
-    fig, axes = plt.subplots(
-        n_panels,
-        1,
-        figsize=total_size,
-        sharey=True,
-        squeeze=False,
-        constrained_layout=True,
-        gridspec_kw={"hspace": DEFAULT_PANEL_GAP},
-    )
-    flat_axes = list(axes[:, 0])
+    # All panels share one k-scale: a panel covering a shorter k-range is drawn narrower rather than stretched to the full figure width, so equal k-distances print at equal length in every panel.
+    spans = [high - low for low, high in ranges]
+    max_span = max(spans)
+    fig = plt.figure(figsize=total_size, constrained_layout=True)
+    grid = fig.add_gridspec(n_panels, 1, hspace=DEFAULT_PANEL_GAP)
+    flat_axes = []
+    for row, span in enumerate(spans):
+        cell = grid[row, 0]
+        if max_span - span > 1e-9 * max_span:
+            cell = cell.subgridspec(
+                1, 2, width_ratios=[span, max_span - span]
+            )[0, 0]
+        flat_axes.append(
+            fig.add_subplot(cell, sharey=flat_axes[0] if flat_axes else None)
+        )
 
-    # Every panel has the same physical width even when it covers a different k-path range, so a gap scaled to the global x_total looks too wide in a panel showing only a narrow slice.
-    # Scale each gap to its panel's local range so its physical printed width stays constant across panel counts.
+    # With a shared k-scale the gap is the same width in data units everywhere, so one value keeps its printed width constant in every panel.
     axis_width_inches = total_size[0]
-
-    def _gap_half_for(xlim: tuple[float, float]) -> float:
-        panel_span = xlim[1] - xlim[0]
-        return 0.5 * gap_width_inches * panel_span / axis_width_inches
+    gap_half = 0.5 * gap_width_inches * max_span / axis_width_inches
 
     for ax, xlim in zip(flat_axes, ranges):
         _draw_panel(
@@ -439,7 +445,7 @@ def plot_alterband(
             bands_dw=bands_dw,
             elim=elim,
             xlim=xlim,
-            gap_half=_gap_half_for(xlim),
+            gap_half=gap_half,
             font_size=font_size,
             rotate_xtick_labels=rotate_xtick_labels,
             xtick_rotation=xtick_rotation,
