@@ -1109,7 +1109,7 @@ class KPointsModifier:
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
                                preserve_ops_for_plot, new_kpoints, display_figures,
                                save_pdf=False):
-        """Generate Figures 2-4 (spin-flip / spin-BZ / kz=0 top view) for the
+        """Generate Figures 2-4 (spin-flip / spin-BZ / top-view cut) for the
         selected spin-flip operation; append any created figures to
         display_figures.  Extracted from interactive_modify (phase 5)."""
         # Generate Figures 2-4 through one shared call scaffold with per-figure keyword arguments.
@@ -1177,9 +1177,14 @@ class KPointsModifier:
                     **flip_kwargs,
                 )
                 top_view_z0 = 0.0
-                # b_matrix[2, 2] is not a reliable cut height because SeeK-path can orient the primitive cell so no reciprocal vector points along Cartesian z, making that element zero even when the BZ has a finite kz span.
-                # Use the true Cartesian kz extent of the BZ boundary instead.
-                if (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')):
+                top_view_axis = 2
+                if sc_type in ('mP1', 'mC1', 'mC2', 'mC3'):
+                    # Monoclinic 2/m carries its unique 2-fold axis, and the normal of the mirror in the same spin Laue group, along Cartesian y, so the informative section is perpendicular to ky rather than kz.
+                    # The plane still passes through Gamma; the shared epsilon offset below moves the sampled section just off ky = 0, where the two spin domains separate.
+                    top_view_axis = 1
+                elif (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')):
+                    # b_matrix[2, 2] is not a reliable cut height because SeeK-path can orient the primitive cell so no reciprocal vector points along Cartesian z, making that element zero even when the BZ has a finite kz span.
+                    # Use the true Cartesian kz extent of the BZ boundary instead.
                     # Rhombohedral and cubic cases reaching this branch have no vertical mirror, so a Gamma-centered kz=0 cut can show a degenerate or collapsed domain split.
                     # Use half the BZ kz extent for rhombohedral cases and one quarter for cubic cases, where a half-height cut can coincide with a boundary plane and resemble the tetragonal pattern.
                     bz_pts = np.vstack(centroid_result['bz_loops'])
@@ -1189,12 +1194,14 @@ class KPointsModifier:
                 figure_specs.append((
                     plot_spin_bz_figure, 'spin-BZ',
                     os.path.join(OUTPUT_DIR, f'{basename}_spinbz_{sc_type}.png'),
-                    dict(z0=top_view_z0, **spin_bz_kwargs, **view_kwargs),
+                    dict(z0=top_view_z0, cut_axis=top_view_axis,
+                         **spin_bz_kwargs, **view_kwargs),
                 ))
                 figure_specs.append((
                     plot_spin_bz_top_view_figure, 'spin-BZ top-view',
                     os.path.join(OUTPUT_DIR, f'{basename}_spinbz_top_{sc_type}.png'),
-                    dict(z0=top_view_z0, **spin_bz_kwargs),
+                    dict(z0=top_view_z0, cut_axis=top_view_axis,
+                         **spin_bz_kwargs),
                 ))
             for plot_fn, fig_name, fig_path, extra_kwargs in figure_specs:
                 try:

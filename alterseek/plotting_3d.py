@@ -37,6 +37,7 @@ from .geometry import (
     _get_ibz_frame_edges,
     _mapped_spin_hulls,
     _points_on_kz_plane,
+    _IN_PLANE_AXES,
     find_bz_exit,
 )
 
@@ -835,7 +836,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
                         flip_ops_frac=None,
                         preserve_ops_frac=None,
                         elev=14, azim=20, show_plot=True,
-                        defer_show=False, z0=0.0,
+                        defer_show=False, z0=0.0, cut_axis=2,
                         show_helper_plane=True,
                         hull_labels=None, save_pdf=False):
     """
@@ -875,7 +876,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
 
     def _draw(ax):
         if show_helper_plane:
-            draw_kz0_helper_plane(ax, bz_loops, z0=z0)
+            draw_kz0_helper_plane(ax, bz_loops, z0=z0, axis=cut_axis)
 
         if mapped_spin_hulls is not None:
             cells_to_draw = mapped_spin_hulls
@@ -957,30 +958,54 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
     return display_fig
 
 
-def draw_kz0_helper_plane(ax, bz_loops, z0=0.0, pad=0.08):
-    """Draw the kz=0 BZ-section outline without changing any BZ geometry."""
-    outline = _bz_kz_plane_outline(bz_loops, z0=z0)
+def draw_kz0_helper_plane(ax, bz_loops, z0=0.0, pad=0.08, axis=2):
+    """Draw the k[axis]=z0 BZ-section outline without changing any BZ geometry."""
+    outline = _bz_kz_plane_outline(bz_loops, z0=z0, axis=axis)
     if outline is not None:
-        outline3d = np.column_stack([
-            outline[:, 0],
-            outline[:, 1],
-            np.full(len(outline), z0),
-        ])
+        i0, i1 = _IN_PLANE_AXES[axis]
+        outline3d = np.empty((len(outline), 3))
+        outline3d[:, i0] = outline[:, 0]
+        outline3d[:, i1] = outline[:, 1]
+        outline3d[:, axis] = z0
         closed_outline = np.vstack([outline3d, outline3d[0]])
         ax.plot(closed_outline[:, 0], closed_outline[:, 1], closed_outline[:, 2],
                 color='#3f5268', lw=3.0, ls='--', alpha=0.95, zorder=90)
 
 
-def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0):
-    """Project b1, b2, b3 onto kz=0 and draw the projected in-plane arrows."""
+def draw_cut_plane_axis_key(ax, outline, axis, color='#202020'):
+    """Draw a small corner key naming the two Cartesian axes spanning the cut plane."""
+    names = ('x', 'y', 'z')
+    i0, i1 = _IN_PLANE_AXES[axis]
+    lo = outline.min(axis=0)
+    span = float(np.max(outline.max(axis=0) - lo))
+    arm = 0.16 * span
+    # Sit well below the section: the projected b arrows radiate from Gamma and their labels reach past the BZ outline on every side.
+    x0 = lo[0] - 0.02 * span
+    y0 = lo[1] - 0.42 * span
+    for dx, dy, name, ha, va in ((arm, 0.0, names[i0], 'left', 'center'),
+                                 (0.0, arm, names[i1], 'center', 'bottom')):
+        ax.annotate('', xy=(x0 + dx, y0 + dy), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle='->', color=color, lw=2.0,
+                                    mutation_scale=22, shrinkA=0, shrinkB=0),
+                    annotation_clip=False)
+        # fontweight does not reach mathtext, so the bold comes from \mathbf, matching the b-arrow and high-symmetry labels.
+        ax.text(x0 + dx * 1.12, y0 + dy * 1.12, rf'$\mathbf{{k_{name}}}$',
+                fontsize=20, ha=ha, va=va, color=color, clip_on=False)
+    # Annotations do not extend the data limits, so anchor the key's own extent with invisible points.
+    ax.plot([x0, x0 + 1.45 * arm, x0], [y0, y0, y0 + 1.45 * arm], alpha=0.0)
+
+
+def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0, axis=2):
+    """Project b1, b2, b3 onto the k[axis]=z0 plane and draw the projected in-plane arrows."""
+    i0, i1 = _IN_PLANE_AXES[axis]
     all_pts = np.vstack([np.array(loop, dtype=float) for loop in bz_loops])
-    span_xy = np.ptp(all_pts[:, :2], axis=0)
+    span_xy = np.ptp(all_pts[:, [i0, i1]], axis=0)
     span = max(float(np.max(span_xy)), 1e-8)
     target = 0.60 * span
     origin = np.array([0.0, 0.0])
     colors = ['#202020', '#202020', '#202020']
     labels = [r'$\mathbf{b}_1$', r'$\mathbf{b}_2$', r'$\mathbf{b}_3$']
-    outline = _bz_kz_plane_outline(bz_loops, z0=z0)
+    outline = _bz_kz_plane_outline(bz_loops, z0=z0, axis=axis)
 
     def _ray_outline_exit(unit_vec):
         if outline is None or len(outline) < 3:
@@ -999,7 +1024,7 @@ def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0):
         return min(t_hits) if t_hits else None
 
     for vec, label, color in zip(np.array(b_matrix, dtype=float), labels, colors):
-        projected = np.array([vec[0], vec[1]], dtype=float)
+        projected = np.array([vec[i0], vec[i1]], dtype=float)
         length = float(np.linalg.norm(projected))
         if length < 1e-10:
             ax.scatter(origin[0], origin[1], s=36, c=color, zorder=220)
@@ -1041,11 +1066,11 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  flip_ops_frac=None,
                                  preserve_ops_frac=None,
                                  show_plot=True, defer_show=False,
-                                 z0=0.0, show_title=False,
+                                 z0=0.0, cut_axis=2, show_title=False,
                                  show_projected_axes=True,
                                  show_legend=False,
                                  hull_labels=None, save_pdf=False):
-    """Draw a darker top-view kz=0 slice of the Figure 3 spin-BZ coloring."""
+    """Draw a darker top-view k[cut_axis]=z0 slice of the Figure 3 spin-BZ coloring."""
     if hull_pts is None or hull_simplices is None or not len(unique_ops):
         print("[Note] Skipping spin-BZ top-view figure (no hull or symmetry ops available).")
         return
@@ -1069,9 +1094,9 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         spin_down_mask = _classify_spin_down_ops(
             b_matrix, unique_ops, centroid_cart, R, flip_ops_frac)
 
-    z_span = np.ptp(np.vstack(bz_loops)[:, 2])
+    z_span = np.ptp(np.vstack(bz_loops)[:, cut_axis])
     z_eps = max(float(z_span) * 1e-6, 1e-8)
-    side = np.sign(centroid_cart[2] - z0)
+    side = np.sign(centroid_cart[cut_axis] - z0)
     if abs(side) < 1e-12:
         side = 1.0
     section_z = z0 + side * z_eps
@@ -1095,7 +1120,8 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
             for i, g in enumerate(unique_ops)
         ]
     for cell_pts, cell_simplices, is_down in cells_to_draw:
-        poly = _points_on_kz_plane(cell_pts, cell_simplices, z0=section_z)
+        poly = _points_on_kz_plane(cell_pts, cell_simplices, z0=section_z,
+                                   axis=cut_axis)
         if poly is None:
             continue
 
@@ -1123,7 +1149,8 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                 try:
                     original_hull = ConvexHull(original_pts)
                     original_poly = _points_on_kz_plane(
-                        original_pts, original_hull.simplices, z0=section_z)
+                        original_pts, original_hull.simplices, z0=section_z,
+                        axis=cut_axis)
                 except Exception:
                     original_poly = None
                 if original_poly is not None:
@@ -1134,19 +1161,25 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                     edgecolor='none', label=label)
         ax.plot(closed[:, 0], closed[:, 1], color=color, lw=0.9, alpha=0.95)
 
-    outline = _bz_kz_plane_outline(bz_loops, z0=z0)
+    outline = _bz_kz_plane_outline(bz_loops, z0=z0, axis=cut_axis)
     if outline is not None:
         closed = np.vstack([outline, outline[0]])
         ax.plot(closed[:, 0], closed[:, 1], color='black', lw=2.0, label='BZ boundary')
+        if cut_axis != 2:
+            # kz cuts keep their established look; a cut on another plane needs its in-plane axes named.
+            draw_cut_plane_axis_key(ax, outline, cut_axis)
 
     if show_projected_axes and abs(z0) < 1e-8:
         # Reciprocal-axis arrows start at Gamma's hardcoded (0, 0) projection, so they are meaningful only when the cut plane passes through Gamma at z0 = 0.
         # At another cut height the BZ cross-section is centered elsewhere and the arrows would point to the wrong location.
-        draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=z0)
+        draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=z0,
+                                       axis=cut_axis)
 
     ax.set_aspect('equal', adjustable='box')
     if show_title:
-        ax.set_title(r'Spin-up / Spin-down BZ top view ($k_z = 0$)', fontsize=18)
+        cut_label = ('x', 'y', 'z')[cut_axis]
+        ax.set_title('Spin-up / Spin-down BZ top view '
+                     f'($k_{cut_label} = 0$)', fontsize=18)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_axis_off()

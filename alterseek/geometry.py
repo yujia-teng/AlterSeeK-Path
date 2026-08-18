@@ -545,23 +545,29 @@ def build_symmetry_ibz_cell(b_matrix, unique_ops, seed_cart):
     return None, None
 
 
-def _points_on_kz_plane(points, simplices, z0=0.0, tol=1e-8):
-    """Return the 2D convex section of a triangular hull with the kz=z0 plane."""
+# In-plane column pair for a cut perpendicular to axis 0, 1 or 2, in ascending order so the lower-numbered Cartesian axis is always the horizontal one: kx stays horizontal for both the kz cut and the monoclinic ky cut.
+# The ky cut is therefore viewed from -y rather than +y; the section itself is unaffected because the top view draws only filled sections and projected reciprocal-axis arrows.
+_IN_PLANE_AXES = ((1, 2), (0, 2), (0, 1))
+
+
+def _points_on_kz_plane(points, simplices, z0=0.0, tol=1e-8, axis=2):
+    """Return the 2D convex section of a triangular hull with the k[axis]=z0 plane."""
     section = []
     points = np.array(points, dtype=float)
+    plane = list(_IN_PLANE_AXES[axis])
 
     for tri in np.array(simplices, dtype=int):
         verts = points[tri]
         for a, b in ((verts[0], verts[1]), (verts[1], verts[2]), (verts[2], verts[0])):
-            da = a[2] - z0
-            db = b[2] - z0
+            da = a[axis] - z0
+            db = b[axis] - z0
             if abs(da) <= tol:
-                section.append(a[:2])
+                section.append(a[plane])
             if abs(db) <= tol:
-                section.append(b[:2])
+                section.append(b[plane])
             if da * db < -tol * tol:
                 t = da / (da - db)
-                section.append((a + t * (b - a))[:2])
+                section.append((a + t * (b - a))[plane])
 
     if len(section) < 3:
         return None
@@ -580,21 +586,22 @@ def _points_on_kz_plane(points, simplices, z0=0.0, tol=1e-8):
         return ordered if len(ordered) >= 3 else None
 
 
-def _bz_kz_plane_outline(bz_loops, z0=0.0, tol=1e-8):
-    """Return the top-view outline where the BZ boundary cuts kz=z0."""
+def _bz_kz_plane_outline(bz_loops, z0=0.0, tol=1e-8, axis=2):
+    """Return the top-view outline where the BZ boundary cuts k[axis]=z0."""
     section = []
+    plane = list(_IN_PLANE_AXES[axis])
     for loop in bz_loops:
         pts = np.array(loop, dtype=float)
         for a, b in zip(pts[:-1], pts[1:]):
-            da = a[2] - z0
-            db = b[2] - z0
+            da = a[axis] - z0
+            db = b[axis] - z0
             if abs(da) <= tol:
-                section.append(a[:2])
+                section.append(a[plane])
             if abs(db) <= tol:
-                section.append(b[:2])
+                section.append(b[plane])
             if da * db < -tol * tol:
                 t = da / (da - db)
-                section.append((a + t * (b - a))[:2])
+                section.append((a + t * (b - a))[plane])
 
     if len(section) < 3:
         return None
