@@ -379,7 +379,7 @@ def _analyze_kspace(
             if label in kpoints_frac_centroid:
                 band_kpoints_frac[label] = kpoints_frac_centroid[label]
     elif sc_type == 'hP2' and 149 <= sg <= 176:
-        extra_general_vertices = ["M_A", "L_A"]
+        extra_general_vertices = ["L_A", "M_A"]
         for label in ("L_A", "M_A"):
             if label in kpoints_frac_centroid:
                 band_kpoints_frac[label] = kpoints_frac_centroid[label]
