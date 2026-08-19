@@ -326,15 +326,18 @@ def _analyze_kspace(
         for label in {label for segment in kpath for label in segment}
         if label in seekpath_point_coords
     }
+    # In the k_z = 0 plane the hP1/hP2 wedge already tiles exactly, so the 3D
+    # doubling would double-cover it. Tetragonal 75-88 still needs its doubling.
+    doubling_sg = None if (mode_2d and sc_type in ('hP1', 'hP2')) else sg
     kpoints_frac_centroid = get_hull_kpoints(
         sc_type,
         conv_params['a'],
         conv_params.get('b'),
         conv_params.get('c'),
         conv_params.get('alpha'),
-        spacegroup_number=sg,
+        spacegroup_number=doubling_sg,
     )
-    hull_kpath = get_hull_kpath(sc_type, spacegroup_number=sg)
+    hull_kpath = get_hull_kpath(sc_type, spacegroup_number=doubling_sg)
     display_labels = get_display_labels(sc_type)
     params = get_params(
         sc_type,
