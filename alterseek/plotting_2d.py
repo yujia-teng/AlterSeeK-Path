@@ -21,7 +21,7 @@ Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 import os
 import numpy as np
 
-from .plotting_common import _save_figure, grouped_point_labels
+from .plotting_common import _math_label, _save_figure, grouped_point_labels
 
 try:
     from scipy.spatial import ConvexHull
@@ -148,28 +148,47 @@ def _setup_2d_ax(title, bz_poly):
     return fig, ax
 
 
-_GREEK = {
-    "GAMMA": r"\Gamma", "Γ": r"\Gamma",
-    "DELTA": r"\Delta", "Δ": r"\Delta",
-    "LAMBDA": r"\Lambda", "Λ": r"\Lambda",
-    "SIGMA": r"\Sigma", "Σ": r"\Sigma",
-}
+# Text boxes are much wider than tall, so an equal gap looks larger above
+# and below a marker than beside it.
+_LABEL_OFFSET_POINTS_X = 14.0
+_LABEL_OFFSET_POINTS_Y = 9.0
 
 
-def _fig_label(label, prime=False):
-    if "/" in str(label):
-        return "/".join(_fig_label(alias, prime=prime)
-                        for alias in str(label).split("/"))
-    label = str(label).rstrip("'")
-    pt = "'" if prime else ""
-    if "_" in label:
-        base, sub = label.split("_", 1)
-        math_base = _GREEK.get(base.strip().upper(), base)
-        return rf"${math_base}_{{{sub}}}{pt}$"
-    math_label = _GREEK.get(label.strip().upper())
-    if math_label is not None:
-        return rf"${math_label}{pt}$"
-    return f"{label}{pt}"
+def _bz_outward_normal(point, bz_poly):
+    """Outward normal of the BZ edge(s) a point sits on, horizontal preferred.
+
+    Labels for boundary points read best pushed straight out of the zone rather
+    than along the radial direction from the drawn wedge, which for an edge or
+    corner point aims diagonally and lands the text on the boundary line. At a
+    corner two normals apply and the horizontal one leaves the most room.
+    """
+    if bz_poly is None or len(bz_poly) < 3:
+        return None
+    poly = np.asarray(bz_poly, dtype=float)
+    interior = poly.mean(axis=0)
+    tol = 1e-3 * max(np.max(np.ptp(poly, axis=0)), 1e-12)
+    normals = []
+    for i in range(len(poly)):
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        edge = b - a
+        length = np.linalg.norm(edge)
+        if length < 1e-12:
+            continue
+        t = np.clip(np.dot(point - a, edge) / length ** 2, 0.0, 1.0)
+        if np.linalg.norm(point - (a + t * edge)) > tol:
+            continue
+        normal = np.array([edge[1], -edge[0]], dtype=float) / length
+        if np.dot(normal, 0.5 * (a + b) - interior) < 0:
+            normal = -normal
+        if not any(np.allclose(normal, kept, atol=1e-6) for kept in normals):
+            normals.append(normal)
+    if not normals:
+        return None
+    bisector = np.sum(normals, axis=0)
+    length = np.linalg.norm(bisector)
+    if length < 1e-12:
+        return normals[0]
+    return bisector / length
 
 
 def _label_offset(points):
@@ -179,9 +198,38 @@ def _label_offset(points):
     return center, 0.12 * span
 
 
+def _steer_off_line(direction, line_dir, point, other_points, offset_scale):
+    """Turn a label off a line drawn through it, e.g. the mirror/axis visual.
+
+    Only interior points need this: a label pushed along the operation line
+    lands on top of it. Both perpendiculars clear the line equally, so pick the
+    one that ends up farther from the other labelled points.
+    """
+    line_dir = np.asarray(line_dir, dtype=float)[:2]
+    norm = np.linalg.norm(line_dir)
+    if norm < 1e-12:
+        return direction
+    line_dir = line_dir / norm
+    if abs(float(np.dot(direction, line_dir))) < np.cos(np.radians(35.0)):
+        return direction
+    candidates = [np.array([-line_dir[1], line_dir[0]]),
+                  np.array([line_dir[1], -line_dir[0]])]
+    others = [np.asarray(other, dtype=float)[:2] for other in other_points
+              if not np.allclose(np.asarray(other, dtype=float)[:2], point[:2])]
+    if not others:
+        return candidates[0]
+
+    def clearance(candidate):
+        probe = point[:2] + candidate * max(offset_scale, 1e-12)
+        return min(float(np.linalg.norm(probe - other)) for other in others)
+
+    return max(candidates, key=clearance)
+
+
 def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
                           prime=False, label_color=None, center=None,
-                          offset_scale=None, path_labels=()):
+                          offset_scale=None, path_labels=(), bz_poly=None,
+                          avoid_dir=None):
     if not points:
         return
     auto_center, auto_scale = _label_offset(points.values())
@@ -201,11 +249,30 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
             continue
         direction = point - center
         norm = np.linalg.norm(direction)
-        offset = (direction / norm * offset_scale if norm > 1e-8
-                  else np.array([offset_scale, 0.0]))
-        ax.text(*(point + offset), _fig_label(label, prime=prime), fontsize=24,
-                color=label_color if label_color is not None else edgecolor,
-                ha="center", va="center", zorder=6)
+        direction = (direction / norm if norm > 1e-8
+                     else np.array([1.0, 0.0]))
+        boundary_normal = _bz_outward_normal(point, bz_poly)
+        if boundary_normal is not None:
+            direction = boundary_normal
+        elif avoid_dir is not None:
+            direction = _steer_off_line(direction, avoid_dir, point,
+                                        points.values(), offset_scale)
+        # Share the 3D figures' label typography instead of a second formatter.
+        name = str(label)
+        if prime and not name.endswith("'"):
+            name += "'"
+        # Offset in typographic units and anchor the near edge of the text box,
+        # so the gap does not shrink as the label gets wider or the wedge smaller.
+        dx, dy = float(direction[0]), float(direction[1])
+        ax.annotate(
+            _math_label(name), xy=(point[0], point[1]),
+            textcoords="offset points",
+            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            fontsize=24,
+            color=label_color if label_color is not None else edgecolor,
+            ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
+            va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
+            zorder=6, annotation_clip=False)
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +453,9 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
     Trivial/degenerate ops (identity, inversion, or an axis with no in-plane
     component) draw nothing, matching the 3D convention.
+
+    Returns the unit direction of the line drawn through Gamma, so point labels
+    can be kept off it, or None when the visual is an arc or nothing at all.
     """
     if _classify_spinflip_op is None:
         return
@@ -468,12 +538,19 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
         idx = _reduce_int_vector(axis_full @ np.linalg.inv(b_matrix))
         label = _format_miller('2', idx)
-        offset = line_dir * (0.05 * span)
         anchor = _line_label_anchor(p_pos, p_neg, avoid_pts)
         sign = 1.0 if np.array_equal(anchor, p_pos) else -1.0
-        label_pt = anchor + sign * offset
-        ax.text(label_pt[0], label_pt[1], label, fontsize=22, fontweight='bold',
-                color=COLOR, ha='center', va='center', zorder=212, clip_on=False)
+        # The anchor sits on the BZ boundary, so offset the text box's near edge
+        # outward rather than centring it there, which straddles the boundary.
+        dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
+        ax.annotate(
+            label, xy=(anchor[0], anchor[1]), textcoords="offset points",
+            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            fontsize=22, fontweight='bold', color=COLOR,
+            ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
+            va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
+            zorder=212, annotation_clip=False)
+        return line_dir
 
     elif op_type == 'mirror':
         normal3 = np.array(op['axis'], dtype=float)
@@ -493,12 +570,19 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
         idx = _reduce_int_vector(normal3 @ np.linalg.inv(b_matrix))
         label = _format_miller('m', idx)
-        offset = line_dir * (0.05 * span)
         anchor = _line_label_anchor(p_pos, p_neg, avoid_pts)
         sign = 1.0 if np.array_equal(anchor, p_pos) else -1.0
-        label_pt = anchor + sign * offset
-        ax.text(label_pt[0], label_pt[1], label, fontsize=22, fontweight='bold',
-                color=COLOR, ha='center', va='center', zorder=212, clip_on=False)
+        # The anchor sits on the BZ boundary, so offset the text box's near edge
+        # outward rather than centring it there, which straddles the boundary.
+        dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
+        ax.annotate(
+            label, xy=(anchor[0], anchor[1]), textcoords="offset points",
+            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            fontsize=22, fontweight='bold', color=COLOR,
+            ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
+            va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
+            zorder=212, annotation_clip=False)
+        return line_dir
 
 
 def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
@@ -631,13 +715,24 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
 
     # ----- Figure 1: 2D BZ + in-plane path + centroid -----
     fig1, ax1 = _setup_2d_ax(f"2D BZ: {basename} ({sc_type})", bz_poly)
+    # Shade the IBZ itself: without it the doubled wedge is invisible and the
+    # centroid star looks misplaced relative to the plain high-symmetry path.
+    ibz_polygon_frac = centroid_result.get("ibz_polygon_frac")
+    if ibz_polygon_frac is not None and len(ibz_polygon_frac) >= 3:
+        ibz_xy = np.array(
+            [_to_2d(_cart_from_frac(point, b_matrix), basis)
+             for point in ibz_polygon_frac],
+            dtype=float,
+        )
+        ax1.fill(ibz_xy[:, 0], ibz_xy[:, 1], color="salmon", alpha=0.20,
+                 zorder=1)
     for start, end in kpath:
         if start in kpoints_cart and end in kpoints_cart:
             p1, p2 = kpoints_cart[start], kpoints_cart[end]
             ax1.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=3.0,
                      alpha=0.9, zorder=3)
     _draw_labeled_points(ax1, kpoints_cart, "red", "darkred", label_color="black",
-                         path_labels=path_labels)
+                         path_labels=path_labels, bz_poly=bz_poly)
     ax1.scatter(*centroid_xy, c="gold", marker="*", s=420, edgecolors="k",
                 zorder=112, label=r"$k$")
     # Place the legend outside the axes so it cannot overlap plotted points or labels and the BZ itself needs no extra padding.
@@ -671,7 +766,8 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     fig2, ax2 = _setup_2d_ax("2D spin-flip path connections", bz_poly)
     avoid_pts = (list(kpoints_cart.values()) + list(mapped_cart_lines.values())
                  + [centroid_xy, k_prime_xy])
-    _draw_op_visual_2d(ax2, R_for_kpts, b_matrix, basis, bz_poly, avoid_pts=avoid_pts)
+    op_line_dir = _draw_op_visual_2d(ax2, R_for_kpts, b_matrix, basis, bz_poly,
+                                     avoid_pts=avoid_pts)
     orig_poly = np.array(list(kpoints_cart.values()), dtype=float)
     mapped_poly = np.array(list(mapped_cart_lines.values()), dtype=float)
     if len(orig_poly) >= 3 and ConvexHull is not None:
@@ -695,8 +791,10 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     shared_center, shared_scale = _label_offset(shared_points)
     _draw_labeled_points(ax2, kpoints_cart, "salmon", "darkred", prime=False,
                          center=shared_center, offset_scale=shared_scale,
-                         path_labels=path_labels)
+                         path_labels=path_labels, bz_poly=bz_poly,
+                         avoid_dir=op_line_dir)
     _draw_labeled_points(ax2, mapped_cart, "cornflowerblue", "navy", prime=True,
+                         bz_poly=bz_poly, avoid_dir=op_line_dir,
                          center=shared_center, offset_scale=shared_scale,
                          path_labels={f"{label}'" for label in path_labels})
     threshold = 0.05 * max(np.max(np.linalg.norm(bz_poly, axis=1)), 1e-8)
