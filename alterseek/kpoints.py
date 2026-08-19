@@ -17,6 +17,8 @@ from .symmetry import (no_altermagnetism_reason,
                        laue_group_from_spacegroup_number,
                        point_group_from_spacegroup_number,
                        is_valid_2d_spin_flip_cartesian,
+                       is_trivial_2d_spin_flip_cartesian,
+                       keeps_2d_plane_cartesian,
                        slab_plane_normal_cartesian,
                        describe_spinflip_op)
 from .plotting_3d import (plot_spin_flip_figure,
@@ -283,6 +285,30 @@ class KPointsModifier:
             operation,
             operation_basis,
             self.plane_normal_cartesian,
+        )
+
+    def _forces_2d_degeneracy(self, operation, centroid_result):
+        """True for a spin flip that equates both channels at every in-plane k.
+
+        A plane-preserving spin-flip operation restricting to +I (U m_z) or -I
+        (U C_2z) on the slab plane maps every in-plane k to itself or to -k
+        while reversing spin, so E_up(k) = E_down(k) throughout the plane. Its
+        presence disqualifies the slab regardless of how many other spin-flip
+        operations act nontrivially, which is why it cannot simply be filtered
+        out of the operation list.
+        """
+        if self.plane_normal_cartesian is None:
+            raise RuntimeError("Physical 2D plane has not been configured")
+        operation_basis = np.asarray(
+            centroid_result["b_matrix_input"], dtype=float
+        )
+        return (
+            keeps_2d_plane_cartesian(
+                operation, operation_basis, self.plane_normal_cartesian
+            )
+            and is_trivial_2d_spin_flip_cartesian(
+                operation, operation_basis, self.plane_normal_cartesian
+            )
         )
 
     @staticmethod
@@ -2061,10 +2087,14 @@ class KPointsModifier:
         preserve_ops = _inversion_extended(preserve_ops)
 
         # In 2D mode, test each operation in Cartesian reciprocal space because its fractional matrix may use a reordered magnetic-cell basis.
-        # Keep only operations that preserve the physical slab plane and do not restrict to the trivial +/-I action within that plane.
+        # A plane-preserving flip restricting to +/-I within the plane forbids in-plane splitting outright, so its presence rejects the slab; the remaining operations are then filtered to those acting nontrivially.
         _flip_ops_emptied_2d = False
         if self.mode_2d and flip_ops:
             try:
+                degeneracy_forcing_ops = [
+                    op for op in flip_ops
+                    if self._forces_2d_degeneracy(op, centroid_result)
+                ]
                 valid_flip_ops = [
                     op for op in flip_ops
                     if self._is_valid_2d_operation(op, centroid_result)
@@ -2073,7 +2103,16 @@ class KPointsModifier:
                 print(f"[Error] 2D spin-operation filtering failed: {exc}")
                 return False
             n_excluded = len(flip_ops) - len(valid_flip_ops)
-            if valid_flip_ops:
+            if degeneracy_forcing_ops:
+                print(f"[2D mode] In-plane spin splitting: NO -- "
+                      f"{len(degeneracy_forcing_ops)} spin-flip operation(s) "
+                      "restrict to +I (U m_z) or -I (U C_2z) on the slab plane "
+                      "and equate the two spin channels at every in-plane k. "
+                      "This slab is not a 2D altermagnet; writing the ordinary "
+                      "in-plane path without a k' partner.")
+                flip_ops = []
+                _flip_ops_emptied_2d = True
+            elif valid_flip_ops:
                 print(f"[2D mode] In-plane spin splitting: YES "
                       f"({len(valid_flip_ops)} valid 2D spin-flip ops"
                       + (f", {n_excluded} invalid 2D ops excluded" if n_excluded else "")
