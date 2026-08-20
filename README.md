@@ -67,10 +67,6 @@ for the full field reference.
 - Spin axis + moments: Cartesian axis (default `0 0 1`) and VASP
   `MAGMOM`-style scalar moments (e.g. `5*0 2*1.0`); missing trailing values
   default to `0`, while excess values are rejected.
-- K-path: press Enter for the auto-generated path, or give a line-mode
-  `KPATH.in`/KPOINTS-style file. A custom path is interpreted in the reciprocal
-  fractional basis of the submitted structure and must contain labeled,
-  complete endpoint pairs.
 
 These (plus the Step 3 operation choice and Step 5 output code) can also be
 supplied via `alterseek_input.toml` — see Quick Start above.
@@ -99,7 +95,6 @@ Spin operations: 6 flip, 6 preserve
 
 >>> Step 1: High-symmetry k-path
 Path: GAMMA-M-K-GAMMA-A-L-H-A | L-M | H-K
-Press [Enter] to use this path, or type a filename to load your own:
 Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point

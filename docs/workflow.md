@@ -41,17 +41,11 @@ than structure sites is rejected as an atom-order/count error.
 
 ## Step 1: High-Symmetry K-Path
 
-Press Enter for the auto-detected SeeK-path, or provide a line-mode
-`KPATH.in`/KPOINTS-style file to start from a custom path. The detected
+The path is always generated from the detected symmetry; the detected
 lattice type is reported using SeeK-path keys (`hP2`, `oI3`, `mC2`, etc.).
-
-A custom path is interpreted in the reciprocal fractional basis of the
-structure submitted in Step 0. AlterSeeK-Path converts it to the standardized
-SeeK-path basis used for internal processing and converts the final path to
-the submitted cell's reciprocal basis when writing output. Custom files
-must use reciprocal line mode and contain labeled endpoint pairs; one complete
-segment is valid, but a lone point, an odd endpoint count, a missing label, or
-a non-finite coordinate is rejected.
+Drop whichever generated segments you do not want from the written KPOINTS
+file. The path is converted to the submitted cell's reciprocal basis when
+writing output.
 
 ## Step 2: General K Point
 
@@ -191,7 +185,6 @@ save_pdf = true
 | `structure` | Step 0 structure-file prompt | default `POSCAR` if omitted |
 | `spin_axis` | Step 0 spin-axis prompt | ignored for `.mcif` input |
 | `moments` | Step 0 magnetic-moments prompt | the one field that changes every run |
-| `path` | Step 1 path-choice prompt | `""` (or omit) uses the auto-generated path; a filename loads a custom `KPATH.in`/KPOINTS-style path |
 | `flip_option` | Step 3 spin-flip operation prompt | plain integer, picks that numbered detected operation; omit for the interactive numbered menu (`list` remains available) |
 | `output_code` | Step 5 output-code prompt | `"vasp"` or `"qe"` |
 | `save_pdf` | BZ figure output format | `true`/`false` (default `false`); when true, also saves a vector PDF alongside each BZ figure's default PNG output |

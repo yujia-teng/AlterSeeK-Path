@@ -262,43 +262,6 @@ def test_deferred_figure_failure_does_not_skip_later_saves_or_cleanup(
     assert "synthetic first save failure" in output
 
 
-def test_custom_path_conversion_error_reaches_workflow_boundary(
-    tmp_path, monkeypatch, capsys
-):
-    from alterseek import kpoints as kpoints_module
-
-    custom_path = tmp_path / "KPATH.in"
-    custom_path.write_text(
-        "Custom path\n30\nLine-Mode\nReciprocal\n"
-        "0.0 0.0 0.0 GAMMA\n0.5 0.0 0.0 X\n",
-        encoding="utf-8",
-    )
-    answers = "\n".join([
-        str(POSCAR), "0 0 1", "5 -5", str(custom_path)
-    ]) + "\n"
-
-    def fail_conversion(*args, **kwargs):
-        raise RuntimeError("synthetic custom-path conversion failure")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
-    monkeypatch.setattr(
-        kpoints_module.KPointsModifier,
-        "convert_custom_path_from_input_basis",
-        fail_conversion,
-    )
-
-    with pytest.raises(
-        RuntimeError, match="synthetic custom-path conversion failure"
-    ):
-        kpoints_module.KPointsModifier().interactive_modify()
-
-    output = capsys.readouterr().out
-    assert "Successfully read 2 k-points" in output
-    assert "[Error] synthetic custom-path conversion failure" not in output
-    assert not (tmp_path / "KPOINTS_alter").exists()
-
-
 def test_display_failure_after_kpoints_write_remains_successful(
     tmp_path, monkeypatch, capsys
 ):
