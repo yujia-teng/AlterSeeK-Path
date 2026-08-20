@@ -297,7 +297,6 @@ def test_interactive_2d_output_stays_in_physical_plane(
         'structure = "POSCAR"\n'
         'spin_axis = "0 0 1"\n'
         'moments = ""\n'
-        'path = ""\n'
         'output_code = "vasp"\n',
         encoding="utf-8",
     )

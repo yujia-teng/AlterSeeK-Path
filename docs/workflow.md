@@ -174,7 +174,6 @@ finds. Any key can be omitted; the prompt for that step then runs as usual.
 structure = "POSCAR"
 spin_axis = "0 0 1"
 moments = "5 -5"
-path = ""
 flip_option = 1
 output_code = "vasp"
 save_pdf = true

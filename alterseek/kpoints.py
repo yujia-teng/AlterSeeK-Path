@@ -51,7 +51,7 @@ STEP0_VERBOSE_SUMMARY = False
 INPUT_CONFIG_FILE = "alterseek_input.toml"
 
 _INPUT_CONFIG_KEYS = {
-    "structure", "spin_axis", "moments", "path", "flip_option",
+    "structure", "spin_axis", "moments", "flip_option",
     "output_code", "view_elev", "view_azim", "save_pdf", "symprec",
     "vacuum_axis",
 }
@@ -197,7 +197,7 @@ def _validate_input_config(config):
             f"unknown setting{'s' if len(unknown) != 1 else ''}: {', '.join(unknown)}"
         )
 
-    for key in ("structure", "spin_axis", "moments", "path", "output_code"):
+    for key in ("structure", "spin_axis", "moments", "output_code"):
         if key in config and not isinstance(config[key], str):
             raise ValueError(f"{key} must be a TOML string")
 
@@ -1391,10 +1391,6 @@ class KPointsModifier:
         view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
         symprec = float(input_config['symprec']) if 'symprec' in input_config else None
         save_pdf = bool(input_config.get('save_pdf', False))
-        # 'path' is kept in the schema so existing input files still load, but
-        # the path is always generated now.
-        if str(input_config.get('path', '')).strip():
-            print("[Note] 'path' is ignored: the k-path is always generated.")
         # The command line wins when it was given explicitly; otherwise the
         # toml setting applies, matching how the other settings resolve.
         if 'vacuum_axis' in input_config and not self._vacuum_axis_from_cli:

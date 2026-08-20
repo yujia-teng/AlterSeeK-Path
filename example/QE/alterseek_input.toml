@@ -1,7 +1,6 @@
 structure = "POSCAR"
 spin_axis = "0 0 1"
 moments = "8 -8 4*0"
-path = ""
 flip_option = 10
 output_code = "qe"
 save_pdf = true

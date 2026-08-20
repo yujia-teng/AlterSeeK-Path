@@ -363,7 +363,6 @@ def test_altermagnet_with_no_available_spin_flip_operation_aborts(
         'structure = "POSCAR"\n'
         'spin_axis = "0 0 1"\n'
         'moments = "1 -1"\n'
-        'path = ""\n'
         'output_code = "vasp"\n',
         encoding="utf-8",
     )

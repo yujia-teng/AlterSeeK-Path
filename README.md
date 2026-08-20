@@ -46,7 +46,6 @@ To skip the prompts (e.g. for repeated runs on the same structure), put an
 structure = "POSCAR"
 spin_axis = "0 0 1"
 moments = "5 -5"
-path = ""
 flip_option = 1
 output_code = "vasp"
 ```
