@@ -1516,6 +1516,11 @@ class KPointsModifier:
 
         # Step 0: Compute spin-flip operations from structure
         print(f"\n{BOLD}>>> Step 0: Spin symmetry{RESET}")
+        if self.mode_2d:
+            print(
+                "[2D mode] input vacuum axis is set to "
+                f"'{'abc'[self.input_vacuum_axis]}'"
+            )
         struct_file = _ask(
             "Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): ",
             "structure",
@@ -1712,15 +1717,19 @@ class KPointsModifier:
                     ) or "Unknown",
                     _cell_suffix(
                         sf_result.get('num_atoms'),
-                        input_cell_symmetry.get('seekpath_bravais'),
+                        None if self.mode_2d
+                        else input_cell_symmetry.get('seekpath_bravais'),
                     ),
                 ), (
                     'Nonmagnetic primitive cell:',
                     sf_result['space_group'],
                     sf_result['point_group'],
                     sf_result['laue_group'],
-                    _cell_suffix(sf_result.get('nonmagnetic_sites'),
-                                 sf_result.get('nonmagnetic_lattice')),
+                    _cell_suffix(
+                        sf_result.get('nonmagnetic_sites'),
+                        None if self.mode_2d
+                        else sf_result.get('nonmagnetic_lattice'),
+                    ),
                 )]
                 reported_g0_symmetry = working_cell_symmetry
                 if reported_g0_symmetry is not None:
@@ -1731,7 +1740,8 @@ class KPointsModifier:
                         reported_g0_symmetry['laue_group'],
                         _cell_suffix(
                             reported_g0_symmetry.get('sites'),
-                            analysis_preparation.get(
+                            None if self.mode_2d
+                            else analysis_preparation.get(
                                 'magnetic_primitive_lattice_tag'
                             ),
                         ),
@@ -1843,7 +1853,7 @@ class KPointsModifier:
             primitive_symmetry = analysis_preparation[
                 "nonmagnetic_primitive_symmetry"
             ]
-            _print_cell_rows([(
+            structural_rows = [(
                 'Input cell:',
                 f"{input_cell_symmetry['symbol']} "
                 f"({input_cell_symmetry['number']})",
@@ -1853,7 +1863,8 @@ class KPointsModifier:
                 ) or "Unknown",
                 _cell_suffix(
                     analysis_preparation['submitted_sites'],
-                    input_cell_symmetry.get('seekpath_bravais'),
+                    None if self.mode_2d
+                    else input_cell_symmetry.get('seekpath_bravais'),
                 ),
             ), (
                 'Nonmagnetic primitive cell:',
@@ -1865,9 +1876,11 @@ class KPointsModifier:
                 ) or "Unknown",
                 _cell_suffix(
                     primitive_symmetry['sites'],
-                    primitive_symmetry.get('seekpath_bravais'),
+                    None if self.mode_2d
+                    else primitive_symmetry.get('seekpath_bravais'),
                 ),
-            )])
+            )]
+            _print_cell_rows(structural_rows)
             if analysis_preparation.get(
                 "uses_conventional_supercell_bz", False
             ):
@@ -2086,8 +2099,8 @@ class KPointsModifier:
         flip_ops = _inversion_extended(flip_ops)
         preserve_ops = _inversion_extended(preserve_ops)
 
-        # In 2D mode, test each operation in Cartesian reciprocal space because its fractional matrix may use a reordered magnetic-cell basis.
-        # A plane-preserving flip restricting to +/-I within the plane forbids in-plane splitting outright, so its presence rejects the slab; the remaining operations are then filtered to those acting nontrivially.
+        # Test in Cartesian reciprocal space: the fractional matrix may use a reordered magnetic-cell basis.
+        # A flip restricting to +/-I in the plane rejects the slab outright; the rest are filtered to those acting nontrivially.
         _flip_ops_emptied_2d = False
         if self.mode_2d and flip_ops:
             try:
@@ -2104,12 +2117,8 @@ class KPointsModifier:
                 return False
             n_excluded = len(flip_ops) - len(valid_flip_ops)
             if degeneracy_forcing_ops:
-                print(f"[2D mode] In-plane spin splitting: NO -- "
-                      f"{len(degeneracy_forcing_ops)} spin-flip operation(s) "
-                      "restrict to +I (U m_z) or -I (U C_2z) on the slab plane "
-                      "and equate the two spin channels at every in-plane k. "
-                      "This slab is not a 2D altermagnet; writing the ordinary "
-                      "in-plane path without a k' partner.")
+                print("[2D mode] U m_z / U C_2z symmetry detected, "
+                      "not a 2D altermagnet.")
                 flip_ops = []
                 _flip_ops_emptied_2d = True
             elif valid_flip_ops:
@@ -2119,11 +2128,8 @@ class KPointsModifier:
                       + ").")
                 flip_ops = valid_flip_ops
             else:
-                print("[2D mode] In-plane spin splitting: NO -- no spin-flip "
-                      "operation both preserves the physical slab plane and "
-                      "acts nontrivially within it. This slab is not a 2D "
-                      "altermagnet; writing the ordinary in-plane path without "
-                      "a k' partner.")
+                print("[2D mode] No spin-flip operation, "
+                      "not a 2D altermagnet.")
                 flip_ops = []
                 _flip_ops_emptied_2d = True
 
