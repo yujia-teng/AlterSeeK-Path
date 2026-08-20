@@ -196,6 +196,7 @@ save_pdf = true
 | `output_code` | Step 5 output-code prompt | `"vasp"` or `"qe"` |
 | `save_pdf` | BZ figure output format | `true`/`false` (default `false`); when true, also saves a vector PDF alongside each BZ figure's default PNG output |
 | `symprec` | symmetry-detection tolerance | positive number in angstrom (default `1e-3`); applies to every input format |
+| `vacuum_axis` | 2D-slab vacuum axis of the input cell | `"a"`, `"b"` or `"c"` (default `"c"`); 2D mode only, overridden by an explicit `--vacuum-axis` |
 
 ### `symprec`
 

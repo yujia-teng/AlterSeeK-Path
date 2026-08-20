@@ -53,7 +53,10 @@ INPUT_CONFIG_FILE = "alterseek_input.toml"
 _INPUT_CONFIG_KEYS = {
     "structure", "spin_axis", "moments", "path", "flip_option",
     "output_code", "view_elev", "view_azim", "save_pdf", "symprec",
+    "vacuum_axis",
 }
+
+_VACUUM_AXIS_INDEX = {"a": 0, "b": 1, "c": 2}
 
 
 def _fmt_coord(value):
@@ -220,6 +223,11 @@ def _validate_input_config(config):
     if "save_pdf" in config and not isinstance(config["save_pdf"], bool):
         raise ValueError("save_pdf must be true or false")
 
+    if "vacuum_axis" in config:
+        axis = config["vacuum_axis"]
+        if not isinstance(axis, str) or axis.strip().lower() not in _VACUUM_AXIS_INDEX:
+            raise ValueError("vacuum_axis must be \"a\", \"b\", or \"c\"")
+
     if "symprec" in config:
         value = config["symprec"]
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -248,7 +256,7 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
 
 
 class KPointsModifier:
-    def __init__(self, mode_2d: bool = False, input_vacuum_axis: int = 2):
+    def __init__(self, mode_2d: bool = False, input_vacuum_axis: int = None):
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
@@ -257,7 +265,10 @@ class KPointsModifier:
         self.kpoints_basis_rotation = None
         self.plane_normal_cartesian = None
         self.mode_2d = mode_2d
-        self.input_vacuum_axis = input_vacuum_axis
+        self._vacuum_axis_from_cli = input_vacuum_axis is not None
+        self.input_vacuum_axis = (
+            2 if input_vacuum_axis is None else input_vacuum_axis
+        )
 
     def _configure_2d_plane(self, centroid_result, submitted_lattice=None):
         """Record the physical slab plane independently of any cell basis."""
@@ -1498,6 +1509,12 @@ class KPointsModifier:
         view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
         symprec = float(input_config['symprec']) if 'symprec' in input_config else None
         save_pdf = bool(input_config.get('save_pdf', False))
+        # The command line wins when it was given explicitly; otherwise the
+        # toml setting applies, matching how the other settings resolve.
+        if 'vacuum_axis' in input_config and not self._vacuum_axis_from_cli:
+            self.input_vacuum_axis = _VACUUM_AXIS_INDEX[
+                str(input_config['vacuum_axis']).strip().lower()
+            ]
 
         def _ask(prompt_text, key):
             print(prompt_text, end='', flush=True)

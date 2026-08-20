@@ -32,16 +32,19 @@ def main():
     parser.add_argument(
         "--vacuum-axis",
         choices=["a", "b", "c"],
-        default="c",
-        help="Input-cell vacuum axis for the 2D-slab sanity check (default: c). "
-             "The slicing axis is auto-detected in the standardized frame "
-             "regardless of this flag.",
+        default=None,
+        help="Input-cell vacuum axis for the 2D-slab sanity check (default: c, "
+             "or vacuum_axis in alterseek_input.toml). The slicing axis is "
+             "auto-detected in the standardized frame regardless of this flag.",
     )
     args = parser.parse_args(argv)
 
     modifier = KPointsModifier(
         mode_2d=args.mode_2d,
-        input_vacuum_axis={"a": 0, "b": 1, "c": 2}[args.vacuum_axis],
+        input_vacuum_axis=(
+            None if args.vacuum_axis is None
+            else {"a": 0, "b": 1, "c": 2}[args.vacuum_axis]
+        ),
     )
     try:
         success = modifier.interactive_modify()
