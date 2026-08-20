@@ -345,7 +345,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
             mlx, mly, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
             m_artist = ax.text2D(
                 mlx, mly, m_label, transform=ax.transData,
-                fontsize=17, fontweight='bold', color=MIRROR_COLOR, zorder=120,
+                fontsize=28, fontweight='bold', color=MIRROR_COLOR, zorder=120,
                 ha='center', va='center',
             )
 
@@ -473,7 +473,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         label_x, label_y, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
         label_artist = ax.text2D(
             label_x, label_y, order_str, transform=ax.transData,
-            fontsize=24, fontweight='bold', color=AXIS_COLOR,
+            fontsize=28, fontweight='bold', color=AXIS_COLOR,
             zorder=OP_ZORDER + 2,
             ha='center', va='center',
         )
@@ -1029,7 +1029,7 @@ def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0, axis=2):
         if length < 1e-10:
             ax.scatter(origin[0], origin[1], s=36, c=color, zorder=220)
             ax.text(origin[0] + 0.025 * span, origin[1] + 0.025 * span,
-                    label, fontsize=24, fontweight='bold',
+                    label, fontsize=32, fontweight='bold',
                     ha='left', va='bottom', color=color, zorder=221,
                     clip_on=False)
             continue
@@ -1055,7 +1055,7 @@ def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0, axis=2):
             ann.arrow_patch.set_clip_on(False)
         offset = projected / length * (0.04 * span)
         ax.text(end[0] + offset[0], end[1] + offset[1], label,
-                fontsize=24, fontweight='bold', ha='center', va='center',
+                fontsize=32, fontweight='bold', ha='center', va='center',
                 color=color, zorder=221, clip_on=False)
 
 
