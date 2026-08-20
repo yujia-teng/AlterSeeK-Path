@@ -30,6 +30,12 @@ BZ_SPECIAL_COLORS = {
     "orange": "#e68613",
     "purple": "#6b5596",
 }
+IBZ_FACE_COLORS = {
+    "up_main": "salmon",
+    "up_extra": "#e98f8f",
+    "down_main": "cornflowerblue",
+    "down_extra": "#91b2e8",
+}
 BZ_PATH_STYLE_OVERRIDES = {
     "cP1": {("M", "X_1"): {"color": "red", "ls": "--"}},
     "cF1": {("X", "W_2"): {"color": "red", "ls": "--"}},

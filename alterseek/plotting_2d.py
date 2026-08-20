@@ -21,7 +21,9 @@ Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 import os
 import numpy as np
 
-from .plotting_common import _math_label, _save_figure, grouped_point_labels
+from .plotting_common import (
+    IBZ_FACE_COLORS, _math_label, _save_figure, grouped_point_labels,
+)
 
 try:
     from scipy.spatial import ConvexHull
@@ -30,11 +32,12 @@ except Exception:  # pragma: no cover - scipy is a hard dependency in practice
 
 try:
     from .symmetry import (
-        _classify_spinflip_op, _reduce_int_vector, _format_miller,
-        _rotation_sense,
+        _classify_spinflip_op, _doubled_ibz_extra_flags, _reduce_int_vector,
+        _format_miller, _rotation_sense,
     )
 except Exception:  # pragma: no cover - op-visual is best-effort only
     _classify_spinflip_op = None
+    _doubled_ibz_extra_flags = None
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +622,25 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     ibz_cart = np.array([_cart_from_frac(p, b_matrix) for p in ibz_polygon_frac],
                         dtype=float)
 
+    # A project-doubled IBZ (e.g. 4/m tP1's X_A) covers each in-plane cell
+    # twice; painting the whole doubled polygon solid would hide that. Paint
+    # it pale and overlay the genuine (non-"_A") sub-polygon solid on top,
+    # mirroring plotting_3d.plot_spin_bz_top_view_figure. Vertex order is
+    # inherited from the hull-ordered ibz_polygon_frac, so the sub-polygon
+    # (a subsequence of a convex polygon's boundary) stays convex and needs
+    # no re-hulling, unlike the 3D version.
+    ibz_polygon_labels = centroid_result.get("ibz_polygon_labels")
+    extra_flags = None
+    if _doubled_ibz_extra_flags is not None and ibz_polygon_labels and \
+            len(ibz_polygon_labels) == len(ibz_polygon_frac):
+        flags = _doubled_ibz_extra_flags(ibz_polygon_labels)
+        if any(flags):
+            extra_flags = flags
+    original_idx = (
+        [j for j, is_extra in enumerate(extra_flags) if not is_extra]
+        if extra_flags is not None else None
+    )
+
     fig, ax = plt.subplots(figsize=(9, 9))
     fill_alpha = 0.68
     up_labeled = down_labeled = False
@@ -636,6 +658,8 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
             poly = np.array([_to_2d(p, basis) for p in cell_pts], dtype=float)
             is_down = bool(spin_down_mask[i])
             color = "#1f4e9e" if is_down else "#b22222"
+            extra_color = (IBZ_FACE_COLORS["down_extra"] if is_down
+                           else IBZ_FACE_COLORS["up_extra"])
             if is_down:
                 label = None if down_labeled else "spin-down"
                 down_labeled = True
@@ -643,8 +667,15 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
                 label = None if up_labeled else "spin-up"
                 up_labeled = True
             closed = np.vstack([poly, poly[0]])
-            ax.fill(poly[:, 0], poly[:, 1], facecolor=color, alpha=fill_alpha,
-                    edgecolor="none", label=label)
+            if original_idx is not None and len(original_idx) >= 3:
+                ax.fill(poly[:, 0], poly[:, 1], facecolor=extra_color,
+                        alpha=0.46, edgecolor="none", label=label)
+                sub_poly = poly[original_idx]
+                ax.fill(sub_poly[:, 0], sub_poly[:, 1], facecolor=color,
+                        alpha=fill_alpha, edgecolor="none")
+            else:
+                ax.fill(poly[:, 0], poly[:, 1], facecolor=color,
+                        alpha=fill_alpha, edgecolor="none", label=label)
             ax.plot(closed[:, 0], closed[:, 1], color=color, lw=0.9, alpha=0.95)
 
     closed = np.vstack([bz_poly, bz_poly[0]])

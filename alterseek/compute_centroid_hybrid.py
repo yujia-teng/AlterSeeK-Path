@@ -632,6 +632,7 @@ def _compute_ibz_centroid(
     labels_list = list(kpoints_cart_centroid.keys())
     points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
     ibz_polygon_frac = None
+    ibz_polygon_labels = None
     hull_matches_labels = False
 
     if mode_2d:
@@ -655,7 +656,9 @@ def _compute_ibz_centroid(
         centroid_frac, centroid_cart, ibz_volume = area_centroid_2d(
             frac_pts, vacuum_axis, b_matrix
         )
-        ibz_polygon_frac = ordered_2d_polygon_frac(frac_pts, vacuum_axis)
+        ibz_polygon_frac, ibz_polygon_labels = ordered_2d_polygon_frac(
+            frac_pts, vacuum_axis, labels=in_plane_labels
+        )
         if verbose:
             print(f"[2D mode] in-plane hull labels: {len(in_plane_labels)} / "
                   f"{len(labels_list)} ({', '.join(in_plane_labels)})")
@@ -720,6 +723,7 @@ def _compute_ibz_centroid(
         'centroid_frac': centroid_frac,
         'ibz_volume': ibz_volume,
         'ibz_polygon_frac': ibz_polygon_frac,
+        'ibz_polygon_labels': ibz_polygon_labels,
         'hull_matches_labels': hull_matches_labels,
     }
 
@@ -1037,6 +1041,7 @@ def run(
         'mode_2d': mode_2d,
         'vacuum_axis': analysis_result['vacuum_axis'],
         'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
+        'ibz_polygon_labels': centroid_result['ibz_polygon_labels'],
         'seekpath_rotation_matrix': np.array(
             analysis_result['sp_result']['rotation_matrix']
         ),

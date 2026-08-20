@@ -148,20 +148,33 @@ def area_centroid_2d(frac_points, vacuum_axis, b_matrix):
     return centroid_frac, centroid_cart, area
 
 
-def ordered_2d_polygon_frac(frac_points, vacuum_axis):
+def ordered_2d_polygon_frac(frac_points, vacuum_axis, labels=None):
     """Return the in-plane IBZ polygon vertices (3D fractional, vacuum=0),
-    ordered around the convex hull.  Used by the 2D spin-pattern figure."""
+    ordered around the convex hull.  Used by the 2D spin-pattern figure.
+
+    If ``labels`` (one per input point) is given, also returns the labels
+    reordered to match the polygon vertices -- needed to tell which
+    vertices are project-doubled ``_A`` copies (see
+    ``symmetry._doubled_ibz_extra_flags``).
+    """
     in_plane = [i for i in range(3) if i != vacuum_axis]
     pts = np.array(frac_points, dtype=float)
-    uniq = []
-    for p in pts:
-        if not any(np.allclose(p, q, atol=1e-8) for q in uniq):
-            uniq.append(p)
-    uniq = np.array(uniq, dtype=float)
+    uniq_pts = []
+    uniq_labels = []
+    for i, p in enumerate(pts):
+        if not any(np.allclose(p, q, atol=1e-8) for q in uniq_pts):
+            uniq_pts.append(p)
+            uniq_labels.append(labels[i] if labels is not None else None)
+    uniq = np.array(uniq_pts, dtype=float)
     if len(uniq) < 3:
-        return uniq.tolist()
-    hull = ConvexHull(uniq[:, in_plane])
-    return uniq[hull.vertices].tolist()
+        ordered_pts, ordered_labels = uniq.tolist(), uniq_labels
+    else:
+        hull = ConvexHull(uniq[:, in_plane])
+        ordered_pts = uniq[hull.vertices].tolist()
+        ordered_labels = [uniq_labels[i] for i in hull.vertices]
+    if labels is None:
+        return ordered_pts
+    return ordered_pts, ordered_labels
 
 
 def check_input_slab(a_matrix, declared_axis, ortho_tol=0.02):

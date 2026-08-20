@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d import proj3d
 from matplotlib.patches import FancyArrowPatch
 
 from .plotting_common import (
+    IBZ_FACE_COLORS,
     _get_bz_path_style,
     _math_label,
     _print_saved_paths,
@@ -40,14 +41,6 @@ from .geometry import (
     _IN_PLANE_AXES,
     find_bz_exit,
 )
-
-IBZ_FACE_COLORS = {
-    "up_main": "salmon",
-    "up_extra": "#e98f8f",
-    "down_main": "cornflowerblue",
-    "down_extra": "#91b2e8",
-}
-
 
 class _Arrow3D(FancyArrowPatch):
     """FancyArrowPatch projected into 3D — paper-quality arrow from any view angle."""
