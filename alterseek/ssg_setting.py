@@ -99,6 +99,81 @@ def _space_operation_keys(rotations, translations, tol=1e-7):
     }
 
 
+def _cartesian_translation_offset(lattice, first, second):
+    """Return the minimum-image Cartesian distance between two translations."""
+    difference = np.asarray(first, dtype=float) - np.asarray(second, dtype=float)
+    difference = difference - np.rint(difference)
+    return float(np.linalg.norm(difference @ np.asarray(lattice, dtype=float)))
+
+
+def _match_space_operations(lattice, intended, detected, symprec):
+    """Pair intended ``(R, t)`` operations with detected ones within symprec.
+
+    spglib fits translations to the coordinates it is given, so rounding noise
+    in a structure file puts them well outside an exact key comparison.  Match
+    on Cartesian offset at the same symprec, and return what stayed unpaired.
+    """
+    tolerance = max(float(symprec), 1e-8)
+    remaining = [
+        (np.asarray(rotation, dtype=float), np.asarray(translation, dtype=float))
+        for rotation, translation in detected
+    ]
+    missing = []
+    for rotation, translation in intended:
+        key = tuple(np.rint(rotation).astype(int).ravel())
+        matched = None
+        for index, (other_rotation, other_translation) in enumerate(remaining):
+            if tuple(np.rint(other_rotation).astype(int).ravel()) != key:
+                continue
+            if _cartesian_translation_offset(
+                lattice, translation, other_translation
+            ) <= tolerance:
+                matched = index
+                break
+        if matched is None:
+            missing.append(
+                (
+                    np.asarray(rotation, dtype=float),
+                    np.asarray(translation, dtype=float),
+                )
+            )
+        else:
+            remaining.pop(matched)
+    return missing, remaining
+
+
+def _format_space_operation(rotation, translation):
+    rows = np.rint(rotation).astype(int).reshape(3, 3)
+    matrix = "; ".join(" ".join(f"{value:d}" for value in row) for row in rows)
+    shift = ", ".join(
+        f"{value:.6f}" for value in _wrapped_translation(translation)
+    )
+    return f"[{matrix} | {shift}]"
+
+
+def _space_operation_mismatch_report(missing, unexpected, intended_count):
+    """Describe which Seitz operations failed to pair, not just how many."""
+    parts = [
+        "helper does not reproduce the intended Seitz set of "
+        f"{intended_count} operations"
+    ]
+    if missing:
+        listed = ", ".join(
+            _format_space_operation(rotation, translation)
+            for rotation, translation in missing[:2]
+        )
+        suffix = ", ..." if len(missing) > 2 else ""
+        parts.append(f"missing {len(missing)}: {listed}{suffix}")
+    if unexpected:
+        listed = ", ".join(
+            _format_space_operation(rotation, translation)
+            for rotation, translation in unexpected[:2]
+        )
+        suffix = ", ..." if len(unexpected) > 2 else ""
+        parts.append(f"unexpected {len(unexpected)}: {listed}{suffix}")
+    return "; ".join(parts)
+
+
 def _compatible_point_operations(lattice, space_operations, tol=1e-7):
     """Return the closed point group compatible with the submitted lattice.
 
@@ -542,11 +617,20 @@ def build_submitted_analysis_cell(
         detected_space_keys = _space_operation_keys(
             dataset.rotations, dataset.translations
         )
-        if detected_space_keys != intended_space_keys:
+        missing_operations, unexpected_operations = _match_space_operations(
+            lattice,
+            list(zip(rotations, translations)),
+            list(zip(dataset.rotations, dataset.translations)),
+            symprec,
+        )
+        if missing_operations or unexpected_operations:
             failures.append(
-                f"seeds {seed_label}: intended "
-                f"{len(intended_space_keys)} full spatial operations but "
-                f"detected {len(detected_space_keys)}"
+                f"seeds {seed_label}: "
+                + _space_operation_mismatch_report(
+                    missing_operations,
+                    unexpected_operations,
+                    len(intended_space_keys),
+                )
             )
             continue
         with warnings.catch_warnings():
@@ -661,11 +745,20 @@ def _build_physical_analysis_cell(
         detected_space_keys = _space_operation_keys(
             dataset.rotations, dataset.translations
         )
-        if detected_space_keys != intended_space_keys:
+        missing_operations, unexpected_operations = _match_space_operations(
+            lattice,
+            list(zip(rotations, translations)),
+            list(zip(dataset.rotations, dataset.translations)),
+            symprec,
+        )
+        if missing_operations or unexpected_operations:
             failures.append(
-                f"seeds {seed_label}: intended "
-                f"{len(intended_space_keys)} full spatial operations but "
-                f"detected {len(detected_space_keys)}"
+                f"seeds {seed_label}: "
+                + _space_operation_mismatch_report(
+                    missing_operations,
+                    unexpected_operations,
+                    len(intended_space_keys),
+                )
             )
             continue
         if (
