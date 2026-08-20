@@ -71,6 +71,40 @@ def detect_vacuum_axis_2d(b_matrix, sep_ratio=0.8, ortho_tol=0.05):
     return axis, info
 
 
+def trace_vacuum_axis_2d(a_matrix, declared_axis, b_matrix, rotation_matrix,
+                         tol=0.05):
+    """Follow the declared input vacuum axis into the standardized frame.
+
+    SeeK-path both reorders the axes and reports its cell in a rotated
+    Cartesian frame, so a slab given with vacuum along c is generally sliced
+    on another index (RuF4: c -> a).  Rotate the input layer normal with
+    ``rotation_matrix`` and pick the standardized reciprocal vector along it,
+    that vector being the one dual to the vacuum axis.
+
+    Returns ``(axis_index, info)``; ``info['traced']`` is False when no single
+    standardized axis lines up, leaving the caller to fall back on
+    ``detect_vacuum_axis_2d``.
+    """
+    A = np.asarray(a_matrix, dtype=float)
+    b = np.asarray(b_matrix, dtype=float)
+    in_plane = [index for index in range(3) if index != declared_axis]
+    normal = np.cross(A[in_plane[0]], A[in_plane[1]])
+    norm = np.linalg.norm(normal)
+    if not np.isfinite(norm) or norm <= 1e-12:
+        return None, {"traced": False, "alignments": None}
+    normal = np.asarray(rotation_matrix, dtype=float) @ (normal / norm)
+    alignments = np.abs(b @ normal) / np.linalg.norm(b, axis=1)
+    axis = int(np.argmax(alignments))
+    traced = bool(
+        alignments[axis] > 1.0 - tol
+        and all(alignments[i] < tol for i in range(3) if i != axis)
+    )
+    return axis, {
+        "traced": traced,
+        "alignments": [float(value) for value in alignments],
+    }
+
+
 def area_centroid_2d(frac_points, vacuum_axis, b_matrix):
     """Area centroid of the in-plane IBZ polygon.
 

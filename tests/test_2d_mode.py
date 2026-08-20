@@ -169,6 +169,30 @@ def test_detect_vacuum_axis_ambiguous_when_cubic():
     assert not info["separated"]
 
 
+def test_trace_vacuum_axis_follows_the_declared_axis_through_reordering():
+    # RuF4 setting: input vacuum along c, SeeK-path puts it first and reports a
+    # rotated Cartesian frame, so the slice belongs on standardized axis a.
+    a_matrix = _diag([4.9857, 5.3615, 33.4249])
+    b_matrix = 2 * np.pi * np.linalg.inv(_diag([33.4249, 4.9857, 5.3615])).T
+    rotation = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    axis, info = geometry.trace_vacuum_axis_2d(a_matrix, 2, b_matrix, rotation)
+    assert axis == 0
+    assert info["traced"]
+
+
+def test_trace_vacuum_axis_reports_failure_when_no_axis_lines_up():
+    # A normal at 45 degrees to two standardized axes matches neither.
+    a_matrix = _diag([4.0, 4.0, 20.0])
+    b_matrix = 2 * np.pi * np.linalg.inv(_diag([4.0, 4.0, 20.0])).T
+    rotation = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, np.sqrt(0.5), -np.sqrt(0.5)],
+        [0.0, np.sqrt(0.5), np.sqrt(0.5)],
+    ])
+    _axis, info = geometry.trace_vacuum_axis_2d(a_matrix, 2, b_matrix, rotation)
+    assert not info["traced"]
+
+
 # ---------------------------------------------------------------------------
 # 2D area centroid + in-plane IBZ polygon
 # ---------------------------------------------------------------------------

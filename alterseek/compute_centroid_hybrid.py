@@ -170,6 +170,7 @@ from .geometry import (
     get_symmetry_operations,
     calculate_volume_centroid,
     detect_vacuum_axis_2d,
+    trace_vacuum_axis_2d,
     area_centroid_2d,
     ordered_2d_polygon_frac,
     check_input_slab,
@@ -277,7 +278,24 @@ def _analyze_kspace(
 
     vacuum_axis = None
     if mode_2d:
-        vacuum_axis, vacuum_info = detect_vacuum_axis_2d(b_matrix)
+        # The declared input axis governs the slice; detection only cross-checks it.
+        detected_axis, vacuum_info = detect_vacuum_axis_2d(b_matrix)
+        vacuum_axis, trace_info = trace_vacuum_axis_2d(
+            a_matrix, input_vacuum_axis, b_matrix,
+            sp_result['rotation_matrix'],
+        )
+        if not trace_info['traced']:
+            vacuum_axis = detected_axis
+            print("[2D mode][Warning] input vacuum axis "
+                  f"'{'abc'[input_vacuum_axis]}' matches no single "
+                  "standardized axis; using the longest axis "
+                  f"'{'abc'[detected_axis]}' instead.")
+        elif vacuum_axis != detected_axis:
+            print("[2D mode][Warning] input vacuum axis "
+                  f"'{'abc'[input_vacuum_axis]}' maps to standardized "
+                  f"'{'abc'[vacuum_axis]}', but the longest standardized axis "
+                  f"is '{'abc'[detected_axis]}'; verify the structure is a "
+                  "proper slab.")
         if verbose:
             print(f"\n[2D mode] vacuum axis (standardized frame): "
                   f"{vacuum_axis} ('{'abc'[vacuum_axis]}'); reciprocal norms "
