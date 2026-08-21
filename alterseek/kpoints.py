@@ -133,7 +133,7 @@ def _cell_suffix(sites, lattice_tag):
 
 
 def _print_cell_rows(rows, note=None, note_after_index=0):
-    """Print the cell comparison with every field in its own column.
+    """Print the cell summary with every field in its own column.
 
     Space-group symbols and numbers vary in width (``P6_3mc (186)`` against
     ``Cmc2_1 (36)``), so without padding the fields ragged and the reader has
@@ -260,6 +260,8 @@ class KPointsModifier:
         self.kpoints_data = []
         self.header_lines = []
         self.extra_general_points = []
+        self.butterfly_kpoints_data = None
+        self.butterfly_extra_general_points = None
         self.kpoints_basis_matrix = None
         self.output_basis_matrix = None
         self.kpoints_basis_rotation = None
@@ -471,6 +473,7 @@ class KPointsModifier:
                                transformation_matrix: np.ndarray,
                                extra_general_points: Optional[List[List]] = None,
                                *,
+                               path_points: Optional[List[List]] = None,
                                report: bool = True) -> List[List]:
         """
         Insert general k-points into every segment of the high symmetry path.
@@ -480,7 +483,8 @@ class KPointsModifier:
           - Close: B'-k' | k-B
         Points already butterflied in earlier chains appear as plain segments.
         """
-        if not self.kpoints_data:
+        source_path = self.kpoints_data if path_points is None else path_points
+        if not source_path:
             print("Error: No k-points data loaded. Please read KPOINTS file first.")
             return []
 
@@ -509,7 +513,7 @@ class KPointsModifier:
             return [tc[0], tc[1], tc[2], prime_point_label(p[3])]
 
         # --- Step 1: group flat kpoints_data into segment pairs ---
-        raw = self._globally_alias_coincident_path_points(self.kpoints_data)
+        raw = self._globally_alias_coincident_path_points(source_path)
         seg_pairs = [(raw[i], raw[i+1]) for i in range(0, len(raw) - 1, 2)]
 
         # --- Step 2: build connected chains ---
@@ -689,14 +693,16 @@ class KPointsModifier:
                   f"{generated_segments} generated segments, "
                   f"{generated_points} k-points")
         if report and extra_general_points:
-            labels = ", ".join(str(pt[3]) for pt in extra_general_points)
-            print(f"Added doubled-IBZ general-k: {labels}")
+            labels = ", ".join(
+                self._display_label(pt[3]) for pt in extra_general_points
+            )
+            print(f"Added general-k connections: {labels}")
 
         return path_sequence
 
     def insert_general_kpoint(self, kpoint: List[float],
                               extra_general_points: Optional[List[List]] = None) -> List[List]:
-        """Keep the ordinary path, then append compact high-symmetry/k comparisons."""
+        """Keep the ordinary path, then append compact high-symmetry/k connections."""
         kpt = [kpoint[0], kpoint[1], kpoint[2], "k"]
         raw = self._globally_alias_coincident_path_points(self.kpoints_data)
         seg_pairs = [(raw[i], raw[i + 1]) for i in range(0, len(raw) - 1, 2)]
@@ -734,7 +740,7 @@ class KPointsModifier:
         pair_count = len(general_points) // 2
         leftover = len(general_points) % 2
         print(
-            f"Kept ordinary path and added {pair_count} A-k-B comparison segments"
+            f"Kept ordinary path and added {pair_count} A-k-B connection segments"
             f"{' plus 1 A-k tail' if leftover else ''}."
         )
         return path_sequence
@@ -1038,15 +1044,17 @@ class KPointsModifier:
                         if struct_file else 'output')
             if 'b_matrix' in centroid_result:
                 try:
-                    plot_2d_figures(
+                    return plot_2d_figures(
                         centroid_result, general_kpoint, R_for_kpts,
                         basename, output_dir=OUTPUT_DIR,
                         flip_ops_for_plot=(flip_ops_for_plot
                                            if flip_ops_for_plot else None),
                         save_pdf=save_pdf,
+                        deferred_figures=display_figures,
                     )
                 except Exception as _e:
                     print(f"[Warning] Could not generate 2D figures: {_e}")
+            return []
         elif centroid_result is not None:
             if centroid_result.get('bz_loops') is None:
                 print(
@@ -1864,6 +1872,29 @@ class KPointsModifier:
             if self.extra_general_points:
                 labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
                 print(f"Extra doubled-IBZ general-k: {labels}")
+
+            butterfly_path = centroid_result.get('butterfly_kpath')
+            butterfly_extra = centroid_result.get('butterfly_extra_vertices')
+            self.butterfly_kpoints_data = None
+            self.butterfly_extra_general_points = None
+            if butterfly_path is not None:
+                self.butterfly_kpoints_data = []
+                for seg_start, seg_end in butterfly_path:
+                    for label in (seg_start, seg_end):
+                        coords = ibz_coords[label]
+                        self.butterfly_kpoints_data.append([
+                            coords[0], coords[1], coords[2], label
+                        ])
+                self.butterfly_extra_general_points = []
+                for label in butterfly_extra or []:
+                    coords = ibz_coords[label]
+                    self.butterfly_extra_general_points.append([
+                        coords[0], coords[1], coords[2], label
+                    ])
+                print(
+                    "Using 2D 4/m specific path "
+                    f"{self._format_path(butterfly_path)}"
+                )
         else:
             self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
             self.kpoints_basis_matrix = np.array(
@@ -2007,17 +2038,12 @@ class KPointsModifier:
             except Exception as exc:
                 print(f"[Error] 2D spin-operation filtering failed: {exc}")
                 return False
-            n_excluded = len(flip_ops) - len(valid_flip_ops)
             if degeneracy_forcing_ops:
                 print("[2D mode] U m_z / U C_2z symmetry detected, "
                       "not a 2D altermagnet.")
                 flip_ops = []
                 _flip_ops_emptied_2d = True
             elif valid_flip_ops:
-                print(f"[2D mode] In-plane spin splitting: YES "
-                      f"({len(valid_flip_ops)} valid 2D spin-flip ops"
-                      + (f", {n_excluded} invalid 2D ops excluded" if n_excluded else "")
-                      + ").")
                 flip_ops = valid_flip_ops
             else:
                 print("[2D mode] No spin-flip operation, "
@@ -2089,8 +2115,21 @@ class KPointsModifier:
         k_prime = self.transform_kpoint(general_kpoint, R_for_output)
         print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")
 
+        butterfly_path_points = (
+            self.butterfly_kpoints_data
+            if self.butterfly_kpoints_data is not None
+            else self.kpoints_data
+        )
+        butterfly_extra_points = (
+            self.butterfly_extra_general_points
+            if self.butterfly_extra_general_points is not None
+            else self.extra_general_points
+        )
         figure_kpoints = self.insert_general_kpoints(
-            general_kpoint, R_for_kpts, self.extra_general_points
+            general_kpoint,
+            R_for_kpts,
+            butterfly_extra_points,
+            path_points=butterfly_path_points,
         )
         if not figure_kpoints:
             print("[Error] Failed to build a nonempty altermagnetic path.")

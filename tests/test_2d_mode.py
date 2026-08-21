@@ -18,7 +18,7 @@ from alterseek import geometry
 from alterseek import symmetry
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import _figure_output_paths
-from alterseek.plotting_2d import plot_2d_figures
+from alterseek.plotting_2d import plot_2d_figures, _spinflip_plain_paths
 
 
 def _diag(vals):
@@ -32,6 +32,30 @@ INV = _diag([-1, -1, -1])                       # in-plane -I  -> trivial
 C4Z = np.array([[0., -1, 0], [1, 0, 0], [0, 0, 1]])  # in-plane rotation -> valid
 MX = _diag([-1, 1, 1])                          # in-plane diag(-1, 1) -> valid
 C2X = _diag([1, -1, -1])                        # in-plane diag(1, -1) -> valid
+
+
+def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():
+    reference = [("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")]
+    butterfly, connections = cc._2d_tp1_butterfly_override(True, "tP1", 75)
+
+    assert reference == [
+        ("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")
+    ]
+    assert butterfly == [(cc.GAMMA_LABEL, "X"), ("X", "M")]
+    assert connections == [cc.GAMMA_LABEL, "X_A"]
+    assert cc._2d_tp1_butterfly_override(False, "tP1", 75) == (None, None)
+    assert cc._2d_tp1_butterfly_override(True, "tP1", 89) == (None, None)
+
+
+def test_2d_4m_spinflip_figure_draws_only_actual_plain_segments():
+    reference = [("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")]
+    butterfly = [("GAMMA", "X"), ("X", "M")]
+
+    unprimed, primed = _spinflip_plain_paths(reference, butterfly)
+
+    assert unprimed == [("GAMMA", "X")]
+    assert primed == [("X", "M")]
+    assert _spinflip_plain_paths(reference) == (reference, reference)
 
 
 # ---------------------------------------------------------------------------

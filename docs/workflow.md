@@ -229,12 +229,8 @@ alterseek-path --2d
 
 The full 3D symmetry analysis runs unchanged; output is restricted to the
 physical in-plane (vacuum k = 0) reciprocal plane -- k-path, general k point
-(2D IBZ area centroid), and all written k-points. Step 3 additionally reports
-a verdict:
-
-```text
-[2D mode] In-plane spin splitting: YES
-```
+(2D IBZ area centroid), and all written k-points. Step 3 filters the detected
+spin-flip operations to those that act nontrivially within that plane.
 
 Operations that are trivial in-plane (identity or k to -k) don't count. If
 none remain, the verdict is `NO` and the ordinary in-plane path is written

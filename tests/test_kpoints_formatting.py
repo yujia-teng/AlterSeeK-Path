@@ -192,6 +192,52 @@ def test_butterfly_path_retains_primed_coincident_aliases():
     assert "A'/H'" in labels
 
 
+def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
+    modifier = KPointsModifier()
+    modifier.kpoints_basis_matrix = np.eye(3)
+    modifier.output_basis_matrix = np.eye(3)
+    butterfly = [
+        [0.0, 0.0, 0.0, "GAMMA"], [0.0, 0.5, 0.0, "X"],
+        [0.0, 0.5, 0.0, "X"], [0.5, 0.5, 0.0, "M"],
+    ]
+    connections = [
+        [0.0, 0.0, 0.0, "GAMMA"],
+        [0.5, 0.0, 0.0, "X_A"],
+    ]
+    c4 = np.array([
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+
+    path = modifier.insert_general_kpoints(
+        [0.25, 0.25, 0.0],
+        c4,
+        connections,
+        path_points=butterfly,
+        report=False,
+    )
+    segments = [
+        (start[3], end[3], break_before)
+        for start, end, break_before, _index, _raw_label
+        in modifier._valid_segment_pairs(path)
+    ]
+
+    assert segments == [
+        ("GAMMA", "X", False),
+        ("X", "k", False),
+        ("k'", "X'", True),
+        ("X'", "M'", False),
+        ("M'", "k'", False),
+        ("k", "M", True),
+        ("GAMMA", "k", True),
+        ("k'", "GAMMA", True),
+        ("X_A", "k", True),
+        ("k'", "X_A'", True),
+    ]
+    assert ("M", "GAMMA", False) not in segments
+
+
 def test_qe_writer_keeps_k_to_k_prime_gap_disconnected(tmp_path):
     modifier = KPointsModifier()
     points = [

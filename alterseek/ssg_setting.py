@@ -110,7 +110,7 @@ def _match_space_operations(lattice, intended, detected, symprec):
     """Pair intended ``(R, t)`` operations with detected ones within symprec.
 
     spglib fits translations to the coordinates it is given, so rounding noise
-    in a structure file puts them well outside an exact key comparison.  Match
+    in a structure file puts them well outside an exact-key match.  Match
     on Cartesian offset at the same symprec, and return what stayed unpaired.
     """
     tolerance = max(float(symprec), 1e-8)

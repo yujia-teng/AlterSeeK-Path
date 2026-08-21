@@ -22,7 +22,8 @@ import os
 import numpy as np
 
 from .plotting_common import (
-    IBZ_FACE_COLORS, _math_label, _save_figure, grouped_point_labels,
+    IBZ_FACE_COLORS, _figure_output_paths, _math_label, _print_saved_paths,
+    _save_figure, grouped_point_labels,
 )
 
 try:
@@ -472,6 +473,50 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
                 color=color, zorder=zorder + 2, clip_on=False)
 
 
+def _spinflip_plain_paths(reference_path, butterfly_path=None):
+    """Return solid unprimed/primed segments for the 2D spin-flip figure."""
+    if butterfly_path is None:
+        return list(reference_path), list(reference_path)
+    return list(butterfly_path[0::2]), list(butterfly_path[1::2])
+
+
+def _finish_2d_figure(fig, output_path, save_pdf, deferred_figures=None):
+    """Save now for direct calls or defer display/save to the workflow."""
+    import matplotlib.pyplot as plt
+    extra_formats = ("pdf",) if save_pdf else ()
+    if deferred_figures is None:
+        saved_paths = _save_figure(
+            fig,
+            output_path,
+            extra_formats=extra_formats,
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+        return saved_paths
+
+    expected_paths = _figure_output_paths(
+        output_path, extra_formats=extra_formats
+    )
+
+    def _save_after_show(fig=fig):
+        try:
+            saved_paths = _save_figure(
+                fig,
+                output_path,
+                extra_formats=extra_formats,
+                dpi=300,
+                bbox_inches="tight",
+            )
+            _print_saved_paths(saved_paths)
+        finally:
+            plt.close(fig)
+
+    fig._alterseek_save_after_show = _save_after_show
+    deferred_figures.append(fig)
+    return expected_paths
+
+
 def _line_label_anchor(p_pos, p_neg, avoid_pts):
     """Pick whichever end of a through-Gamma line is farthest from the
     already-drawn high-symmetry points/labels, so the op label doesn't land
@@ -645,7 +690,7 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
                                    flip_ops_for_plot, output_path,
                                    show_title=False, show_legend=False,
-                                   save_pdf=False):
+                                   save_pdf=False, deferred_figures=None):
     """Figure 3: color every 2D symmetry image of the IBZ red/blue by spin."""
     import matplotlib.pyplot as plt
     axis = int(centroid_result.get("vacuum_axis", 2))
@@ -746,15 +791,9 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
         ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=12,
                  borderaxespad=0, frameon=True)
     fig.tight_layout()
-    saved_paths = _save_figure(
-        fig,
-        output_path,
-        extra_formats=("pdf",) if save_pdf else (),
-        dpi=300,
-        bbox_inches="tight",
+    return _finish_2d_figure(
+        fig, output_path, save_pdf, deferred_figures=deferred_figures
     )
-    plt.close(fig)
-    return saved_paths
 
 
 # ---------------------------------------------------------------------------
@@ -762,7 +801,8 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
 # ---------------------------------------------------------------------------
 
 def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
-                    output_dir=".", flip_ops_for_plot=None, save_pdf=False):
+                    output_dir=".", flip_ops_for_plot=None, save_pdf=False,
+                    deferred_figures=None):
     """Save the 2D Figure 1 (IBZ), 2 (spin-flip), and 3 (spin pattern) views.
 
     ``R_for_kpts`` is the selected spin-flip operation in the standardized
@@ -838,14 +878,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig1.tight_layout()
     fig1_path = os.path.join(output_dir, f"{basename}_2d_ibz_{sc_type}.png")
-    saved.extend(_save_figure(
-        fig1,
-        fig1_path,
-        extra_formats=("pdf",) if save_pdf else (),
-        dpi=300,
-        bbox_inches="tight",
+    saved.extend(_finish_2d_figure(
+        fig1, fig1_path, save_pdf, deferred_figures=deferred_figures
     ))
-    plt.close(fig1)
 
     # ----- Figure 2: spin-up IBZ + spin-flip image -----
     mapped_cart_lines = {}
@@ -874,12 +909,21 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     if len(mapped_poly) >= 3 and ConvexHull is not None:
         hp = mapped_poly[ConvexHull(mapped_poly).vertices]
         ax2.fill(hp[:, 0], hp[:, 1], color="cornflowerblue", alpha=0.20, zorder=1)
-    for start, end in kpath:
+    # Most 2D cases show the complete reference path on both spin-related sectors.
+    # The tP1 4/m override instead uses GAMMA-X-M for the alternating butterfly: its first segment remains plain on the unprimed side and its second remains plain on the primed side.
+    # The k/k' spokes drawn below supply the other generated segments.
+    # Figure 1 deliberately continues to show the complete SeeK-path reference path.
+    butterfly_kpath = centroid_result.get("butterfly_kpath")
+    unprimed_plain_path, primed_plain_path = _spinflip_plain_paths(
+        kpath, butterfly_kpath
+    )
+
+    for start, end in unprimed_plain_path:
         if start in kpoints_cart and end in kpoints_cart:
             p1, p2 = kpoints_cart[start], kpoints_cart[end]
             ax2.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=4.0,
                      alpha=0.9, zorder=50)
-    for start, end in kpath:
+    for start, end in primed_plain_path:
         sp, ep = start + "'", end + "'"
         if sp in mapped_cart_lines and ep in mapped_cart_lines:
             p1, p2 = mapped_cart_lines[sp], mapped_cart_lines[ep]
@@ -919,14 +963,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
               borderaxespad=0, frameon=True)
     fig2.tight_layout()
     fig2_path = os.path.join(output_dir, f"{basename}_2d_spinflip_{sc_type}.png")
-    saved.extend(_save_figure(
-        fig2,
-        fig2_path,
-        extra_formats=("pdf",) if save_pdf else (),
-        dpi=300,
-        bbox_inches="tight",
+    saved.extend(_finish_2d_figure(
+        fig2, fig2_path, save_pdf, deferred_figures=deferred_figures
     ))
-    plt.close(fig2)
 
     # ----- Figure 3: spin-up / spin-down BZ pattern -----
     fig3_path = os.path.join(output_dir, f"{basename}_2d_spinbz_{sc_type}.png")
@@ -936,9 +975,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         flip_ops_for_plot,
         fig3_path,
         save_pdf=save_pdf,
+        deferred_figures=deferred_figures,
     )
     if fig3_saved is not None:
         saved.extend(fig3_saved)
 
-    print(f"Saved 2D figures: {', '.join(saved)}")
     return saved

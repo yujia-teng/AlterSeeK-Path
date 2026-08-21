@@ -61,6 +61,17 @@ def _mC2d_centered_rectangular_path(submitted_lattice, vacuum_axis):
     return x_2d, points
 
 
+def _2d_tp1_butterfly_override(mode_2d, lattice_type, spacegroup_number):
+    """Return the 2D 4/m butterfly override without changing its reference path."""
+    if not (mode_2d and lattice_type == 'tP1'
+            and 75 <= spacegroup_number <= 88):
+        return None, None
+    return (
+        [(GAMMA_LABEL, 'X'), ('X', 'M')],
+        [GAMMA_LABEL, 'X_A'],
+    )
+
+
 def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
     """Use the smallest conservative tolerance that recovers a declared parent.
 
@@ -507,6 +518,14 @@ def _analyze_kspace(
             print(f"[2D mode] in-plane band path: {len(band_kpath)} "
                   f"segments, labels {sorted(path_labels)}")
 
+    # The ordinary tP1 reference remains the SeeK-path/HPKOT GAMMA-X-M-GAMMA path.
+    # Its 2D 4/m butterfly must not also retain the direct M-GAMMA segment because the IBZ centroid lies on that diagonal, whose two halves are already sampled by k-M and GAMMA-k.
+    # Build the alternating butterfly from the open GAMMA-X-M chain and connect GAMMA/X_A through k as separate vertices.
+    # Keep this metadata separate from band_kpath so ordinary-path output and Figure 1 stay unchanged.
+    butterfly_kpath, butterfly_extra_vertices = (
+        _2d_tp1_butterfly_override(mode_2d, sc_type, sg)
+    )
+
     kpath_plot = band_kpath
     kpoints_cart_plot = dict(kpoints_cart_centroid)
     for label in {label for segment in kpath_plot for label in segment}:
@@ -541,6 +560,8 @@ def _analyze_kspace(
         'band_kpath': band_kpath,
         'band_kpoints_frac': band_kpoints_frac,
         'extra_general_vertices': extra_general_vertices,
+        'butterfly_kpath': butterfly_kpath,
+        'butterfly_extra_vertices': butterfly_extra_vertices,
         'kpath_plot': kpath_plot,
         'display_labels_plot': display_labels,
         'kpoints_cart_plot': kpoints_cart_plot,
@@ -1055,6 +1076,10 @@ def run(
         'band_kpoints_frac': analysis_result['band_kpoints_frac'],
         'band_kpath': analysis_result['band_kpath'],
         'extra_general_vertices': analysis_result['extra_general_vertices'],
+        'butterfly_kpath': analysis_result['butterfly_kpath'],
+        'butterfly_extra_vertices': analysis_result[
+            'butterfly_extra_vertices'
+        ],
         # The clipped triclinic half-BZ has no curated hull labels.
         'hull_pts': (
             centroid_result['points_arr']
