@@ -232,7 +232,8 @@ def _steer_off_line(direction, line_dir, point, other_points, offset_scale):
 def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
                           prime=False, label_color=None, center=None,
                           offset_scale=None, path_labels=(), bz_poly=None,
-                          avoid_dir=None):
+                          avoid_dir=None, avoid_dirs=(), avoid_points=None,
+                          zorder=5):
     if not points:
         return
     auto_center, auto_scale = _label_offset(points.values())
@@ -245,9 +246,10 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
     else:
         center = auto_center
         offset_scale = auto_scale
+    layout_points = points.values() if avoid_points is None else avoid_points
     for label, point in grouped_point_labels(points, path_labels):
         ax.scatter(point[0], point[1], s=85, c=color, edgecolors=edgecolor,
-                   linewidths=0.7, zorder=5)
+                   linewidths=0.7, zorder=zorder)
         if not labels:
             continue
         direction = point - center
@@ -257,9 +259,60 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
         boundary_normal = _bz_outward_normal(point, bz_poly)
         if boundary_normal is not None:
             direction = boundary_normal
+            # If a reciprocal axis exits the BZ through this point, retain the
+            # outward component and add a tangent component away from nearby
+            # labels.  The axis remains visible without putting the label back
+            # onto the BZ boundary.
+            for line_dir in avoid_dirs:
+                line_dir = np.asarray(line_dir, dtype=float)[:2]
+                line_norm = np.linalg.norm(line_dir)
+                if line_norm < 1e-12:
+                    continue
+                line_dir = line_dir / line_norm
+                scale = max(float(np.linalg.norm(point)), 1.0)
+                cross = line_dir[0] * point[1] - line_dir[1] * point[0]
+                if abs(float(cross)) > 1e-8 * scale:
+                    continue
+                perpendiculars = [np.array([-line_dir[1], line_dir[0]]),
+                                  np.array([line_dir[1], -line_dir[0]])]
+                if abs(line_dir[0]) >= 2.0 * abs(line_dir[1]):
+                    tangent = min(perpendiculars, key=lambda side: side[1])
+                elif abs(line_dir[1]) >= 2.0 * abs(line_dir[0]):
+                    tangent = min(perpendiculars, key=lambda side: side[0])
+                else:
+                    tangent = _steer_off_line(
+                        line_dir, line_dir, point, layout_points, offset_scale,
+                    )
+                direction = direction + 0.75 * tangent
+                direction = direction / np.linalg.norm(direction)
+                break
         elif avoid_dir is not None:
-            direction = _steer_off_line(direction, avoid_dir, point,
-                                        points.values(), offset_scale)
+            line_dir = np.asarray(avoid_dir, dtype=float)[:2]
+            line_norm = np.linalg.norm(line_dir)
+            crossing_dir = next((axis_dir for axis_dir in avoid_dirs
+                                 if line_norm >= 1e-12
+                                 and np.linalg.norm(axis_dir) >= 1e-12
+                                 and abs(float(np.dot(line_dir / line_norm,
+                                     axis_dir / np.linalg.norm(axis_dir)))) < 0.2), None)
+            if np.linalg.norm(point[:2]) < 1e-8 and crossing_dir is not None:
+                side_a = _steer_off_line(line_dir, line_dir, point,
+                                         layout_points, offset_scale)
+                side_b = _steer_off_line(crossing_dir, crossing_dir, point,
+                                         layout_points, offset_scale)
+                candidates = [a * side_a + b * side_b
+                              for a, b in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
+                candidates = [candidate / np.linalg.norm(candidate)
+                              for candidate in candidates]
+                all_dirs = [line_dir, *avoid_dirs]
+                direction = max(candidates, key=lambda candidate: (
+                    min(1.0 - abs(float(np.dot(candidate, axis_dir / np.linalg.norm(axis_dir))))
+                        for axis_dir in all_dirs if np.linalg.norm(axis_dir) >= 1e-12),
+                    min(np.linalg.norm(point + candidate * offset_scale - other)
+                        for other in layout_points if not np.allclose(other, point)),
+                ))
+            else:
+                direction = _steer_off_line(direction, avoid_dir, point,
+                                            points.values(), offset_scale)
         # Share the 3D figures' label typography instead of a second formatter.
         name = str(label)
         if prime and not name.endswith("'"):
@@ -275,7 +328,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
             color=label_color if label_color is not None else edgecolor,
             ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
             va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
-            zorder=6, annotation_clip=False)
+            zorder=zorder + 1, annotation_clip=False)
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +422,8 @@ def _polygon_ray_exit(poly, unit_vec, origin=None):
     return min(t_hits) if t_hits else None
 
 
-def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly):
+def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
+                             zorder=219):
     """Draw the two in-plane reciprocal axis arrows (b_i, i != vacuum axis).
 
     Same convention as ``draw_projected_reciprocal_axes`` in
@@ -399,14 +453,14 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly):
         exit_pt = origin + unit * min(exit_len, target * 0.86)
         end = origin + unit * max(target, exit_len * 1.16)
         ax.plot([origin[0], exit_pt[0]], [origin[1], exit_pt[1]],
-                color=color, ls=":", lw=1.5, alpha=0.6, zorder=219,
+                color=color, ls=":", lw=1.5, alpha=0.6, zorder=zorder,
                 clip_on=False)
         ann = ax.annotate(
             "",
             xy=end, xytext=exit_pt,
             arrowprops=dict(arrowstyle="->", color=color, lw=2.2,
                             mutation_scale=28, shrinkA=0, shrinkB=0),
-            zorder=220,
+            zorder=zorder + 1,
             annotation_clip=False,
         )
         ann.set_clip_on(False)
@@ -415,7 +469,7 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly):
         offset = projected / length * (0.04 * span)
         ax.text(end[0] + offset[0], end[1] + offset[1], label,
                 fontsize=24, fontweight="bold", ha="center", va="center",
-                color=color, zorder=221, clip_on=False)
+                color=color, zorder=zorder + 2, clip_on=False)
 
 
 def _line_label_anchor(p_pos, p_neg, avoid_pts):
@@ -729,6 +783,11 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     # Do not infer a Cartesian kx/ky section from a fractional-axis index.
     # The standardized basis may permute Cartesian axes.
     bz_poly, basis = _bz_polygon_2d(b_matrix, axis)
+    reciprocal_axis_dirs = [
+        _to_2d(vec, basis)
+        for i, vec in enumerate(b_matrix)
+        if i != axis
+    ]
 
     kpath = centroid_result["band_kpath"]
     path_labels = {label for segment in kpath for label in segment}
@@ -766,8 +825,12 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
             p1, p2 = kpoints_cart[start], kpoints_cart[end]
             ax1.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=3.0,
                      alpha=0.9, zorder=3)
+    _draw_reciprocal_axes_2d(
+        ax1, b_matrix, axis, basis, bz_poly, zorder=4,
+    )
     _draw_labeled_points(ax1, kpoints_cart, "red", "darkred", label_color="black",
-                         path_labels=path_labels, bz_poly=bz_poly)
+                         path_labels=path_labels, bz_poly=bz_poly,
+                         avoid_dirs=reciprocal_axis_dirs)
     ax1.scatter(*centroid_xy, c="gold", marker="*", s=420, edgecolors="k",
                 zorder=112, label=r"$k$")
     # Place the legend outside the axes so it cannot overlap plotted points or labels and the BZ itself needs no extra padding.
@@ -823,15 +886,22 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
             ax2.plot([p1[0], p2[0]], [p1[1], p2[1]], c="navy", lw=4.0,
                      alpha=0.9, zorder=50)
     shared_points = list(kpoints_cart.values()) + list(mapped_cart_lines.values())
+    _draw_reciprocal_axes_2d(
+        ax2, b_matrix, axis, basis, bz_poly, zorder=51,
+    )
     shared_center, shared_scale = _label_offset(shared_points)
     _draw_labeled_points(ax2, kpoints_cart, "salmon", "darkred", prime=False,
                          center=shared_center, offset_scale=shared_scale,
                          path_labels=path_labels, bz_poly=bz_poly,
-                         avoid_dir=op_line_dir)
+                         avoid_dir=op_line_dir,
+                         avoid_dirs=reciprocal_axis_dirs,
+                         avoid_points=shared_points, zorder=213)
     _draw_labeled_points(ax2, mapped_cart, "cornflowerblue", "navy", prime=True,
                          bz_poly=bz_poly, avoid_dir=op_line_dir,
                          center=shared_center, offset_scale=shared_scale,
-                         path_labels={f"{label}'" for label in path_labels})
+                         path_labels={f"{label}'" for label in path_labels},
+                         avoid_dirs=reciprocal_axis_dirs,
+                         avoid_points=shared_points, zorder=213)
     threshold = 0.05 * max(np.max(np.linalg.norm(bz_poly, axis=1)), 1e-8)
     for point in kpoints_cart.values():
         if np.linalg.norm(point - centroid_xy) > threshold:
