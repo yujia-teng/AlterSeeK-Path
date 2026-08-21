@@ -18,6 +18,7 @@ from alterseek import geometry
 from alterseek import symmetry
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import _figure_output_paths
+from alterseek.plotting_2d import plot_2d_figures
 
 
 def _diag(vals):
@@ -281,6 +282,38 @@ def test_compute_centroid_2d_differs_from_3d(tmp_path):
     # 3D keeps the out-of-plane centroid component; 2D zeroes it.
     assert abs(r3["centroid_frac"][2]) > 1e-6
     assert abs(r2["centroid_frac"][2]) < 1e-12
+
+
+def test_2d_figures_use_physical_plane_when_fractional_c_is_cartesian_x(tmp_path):
+    """oA2 can use fractional c as the vacuum while Cartesian x is normal."""
+    b_matrix = np.array([
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ])
+    points = {
+        "GAMMA": np.array([0.0, 0.0, 0.0]),
+        "X": np.array([0.5, 0.0, 0.0]),
+        "Y": np.array([0.0, 0.5, 0.0]),
+    }
+    result = {
+        "b_matrix": b_matrix,
+        "vacuum_axis": 2,
+        "sc_type": "oA2",
+        "band_kpath": [("GAMMA", "X"), ("X", "Y"), ("Y", "GAMMA")],
+        "band_kpoints_frac": points,
+        "ibz_polygon_frac": list(points.values()),
+        "ibz_polygon_labels": list(points),
+        "unique_ops": [np.eye(3)],
+    }
+    saved = plot_2d_figures(
+        result, np.array([0.2, 0.2, 0.0]), np.diag([-1.0, 1.0, 1.0]),
+        "oA2_permuted", output_dir=str(tmp_path),
+        flip_ops_for_plot=[np.diag([-1.0, 1.0, 1.0])],
+    )
+    assert len(saved) == 3
+    assert all((tmp_path / path.replace("\\", "/").split("/")[-1]).is_file()
+               for path in saved)
 
 
 @pytest.mark.parametrize("stale_spin_log", [None, "old structure sentinel\n"])

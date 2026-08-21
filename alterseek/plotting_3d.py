@@ -9,6 +9,8 @@ from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import proj3d
 from matplotlib.patches import FancyArrowPatch
+from matplotlib.transforms import Bbox
+from matplotlib.colors import to_rgb
 
 from .plotting_common import (
     IBZ_FACE_COLORS,
@@ -275,6 +277,182 @@ def _best_label_anchor(ax, candidates, avoid_pts):
         if d > best_score:
             best_score, best = d, c
     return best
+
+
+def _is_operation_colour(colour):
+    """True for the green rotation-axis colour used by the operation glyph."""
+    try:
+        rgb = np.asarray(to_rgb(colour), dtype=float)
+    except (ValueError, TypeError):
+        return False
+    target = np.asarray(to_rgb(
+        os.environ.get('ALTERSEEK_OP_AXIS_COLOR', '#00c853')
+    ), dtype=float)
+    return bool(np.allclose(rgb, target, atol=0.02))
+
+
+def _label_obstacle_points(ax, samples=16):
+    """Screen samples of what a label must not cover, tagged by their artist.
+
+    The tag matters: a long edge contributes many samples, so counting samples
+    would let one crossing line outweigh moving the label off its own point.
+    Scoring counts distinct tags instead.
+    """
+    points = []
+    tags = []
+    tag = [0]
+
+    def to_display(point3d):
+        x, y = _screen_xy(ax, point3d)
+        return ax.transData.transform((x, y))
+
+    def sample(start, end):
+        start, end = np.asarray(start, float), np.asarray(end, float)
+        tag[0] += 1
+        for fraction in np.linspace(0.0, 1.0, samples):
+            points.append(to_display(start + (end - start) * fraction))
+            tags.append(tag[0])
+
+    curved_glyphs = []
+    for line in ax.lines:
+        try:
+            xs, ys, zs = line.get_data_3d()
+        except AttributeError:
+            continue
+        verts = np.column_stack([xs, ys, zs])
+        if _is_operation_colour(line.get_color()) and len(verts) >= 5:
+            screen = np.array([to_display(vertex) for vertex in verts])
+            span = np.linalg.norm(screen[-1] - screen[0])
+            middle = screen[len(screen) // 2]
+            bulge = np.linalg.norm(middle - 0.5 * (screen[0] + screen[-1]))
+            # The rotation arc bulges away from its chord; the axis line does
+            # not, and filling that one would blanket the whole plate.
+            if span > 0 and bulge > 0.25 * span:
+                curved_glyphs.append(screen)
+        for first, second in zip(verts[:-1], verts[1:]):
+            sample(first, second)
+    for child in ax.get_children():
+        if not isinstance(child, FancyArrowPatch):
+            continue
+        verts3d = getattr(child, '_verts3d', None)
+        if verts3d is None:
+            continue
+        xs, ys, zs = verts3d
+        sample((xs[0], ys[0], zs[0]), (xs[-1], ys[-1], zs[-1]))
+    for collection in ax.collections:
+        offsets = getattr(collection, '_offsets3d', None)
+        if offsets is None:
+            continue
+        xs, ys, zs = offsets
+        for point in np.column_stack([xs, ys, zs]):
+            tag[0] += 1
+            points.append(to_display(point))
+            tags.append(tag[0])
+    # The rotation arc is an open curve, so sampling it alone leaves the inside
+    # of the loop looking free and a label drops into it. Fill the arc's own
+    # screen box so the glyph behaves as one solid object.
+    for screen in curved_glyphs:
+        low, high = screen.min(axis=0), screen.max(axis=0)
+        tag[0] += 1
+        for x in np.linspace(low[0], high[0], 8):
+            for y in np.linspace(low[1], high[1], 8):
+                points.append(np.array([x, y]))
+                tags.append(tag[0])
+    if not points:
+        return np.empty((0, 2)), np.empty(0, dtype=int)
+    return np.asarray(points, dtype=float), np.asarray(tags, dtype=int)
+
+
+def _relayout_labels_for_save(fig, ax, max_shift=2.0, rounds=2):
+    """Nudge the plate's labels off collisions for one fixed camera.
+
+    Only the saved figure is solved: it is rebuilt at the view angle the user
+    settled on, so the projection no longer moves and each label can be scored
+    against the lines, arrows and neighbouring labels as they actually appear.
+    The interactive window keeps the plain 3D offsets, where any solve would
+    fight the camera being dragged.
+    """
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    placed = []
+    for text in list(ax.texts):
+        if not text.get_text().strip():
+            continue
+        position_3d = getattr(text, 'get_position_3d', None)
+        if position_3d is not None:
+            x, y = _screen_xy(ax, position_3d())
+            anchor = ax.transData.transform((x, y))
+        else:
+            anchor = text.get_transform().transform(text.get_position())
+        # Move the label onto the figure so it can be positioned in screen
+        # space; a Text3D can only be placed through the projection.
+        clone = fig.text(
+            *fig.transFigure.inverted().transform(anchor), text.get_text(),
+            color=text.get_color(), fontsize=text.get_fontsize(),
+            fontweight=text.get_fontweight(), ha=text.get_ha(),
+            va=text.get_va(), zorder=200,
+        )
+        text.set_visible(False)
+        placed.append((clone, np.asarray(anchor, dtype=float)))
+    if len(placed) < 2:
+        return
+
+    obstacles, obstacle_tags = _label_obstacle_points(ax)
+    boxes = [clone.get_window_extent(renderer) for clone, _ in placed]
+    step = float(np.median([box.height for box in boxes])) * 0.75
+    if not np.isfinite(step) or step <= 0:
+        return
+
+    def box_for(index, offset):
+        clone, anchor = placed[index]
+        clone.set_position(
+            fig.transFigure.inverted().transform(anchor + offset)
+        )
+        return clone.get_window_extent(renderer)
+
+    def penalty_for(index, box, offset):
+        penalty = 0.0
+        for other, other_box in enumerate(boxes):
+            if other == index:
+                continue
+            overlap = Bbox.intersection(box, other_box)
+            if overlap is not None:
+                penalty += overlap.width * overlap.height
+        if len(obstacles):
+            hits = (
+                (obstacles[:, 0] > box.x0) & (obstacles[:, 0] < box.x1)
+                & (obstacles[:, 1] > box.y0) & (obstacles[:, 1] < box.y1)
+            )
+            crossings = len(np.unique(obstacle_tags[hits]))
+            penalty += 1.2 * step * step * float(crossings)
+        # Keep the label near the point it names: the cost of walking away
+        # grows quadratically, so a small nudge is cheap and a long trip is not.
+        shift = float(np.linalg.norm(offset)) / step
+        penalty += 0.9 * step * step * shift * shift
+        # Tie-break upward, the usual place for a point label.
+        return penalty - 0.25 * step * float(offset[1])
+
+    directions = np.array([
+        [np.cos(angle), np.sin(angle)]
+        for angle in np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
+    ])
+    candidates = [np.zeros(2)] + [
+        direction * radius * step
+        for radius in (0.5, 1.0, 1.5, 2.0)
+        for direction in directions
+        if radius <= max_shift
+    ]
+    chosen = [np.zeros(2)] * len(placed)
+    for _round in range(rounds):
+        for index in range(len(placed)):
+            best_offset, best_penalty = chosen[index], None
+            for offset in candidates:
+                penalty = penalty_for(index, box_for(index, offset), offset)
+                if best_penalty is None or penalty < best_penalty - 1e-9:
+                    best_penalty, best_offset = penalty, offset
+            chosen[index] = best_offset
+            boxes[index] = box_for(index, best_offset)
 
 
 def _mirror_label_candidates(poly, bz_radius):
@@ -779,6 +957,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 )
                 _draw(save_ax)
                 plt.tight_layout()
+                _relayout_labels_for_save(save_figure, save_ax)
                 saved_paths = _save_figure(
                     save_figure,
                     output_path,
@@ -810,6 +989,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                                     elev=elev, azim=azim, dashed_back=True)
     _draw(ax_save)
     plt.tight_layout()
+    _relayout_labels_for_save(fig_save, ax_save)
     saved_paths = _save_figure(
         fig_save,
         output_path,

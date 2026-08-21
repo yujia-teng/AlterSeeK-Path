@@ -603,7 +603,10 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
         return None
 
     b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, cartesian_xy=(axis == 2))
+    # A standardized fractional c axis is not necessarily Cartesian z.  For
+    # example, oA2 can place its physical vacuum reciprocal vector along kx.
+    # Always construct the screen basis from the physical reciprocal plane.
+    bz_poly, basis = _bz_polygon_2d(b_matrix, axis)
 
     spin_down_mask = _classify_spin_down_ops_2d(
         b_matrix, unique_ops, R_for_kpts,
@@ -723,8 +726,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
     axis = int(centroid_result.get("vacuum_axis", 2))
     sc_type = centroid_result.get("sc_type", "BZ")
-    cartesian_xy = (axis == 2)
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, cartesian_xy=cartesian_xy)
+    # Do not infer a Cartesian kx/ky section from a fractional-axis index.
+    # The standardized basis may permute Cartesian axes.
+    bz_poly, basis = _bz_polygon_2d(b_matrix, axis)
 
     kpath = centroid_result["band_kpath"]
     path_labels = {label for segment in kpath for label in segment}
