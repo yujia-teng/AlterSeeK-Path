@@ -10,6 +10,7 @@ from ase.build import bulk, make_supercell
 from ase.io import read, write
 from scipy.spatial import ConvexHull
 
+import alterseek.ssg_setting as ssg_setting
 from alterseek.compute_centroid_hybrid import run as compute_centroid
 from alterseek.ssg_setting import prepare_submitted_cell_analysis
 from alterseek.ssg_setting import build_submitted_analysis_cell
@@ -522,6 +523,32 @@ def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
         + bz_hull.equations[:, -1]
     )
     assert np.all(signed_distances <= 1e-8)
+
+
+def test_primitive_magnetic_input_keeps_native_ops_when_hall_is_ambiguous(
+    monkeypatch,
+):
+    def ambiguous_hall(*_args, **_kwargs):
+        raise RuntimeError(
+            "Multiple inequivalent standard Hall settings match the "
+            "submitted G0 operation representatives: [30, 31, 32]."
+        )
+
+    monkeypatch.setattr(
+        ssg_setting,
+        "_complete_magnetic_operations_in_submitted_basis",
+        ambiguous_hall,
+    )
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "SUPERCELL_211.vasp"),
+        moments_str="1 -1 1 -1",
+        spin_axis_cart="0 0 1",
+    )
+
+    assert preparation["uses_conventional_supercell_bz"] is False
+    assert preparation["summary"]["physical_operation_set_verified"] is True
+    assert preparation["analysis_symmetry"]["number"] == 36
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oC1"
 
 
 def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(

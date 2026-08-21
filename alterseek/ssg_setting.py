@@ -909,21 +909,38 @@ def prepare_submitted_cell_analysis(
                 symprec,
             )
             physical_operation_set_verified = True
-        except RuntimeError:
+        except RuntimeError as exc:
             if translation_index == 1:
-                raise RuntimeError(
-                    "Could not construct the complete physical G0 Seitz set "
-                    "for a primitive submitted cell. The pure-rotation "
-                    "conventional/supercell proxy is not applicable."
+                # A primitive input already expresses the full physical G0 operation set modulo its own lattice translations.
+                # Several conventional Hall settings can therefore reduce to the same FindSpinGroup representatives, for example primitive Cm.
+                # That makes a unique Hall reconstruction impossible even though the native set is valid.
+                # Keep the marker-helper workflow because it needs G0's primitive operations to lower the chemical symmetry seen by SeeK-path.
+                # The marker helper does not need a chosen conventional Hall setting.
+                if not str(exc).startswith(
+                    "Multiple inequivalent standard Hall settings"
+                ):
+                    raise RuntimeError(
+                        "Could not construct the complete physical G0 Seitz "
+                        "set for a primitive submitted cell. The pure-rotation "
+                        "conventional/supercell proxy is not applicable."
+                    ) from exc
+                physical_operations = space_operations
+                physical_symmetry = _physical_symmetry_from_operations(
+                    lattice,
+                    physical_operations,
+                    expected_spacegroup_number,
+                    symprec,
                 )
-            # The complete conventional Hall set need not embed integrally in
-            # an anisotropic or non-diagonal supercell.  This does not affect
-            # the BZ helper, which needs only compatible point representatives.
-            physical_operations = space_operations
-            physical_symmetry = _standard_physical_symmetry(
-                expected_spacegroup_number
-            )
-            physical_operation_set_verified = False
+                physical_operation_set_verified = True
+            else:
+                # The complete conventional Hall set need not embed integrally in
+                # an anisotropic or non-diagonal supercell.  This does not affect
+                # the BZ helper, which needs only compatible point representatives.
+                physical_operations = space_operations
+                physical_symmetry = _standard_physical_symmetry(
+                    expected_spacegroup_number
+                )
+                physical_operation_set_verified = False
     else:
         dataset = spglib.get_symmetry_dataset(
             (lattice, positions, real_types),

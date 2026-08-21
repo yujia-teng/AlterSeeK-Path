@@ -1851,7 +1851,16 @@ class KPointsModifier:
                 if label in ibz_coords:
                     coords = ibz_coords[label]
                     self.extra_general_points.append([coords[0], coords[1], coords[2], label])
-            print(f"Using HPKOT {sc_type_auto} path ({len(auto_path)} segments, {len(self.kpoints_data)} k-points)")
+            if self.mode_2d and sc_type_auto in {'mC1', 'mC2', 'mC3'}:
+                print(
+                    "Using 2D centered-rectangular path "
+                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)"
+                )
+            else:
+                print(
+                    f"Using HPKOT {sc_type_auto} path "
+                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)"
+                )
             if self.extra_general_points:
                 labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
                 print(f"Extra doubled-IBZ general-k: {labels}")

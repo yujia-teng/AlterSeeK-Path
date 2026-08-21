@@ -39,6 +39,28 @@ from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 _DEFAULT_SYMPREC = 1e-3
 
 
+def _mC2d_centered_rectangular_path(submitted_lattice, vacuum_axis):
+    """Return the canonical 2D centred-rectangular path for an mC slab."""
+    in_plane = [index for index in range(3) if index != vacuum_axis]
+    first, second = np.asarray(submitted_lattice, dtype=float)[in_plane]
+    rectangular_axes = (first + second, first - second)
+    lengths = sorted(np.linalg.norm(vector) for vector in rectangular_axes)
+    if lengths[0] < 1e-10:
+        raise RuntimeError("Could not determine the mC 2D in-plane metric")
+    x_2d = 0.25 * (1.0 + (lengths[0] / lengths[1]) ** 2)
+    def point(first_value, second_value):
+        result = [0.0, 0.0, 0.0]
+        result[in_plane[0]] = first_value
+        result[in_plane[1]] = second_value
+        return result
+    points = {
+        GAMMA_LABEL: point(0.0, 0.0), 'Y': point(0.5, 0.5),
+        'S': point(0.0, 0.5), 'C': point(x_2d, 1.0 - x_2d),
+        'SIGMA': point(-x_2d, x_2d),
+    }
+    return x_2d, points
+
+
 def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
     """Use the smallest conservative tolerance that recovers a declared parent.
 
@@ -367,6 +389,24 @@ def _analyze_kspace(
     if params and verbose:
         print(f"Parameters: "
               f"{', '.join(f'{key}={value:.6f}' for key, value in params.items())}")
+
+    # A slab with an mC HPKOT setting has the same physical centred-
+    # rectangular BZ as oC/oA, but its 3D mC path does not contain the two
+    # metric-dependent 2D vertices.  Define the 2D-only table in the native
+    # mC primitive reciprocal basis; never change the 3D HPKOT table itself.
+    if mode_2d and sc_type in {'mC1', 'mC2', 'mC3'}:
+        x_2d, mC_2d_points = _mC2d_centered_rectangular_path(
+            a_matrix, input_vacuum_axis
+        )
+        kpath = [
+            (GAMMA_LABEL, 'Y'), ('Y', 'C'),
+            ('SIGMA', GAMMA_LABEL), (GAMMA_LABEL, 'S'),
+        ]
+        path_kpoints_frac = dict(mC_2d_points)
+        kpoints_frac_centroid = dict(mC_2d_points)
+        display_labels.update({'C': 'C', 'SIGMA': r'$\\Sigma$'})
+        if verbose:
+            print(f"[2D mode] mC centred-rectangular parameter: X_2D={x_2d:.6f}")
 
     path_kpoints_cart = {
         key: value[0] * b1 + value[1] * b2 + value[2] * b3
