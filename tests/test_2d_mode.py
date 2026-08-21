@@ -17,8 +17,10 @@ from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
 from alterseek import symmetry
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
-from alterseek.plotting_common import _figure_output_paths
-from alterseek.plotting_2d import plot_2d_figures, _spinflip_plain_paths
+from alterseek.plotting_common import (
+    _figure_output_paths, generated_plain_path_segments,
+)
+from alterseek.plotting_2d import plot_2d_figures
 
 
 def _diag(vals):
@@ -47,15 +49,31 @@ def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():
     assert cc._2d_tp1_butterfly_override(True, "tP1", 89) == (None, None)
 
 
-def test_2d_4m_spinflip_figure_draws_only_actual_plain_segments():
-    reference = [("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")]
-    butterfly = [("GAMMA", "X"), ("X", "M")]
+def test_generated_plain_segments_match_centered_rectangular_butterfly():
+    def point(label):
+        return [0.0, 0.0, 0.0, label]
 
-    unprimed, primed = _spinflip_plain_paths(reference, butterfly)
+    sequence = [
+        point("GAMMA"), point("Y"), point("k"), point("k'"),
+        point("Y'"), point("C'"), point("k'"), point("k"), point("C"),
+        None,
+        point("SIGMA"), point("k"), point("k'"), point("SIGMA'"),
+        point("GAMMA"), point("k'"), point("k"), point("GAMMA"),
+        point("S"), point("k"), point("k'"), point("S'"),
+    ]
 
-    assert unprimed == [("GAMMA", "X")]
-    assert primed == [("X", "M")]
-    assert _spinflip_plain_paths(reference) == (reference, reference)
+    segments = [
+        (first[3], second[3], spin_side)
+        for first, second, spin_side
+        in generated_plain_path_segments(sequence)
+    ]
+
+    assert segments == [
+        ("GAMMA", "Y", "up"),
+        ("Y'", "C'", "down"),
+        ("SIGMA'", "GAMMA", "down"),
+        ("GAMMA", "S", "up"),
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -219,6 +219,32 @@ def unprime_point_label(label):
     return combine_point_labels(*(alias.rstrip("'") for alias in label_aliases(label)))
 
 
+def generated_plain_path_segments(path_sequence):
+    """Yield generated high-symmetry segments with their spin side."""
+    if path_sequence is None:
+        return
+    for first, second in zip(path_sequence, path_sequence[1:]):
+        if first is None or second is None:
+            continue
+        first_label, second_label = first[3], second[3]
+        if first_label in ('k', "k'") or second_label in ('k', "k'"):
+            continue
+        first_prime = point_label_is_primed(first_label)
+        second_prime = point_label_is_primed(second_label)
+        first_base = unprime_point_label(first_label)
+        second_base = unprime_point_label(second_label)
+        gamma_path = any(
+            alias == GAMMA_LABEL or alias.strip().upper() == 'GAMMA'
+            for label in (first_base, second_base)
+            for alias in label_aliases(label)
+        )
+        spin_side = 'down' if (
+            (first_prime and second_prime)
+            or (gamma_path and (first_prime or second_prime))
+        ) else 'up'
+        yield first, second, spin_side
+
+
 def grouped_point_labels(points, path_labels, atol=POINT_COINCIDENCE_ATOL):
     """Group coincident plotted points and choose path-aware display labels.
 

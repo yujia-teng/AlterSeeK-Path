@@ -1051,6 +1051,7 @@ class KPointsModifier:
                                            if flip_ops_for_plot else None),
                         save_pdf=save_pdf,
                         deferred_figures=display_figures,
+                        path_sequence=new_kpoints,
                     )
                 except Exception as _e:
                     print(f"[Warning] Could not generate 2D figures: {_e}")

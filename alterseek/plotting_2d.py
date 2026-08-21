@@ -23,7 +23,7 @@ import numpy as np
 
 from .plotting_common import (
     IBZ_FACE_COLORS, _figure_output_paths, _math_label, _print_saved_paths,
-    _save_figure, grouped_point_labels,
+    _save_figure, generated_plain_path_segments, grouped_point_labels,
 )
 
 try:
@@ -473,13 +473,6 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
                 color=color, zorder=zorder + 2, clip_on=False)
 
 
-def _spinflip_plain_paths(reference_path, butterfly_path=None):
-    """Return solid unprimed/primed segments for the 2D spin-flip figure."""
-    if butterfly_path is None:
-        return list(reference_path), list(reference_path)
-    return list(butterfly_path[0::2]), list(butterfly_path[1::2])
-
-
 def _finish_2d_figure(fig, output_path, save_pdf, deferred_figures=None):
     """Save now for direct calls or defer display/save to the workflow."""
     import matplotlib.pyplot as plt
@@ -802,7 +795,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
 
 def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
                     output_dir=".", flip_ops_for_plot=None, save_pdf=False,
-                    deferred_figures=None):
+                    deferred_figures=None, path_sequence=None):
     """Save the 2D Figure 1 (IBZ), 2 (spin-flip), and 3 (spin pattern) views.
 
     ``R_for_kpts`` is the selected spin-flip operation in the standardized
@@ -909,26 +902,27 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     if len(mapped_poly) >= 3 and ConvexHull is not None:
         hp = mapped_poly[ConvexHull(mapped_poly).vertices]
         ax2.fill(hp[:, 0], hp[:, 1], color="cornflowerblue", alpha=0.20, zorder=1)
-    # Most 2D cases show the complete reference path on both spin-related sectors.
-    # The tP1 4/m override instead uses GAMMA-X-M for the alternating butterfly: its first segment remains plain on the unprimed side and its second remains plain on the primed side.
-    # The k/k' spokes drawn below supply the other generated segments.
-    # Figure 1 deliberately continues to show the complete SeeK-path reference path.
-    butterfly_kpath = centroid_result.get("butterfly_kpath")
-    unprimed_plain_path, primed_plain_path = _spinflip_plain_paths(
-        kpath, butterfly_kpath
-    )
-
-    for start, end in unprimed_plain_path:
-        if start in kpoints_cart and end in kpoints_cart:
-            p1, p2 = kpoints_cart[start], kpoints_cart[end]
-            ax2.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=4.0,
-                     alpha=0.9, zorder=50)
-    for start, end in primed_plain_path:
-        sp, ep = start + "'", end + "'"
-        if sp in mapped_cart_lines and ep in mapped_cart_lines:
-            p1, p2 = mapped_cart_lines[sp], mapped_cart_lines[ep]
-            ax2.plot([p1[0], p2[0]], [p1[1], p2[1]], c="navy", lw=4.0,
-                     alpha=0.9, zorder=50)
+    if path_sequence is not None:
+        for first, second, spin_side in generated_plain_path_segments(
+                path_sequence):
+            first_xy = _to_2d(
+                _cart_from_frac(first, b_matrix), basis
+            )
+            second_xy = _to_2d(
+                _cart_from_frac(second, b_matrix), basis
+            )
+            color = "navy" if spin_side == "down" else "red"
+            ax2.plot(
+                [first_xy[0], second_xy[0]],
+                [first_xy[1], second_xy[1]],
+                c=color, lw=4.0, alpha=0.9, zorder=50,
+            )
+    else:
+        for start, end in kpath:
+            if start in kpoints_cart and end in kpoints_cart:
+                p1, p2 = kpoints_cart[start], kpoints_cart[end]
+                ax2.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=4.0,
+                         alpha=0.9, zorder=50)
     shared_points = list(kpoints_cart.values()) + list(mapped_cart_lines.values())
     _draw_reciprocal_axes_2d(
         ax2, b_matrix, axis, basis, bz_poly, zorder=51,

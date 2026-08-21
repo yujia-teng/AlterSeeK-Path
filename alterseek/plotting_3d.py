@@ -18,10 +18,9 @@ from .plotting_common import (
     _math_label,
     _print_saved_paths,
     _save_figure,
+    generated_plain_path_segments,
     grouped_point_labels,
     label_aliases,
-    point_label_is_primed,
-    unprime_point_label,
 )
 from .symmetry import (
     _axis_bz_exit,
@@ -849,33 +848,13 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                     return pt
             return None
 
-        def _is_gamma_label(label):
-            return any(
-                alias in ('Γ', 'GAMMA')
-                for alias in label_aliases(unprime_point_label(label))
-            )
-
         if path_sequence is not None:
-            for i in range(len(path_sequence) - 1):
-                A = path_sequence[i]
-                B = path_sequence[i + 1]
-                if A is None or B is None:
-                    continue
-                la, lb = A[3], B[3]
-                # Skip only k-to-k-prime jumps and k endpoint helper segments; mixed primed/unprimed high-symmetry transitions are real line-mode KPOINTS segments and must remain visible.
-                if la in ('k', "k'") or lb in ('k', "k'"):
-                    continue
-                a_prime = point_label_is_primed(la)
-                b_prime = point_label_is_primed(lb)
-                pa_c = _path_point(la)
-                pb_c = _path_point(lb)
+            for A, B, spin_side in generated_plain_path_segments(path_sequence):
+                pa_c = _path_point(A[3])
+                pb_c = _path_point(B[3])
                 if pa_c is None or pb_c is None:
                     continue
-                gamma_path = _is_gamma_label(la) or _is_gamma_label(lb)
-                col = 'navy' if (
-                    (a_prime and b_prime) or
-                    (gamma_path and (a_prime or b_prime))
-                ) else 'red'
+                col = 'navy' if spin_side == 'down' else 'red'
                 ax.plot([pa_c[0], pb_c[0]], [pa_c[1], pb_c[1]], [pa_c[2], pb_c[2]],
                         c=col, lw=4.0, alpha=0.9, zorder=50)
         else:
