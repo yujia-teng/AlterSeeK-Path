@@ -951,7 +951,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
                      c="deepskyblue", lw=2.0, ls="--", alpha=0.75, zorder=40)
     ax2.scatter(*centroid_xy, c="gold", s=300, marker="*", edgecolors="k",
                 linewidths=0.8, zorder=120, label=r"$k$")
-    ax2.scatter(*k_prime_xy, c="cornflowerblue", s=150, marker="o",
+    ax2.scatter(*k_prime_xy, c="cornflowerblue", s=180, marker="D",
                 edgecolors="k", linewidths=0.8, zorder=120, label=r"$k'$")
     ax2.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=18,
               borderaxespad=0, frameon=True)
