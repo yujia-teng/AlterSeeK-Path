@@ -169,7 +169,7 @@ def run(
         "mode_2d": True,
         "vacuum_axis": input_vacuum_axis,
         "ibz_polygon_frac": ibz_polygon_frac,
-        "ibz_polygon_labels": None,
+        "ibz_polygon_labels": ibz_labels,
         "seekpath_rotation_matrix": np.eye(3),
         "standardized_structure_path": None,
         "standard_mapping_path": None,

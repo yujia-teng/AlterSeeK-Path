@@ -1093,6 +1093,10 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     )
     # Shade the IBZ itself: without it the doubled wedge is invisible and the
     # centroid star looks misplaced relative to the plain high-symmetry path.
+    # A project-doubled IBZ (e.g. 4/m tP1's X_A) covers each in-plane cell
+    # twice, so paint the doubled copy pale and the genuine sub-polygon at
+    # full strength, mirroring the up_main/up_extra split already used for
+    # the spin-BZ figure below and for the 3D IBZ figures.
     ibz_polygon_frac = centroid_result.get("ibz_polygon_frac")
     if ibz_polygon_frac is not None and len(ibz_polygon_frac) >= 3:
         ibz_xy = np.array(
@@ -1100,8 +1104,25 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
              for point in ibz_polygon_frac],
             dtype=float,
         )
-        ax1.fill(ibz_xy[:, 0], ibz_xy[:, 1], color="salmon", alpha=0.20,
-                 zorder=1)
+        ibz_polygon_labels_fig1 = centroid_result.get("ibz_polygon_labels")
+        extra_flags_fig1 = None
+        if _doubled_ibz_extra_flags is not None and ibz_polygon_labels_fig1 and \
+                len(ibz_polygon_labels_fig1) == len(ibz_polygon_frac):
+            flags = _doubled_ibz_extra_flags(ibz_polygon_labels_fig1)
+            if any(flags):
+                extra_flags_fig1 = flags
+        if extra_flags_fig1 is not None:
+            original_idx_fig1 = [j for j, is_extra in enumerate(extra_flags_fig1)
+                                  if not is_extra]
+            ax1.fill(ibz_xy[:, 0], ibz_xy[:, 1],
+                     color=IBZ_FACE_COLORS["up_extra"], alpha=0.20, zorder=1)
+            if len(original_idx_fig1) >= 3:
+                sub_xy = ibz_xy[original_idx_fig1]
+                ax1.fill(sub_xy[:, 0], sub_xy[:, 1],
+                         color=IBZ_FACE_COLORS["up_main"], alpha=0.35, zorder=1)
+        else:
+            ax1.fill(ibz_xy[:, 0], ibz_xy[:, 1], color="salmon", alpha=0.20,
+                     zorder=1)
     for start, end in kpath:
         if start in kpoints_cart and end in kpoints_cart:
             p1, p2 = kpoints_cart[start], kpoints_cart[end]
@@ -1160,14 +1181,40 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
                  + [centroid_xy, k_prime_xy])
     op_line_dir = _draw_op_visual_2d(ax2, R_for_kpts, b_matrix, basis, bz_poly,
                                      avoid_pts=avoid_pts)
+    orig_labels = list(kpoints_cart.keys())
+    mapped_labels = list(mapped_cart_lines.keys())
     orig_poly = np.array(list(kpoints_cart.values()), dtype=float)
     mapped_poly = np.array(list(mapped_cart_lines.values()), dtype=float)
-    if len(orig_poly) >= 3 and ConvexHull is not None:
-        hp = orig_poly[ConvexHull(orig_poly).vertices]
-        ax2.fill(hp[:, 0], hp[:, 1], color="salmon", alpha=0.20, zorder=1)
-    if len(mapped_poly) >= 3 and ConvexHull is not None:
-        hp = mapped_poly[ConvexHull(mapped_poly).vertices]
-        ax2.fill(hp[:, 0], hp[:, 1], color="cornflowerblue", alpha=0.20, zorder=1)
+
+    def _fill_doubled_aware(ax, poly, labels, main_color, extra_color):
+        # Same up_main/up_extra split as Figure 1: a project-doubled IBZ
+        # (e.g. 4/m tP1's X_A) must not be painted solid, or its doubled
+        # copy becomes indistinguishable from the genuine half. Primed
+        # labels (the spin-flip image) carry the doubling on the same
+        # vertices, just with a trailing "'" that the plain "_A" check
+        # would otherwise miss.
+        if len(poly) < 3 or ConvexHull is None:
+            return
+        hull_idx = ConvexHull(poly).vertices
+        hp = poly[hull_idx]
+        hp_labels = [str(labels[i]).rstrip("'") for i in hull_idx]
+        flags = (
+            _doubled_ibz_extra_flags(hp_labels)
+            if _doubled_ibz_extra_flags is not None else None
+        )
+        if flags is not None and any(flags):
+            original_idx = [j for j, is_extra in enumerate(flags) if not is_extra]
+            ax.fill(hp[:, 0], hp[:, 1], color=extra_color, alpha=0.20, zorder=1)
+            if len(original_idx) >= 3:
+                sub = hp[original_idx]
+                ax.fill(sub[:, 0], sub[:, 1], color=main_color, alpha=0.35, zorder=1)
+        else:
+            ax.fill(hp[:, 0], hp[:, 1], color=main_color, alpha=0.20, zorder=1)
+
+    _fill_doubled_aware(ax2, orig_poly, orig_labels,
+                        IBZ_FACE_COLORS["up_main"], IBZ_FACE_COLORS["up_extra"])
+    _fill_doubled_aware(ax2, mapped_poly, mapped_labels,
+                        IBZ_FACE_COLORS["down_main"], IBZ_FACE_COLORS["down_extra"])
     if path_sequence is not None:
         for first, second, spin_side in generated_plain_path_segments(
                 path_sequence):
