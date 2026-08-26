@@ -12,6 +12,7 @@ Covers the pieces that have no 3D analogue:
 
 import numpy as np
 import pytest
+import matplotlib.pyplot as plt
 
 from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
@@ -20,9 +21,15 @@ from alterseek.mode2d.geometry import analyze_lattice
 from alterseek.mode2d.lattice_kpoints import build_path
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import (
-    _figure_output_paths, generated_plain_path_segments,
+    _figure_output_paths, _math_label, generated_plain_path_segments,
 )
-from alterseek.mode2d.plotting import _physical_lattice_title, plot_2d_figures
+from alterseek.mode2d.plotting import (
+    _draw_op_visual_2d,
+    _order_mixed_label_left_to_right,
+    _physical_lattice_title,
+    _spinflip_display_points_2d,
+    plot_2d_figures,
+)
 
 
 def _diag(vals):
@@ -50,6 +57,149 @@ INV = _diag([-1, -1, -1])                       # in-plane -I  -> trivial
 C4Z = np.array([[0., -1, 0], [1, 0, 0], [0, 0, 1]])  # in-plane rotation -> valid
 MX = _diag([-1, 1, 1])                          # in-plane diag(-1, 1) -> valid
 C2X = _diag([1, -1, -1])                        # in-plane diag(1, -1) -> valid
+
+
+def test_coincident_2d_spinflip_labels_are_slash_combined():
+    original = {
+        "GAMMA": np.array([0.0, 0.0]),
+        "Y": np.array([1.0, 0.0]),
+        "S": np.array([0.0, 1.0]),
+    }
+    mapped = {
+        "GAMMA": np.array([0.0, 0.0]),
+        "Y'": np.array([1.0, 0.0]),
+        "F_0'": np.array([-1.0, 0.0]),
+    }
+
+    spin_up, spin_down = _spinflip_display_points_2d(
+        original, mapped, {"GAMMA", "Y", "Y'", "S", "F_0'"},
+    )
+
+    assert "Y/Y'" in spin_up
+    assert "Y" not in spin_up
+    assert "Y'" not in spin_down
+    assert "GAMMA" in spin_up
+    assert set(spin_down) == {"F_0'"}
+
+
+@pytest.mark.parametrize(
+    ("spin_up_center", "spin_down_center", "expected"),
+    [
+        ([0.4, -0.3], [-0.4, -0.3], "Y'/Y"),
+        ([-0.4, -0.3], [0.4, -0.3], "Y/Y'"),
+        ([0.2, 0.4], [-0.2, -0.4], "Y/Y'"),
+        ([0.4, -0.3], [0.2, -0.3], "Y/Y'"),
+        ([0.04, -0.3], [-0.04, -0.3], "Y/Y'"),
+    ],
+    ids=[
+        "blue-left-red-right",
+        "red-left-blue-right",
+        "diagonal-default",
+        "same-side-default",
+        "weak-horizontal-default",
+    ],
+)
+def test_mixed_label_order_changes_only_for_clear_left_right_sectors(
+    spin_up_center, spin_down_center, expected
+):
+    assert _order_mixed_label_left_to_right(
+        "Y/Y'",
+        np.array([0.0, 0.0]),
+        np.array(spin_up_center),
+        np.array(spin_down_center),
+        bz_span=2.0,
+    ) == expected
+
+
+def test_2d_spinflip_figure_renders_coincident_y_and_y_prime_once(tmp_path):
+    points = {
+        "GAMMA": np.array([0.0, 0.0, 0.0]),
+        "X": np.array([0.5, 0.0, 0.0]),
+        "S": np.array([0.5, 0.5, 0.0]),
+        "Y": np.array([0.0, 0.5, 0.0]),
+    }
+    result = {
+        "b_matrix": np.diag([1.0, 1.0, 0.1]),
+        "vacuum_axis": 2,
+        "sc_type": "rectangular",
+        "band_kpath": [
+            ("GAMMA", "X"), ("X", "S"),
+            ("S", "Y"), ("Y", "GAMMA"),
+        ],
+        "band_kpoints_frac": points,
+        "ibz_polygon_frac": list(points.values()),
+        "ibz_polygon_labels": list(points),
+        "unique_ops": [],
+    }
+
+    def point(coords, label):
+        return [*coords, label]
+
+    path_sequence = [
+        point(points["GAMMA"], "GAMMA"),
+        point(points["Y"], "Y"),
+        point([0.2, 0.2, 0.0], "k"),
+        point([-0.2, 0.2, 0.0], "k'"),
+        point(points["Y"], "Y'"),
+        point(points["GAMMA"], "GAMMA"),
+    ]
+    figures = []
+    try:
+        plot_2d_figures(
+            result,
+            np.array([0.2, 0.2, 0.0]),
+            MX,
+            "coincident_y",
+            output_dir=str(tmp_path),
+            deferred_figures=figures,
+            path_sequence=path_sequence,
+        )
+        spinflip_ax = figures[1].axes[0]
+        spinflip_text = [text.get_text() for text in spinflip_ax.texts]
+        mixed_labels = [
+            artist for artist in spinflip_ax.artists
+            if getattr(artist, "_alterseek_label", None) == "Y'/Y"
+        ]
+        assert len(mixed_labels) == 1
+        assert mixed_labels[0]._alterseek_alias_colors == (
+            ("Y'", "navy"), ("Y", "darkred")
+        )
+        assert _math_label("Y") not in spinflip_text
+        assert _math_label("Y'") not in spinflip_text
+    finally:
+        for fig in figures:
+            plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("operation", "coordinate"),
+    [(MX, 1), (C2X, 0)],
+    ids=["mirror", "twofold"],
+)
+def test_mirror_and_twofold_lines_overhang_bz_below_path(operation, coordinate):
+    bz_poly = np.array([
+        [-1.0, -1.0],
+        [1.0, -1.0],
+        [1.0, 1.0],
+        [-1.0, 1.0],
+    ])
+    basis = (
+        np.array([1.0, 0.0, 0.0]),
+        np.array([0.0, 1.0, 0.0]),
+        np.array([0.0, 0.0, 1.0]),
+    )
+    fig, ax = plt.subplots()
+    try:
+        _draw_op_visual_2d(
+            ax, operation, np.eye(3), basis, bz_poly,
+        )
+        line = ax.lines[0]
+        plotted = np.column_stack([line.get_xdata(), line.get_ydata()])
+        assert line.get_zorder() < 50
+        assert not line.get_clip_on()
+        assert np.max(np.abs(plotted[:, coordinate])) > 1.0
+    finally:
+        plt.close(fig)
 
 
 def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():

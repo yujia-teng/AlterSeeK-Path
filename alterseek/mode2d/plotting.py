@@ -23,7 +23,8 @@ import numpy as np
 
 from ..plotting_common import (
     IBZ_FACE_COLORS, _figure_output_paths, _math_label, _print_saved_paths,
-    _save_figure, generated_plain_path_segments, grouped_point_labels,
+    _save_figure, combine_point_labels, generated_plain_path_segments,
+    grouped_point_labels, label_aliases, prime_point_label,
 )
 
 try:
@@ -297,11 +298,54 @@ def _steer_off_line(direction, line_dir, point, other_points, offset_scale):
     return max(candidates, key=clearance)
 
 
+def _draw_mixed_spin_label(ax, name, point, offset, alignment,
+                           unprimed_color, primed_color, zorder):
+    """Draw a slash label whose primed aliases use the spin-down color."""
+    aliases = label_aliases(name)
+    primed = [alias.endswith("'") for alias in aliases]
+    if len(aliases) < 2 or not any(primed) or all(primed):
+        return None
+
+    from matplotlib.offsetbox import AnnotationBbox, HPacker, TextArea
+
+    children = []
+    alias_colors = []
+    for index, alias in enumerate(aliases):
+        if index:
+            children.append(TextArea(
+                "/", textprops={"fontsize": 24, "color": unprimed_color},
+            ))
+        color = primed_color if alias.endswith("'") else unprimed_color
+        children.append(TextArea(
+            _math_label(alias),
+            textprops={"fontsize": 24, "color": color},
+        ))
+        alias_colors.append((alias, color))
+
+    packed = HPacker(children=children, align="center", pad=0, sep=0)
+    annotation = AnnotationBbox(
+        packed,
+        (point[0], point[1]),
+        xybox=offset,
+        xycoords="data",
+        boxcoords="offset points",
+        box_alignment=alignment,
+        frameon=False,
+        annotation_clip=False,
+        zorder=zorder,
+    )
+    annotation.set_clip_on(False)
+    annotation._alterseek_label = name
+    annotation._alterseek_alias_colors = tuple(alias_colors)
+    ax.add_artist(annotation)
+    return annotation
+
+
 def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
                           prime=False, label_color=None, center=None,
                           offset_scale=None, path_labels=(), bz_poly=None,
                           avoid_dir=None, avoid_dirs=(), avoid_points=None,
-                          zorder=5):
+                          prime_label_color=None, zorder=5):
     if not points:
         return
     auto_center, auto_scale = _label_offset(points.values())
@@ -397,13 +441,30 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
         # Offset in typographic units and anchor the near edge of the text box,
         # so the gap does not shrink as the label gets wider or the wedge smaller.
         dx, dy = float(direction[0]), float(direction[1])
+        text_color = label_color if label_color is not None else edgecolor
+        offset = (_LABEL_OFFSET_POINTS_X * gap_scale * dx,
+                  _LABEL_OFFSET_POINTS_Y * gap_scale * dy)
+        alignment = (
+            0.0 if dx > 0.3 else 1.0 if dx < -0.3 else 0.5,
+            0.0 if dy > 0.3 else 1.0 if dy < -0.3 else 0.5,
+        )
+        if prime_label_color is not None and _draw_mixed_spin_label(
+            ax,
+            name,
+            point,
+            offset,
+            alignment,
+            text_color,
+            prime_label_color,
+            zorder + 1,
+        ) is not None:
+            continue
         ax.annotate(
             _math_label(name), xy=(point[0], point[1]),
             textcoords="offset points",
-            xytext=(_LABEL_OFFSET_POINTS_X * gap_scale * dx,
-                    _LABEL_OFFSET_POINTS_Y * gap_scale * dy),
+            xytext=offset,
             fontsize=24,
-            color=label_color if label_color is not None else edgecolor,
+            color=text_color,
             ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
             va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
             zorder=zorder + 1, annotation_clip=False)
@@ -613,6 +674,19 @@ def _line_label_anchor(p_pos, p_neg, avoid_pts):
     return best
 
 
+def _operation_line_endpoints(bz_poly, line_dir, span, origin=None):
+    """Return a through-Gamma line that overhangs the BZ on both sides."""
+    origin = (np.array([0.0, 0.0]) if origin is None
+              else np.asarray(origin, dtype=float))
+    line_dir = np.asarray(line_dir, dtype=float)
+    extension = 0.04 * span
+    exit_pos = _polygon_ray_exit(bz_poly, line_dir, origin) or (0.5 * span)
+    exit_neg = _polygon_ray_exit(bz_poly, -line_dir, origin) or (0.5 * span)
+    p_pos = origin + line_dir * (exit_pos + extension)
+    p_neg = origin - line_dir * (exit_neg + extension)
+    return p_pos, p_neg
+
+
 def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
     """Draw the geometric visual for the selected 2D spin-flip operation.
 
@@ -710,12 +784,11 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
             return
         line_dir = axis_2d / axis_2d_len
 
-        exit_pos = _polygon_ray_exit(bz_poly, line_dir, origin) or (0.5 * span)
-        exit_neg = _polygon_ray_exit(bz_poly, -line_dir, origin) or (0.5 * span)
-        p_pos = origin + line_dir * exit_pos
-        p_neg = origin - line_dir * exit_neg
+        p_pos, p_neg = _operation_line_endpoints(
+            bz_poly, line_dir, span, origin,
+        )
         ax.plot([p_neg[0], p_pos[0]], [p_neg[1], p_pos[1]],
-                color=COLOR, lw=2.4, alpha=0.95, zorder=210, clip_on=False)
+                color=COLOR, lw=2.4, alpha=0.95, zorder=45, clip_on=False)
 
         idx = _reduce_int_vector(axis_full @ np.linalg.inv(b_matrix))
         label = _format_miller('2', idx)
@@ -743,12 +816,11 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
         n2d_unit = n2d / n2d_len
         line_dir = np.array([-n2d_unit[1], n2d_unit[0]])
 
-        exit_pos = _polygon_ray_exit(bz_poly, line_dir, origin) or (0.5 * span)
-        exit_neg = _polygon_ray_exit(bz_poly, -line_dir, origin) or (0.5 * span)
-        p_pos = origin + line_dir * exit_pos
-        p_neg = origin - line_dir * exit_neg
+        p_pos, p_neg = _operation_line_endpoints(
+            bz_poly, line_dir, span, origin,
+        )
         ax.plot([p_neg[0], p_pos[0]], [p_neg[1], p_pos[1]],
-                color=COLOR, lw=2.4, alpha=0.95, zorder=210, clip_on=False)
+                color=COLOR, lw=2.4, alpha=0.95, zorder=45, clip_on=False)
 
         idx = _reduce_int_vector(normal3 @ np.linalg.inv(b_matrix))
         label = _format_miller('m', idx)
@@ -766,6 +838,73 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
             va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
             zorder=212, annotation_clip=False)
         return line_dir
+
+
+def _order_mixed_label_left_to_right(label, point, spin_up_center,
+                                     spin_down_center, bz_span):
+    """Match mixed-label order to a clear left/right spin-sector layout."""
+    aliases = label_aliases(label)
+    primed = [alias.endswith("'") for alias in aliases]
+    if len(aliases) < 2 or not any(primed) or all(primed):
+        return label
+    if spin_up_center is None or spin_down_center is None:
+        return label
+
+    point = np.asarray(point, dtype=float)
+    up_delta = np.asarray(spin_up_center, dtype=float) - point
+    down_delta = np.asarray(spin_down_center, dtype=float) - point
+    min_horizontal = 0.05 * max(float(bz_span), 1e-8)
+    if (abs(up_delta[0]) < min_horizontal
+            or abs(down_delta[0]) < min_horizontal
+            or up_delta[0] * down_delta[0] >= 0.0):
+        return label
+
+    center_separation = down_delta - up_delta
+    if abs(center_separation[0]) <= 1.25 * abs(center_separation[1]):
+        return label
+
+    ordered = sorted(
+        enumerate(aliases),
+        key=lambda item: (
+            down_delta[0] if item[1].endswith("'") else up_delta[0],
+            item[0],
+        ),
+    )
+    return combine_point_labels(*(alias for _index, alias in ordered))
+
+
+def _spinflip_display_points_2d(original_points, mapped_points, path_labels,
+                                spin_up_center=None, spin_down_center=None,
+                                bz_span=1.0):
+    """Return 2D spin-up/down point maps with coincident labels combined.
+
+    Coincident original and mapped vertices are drawn once with the spin-up
+    marker style, while every name used by the generated path is retained in
+    one slash-combined label, such as ``Y/Y'``.  The 3D figure keeps its
+    existing behavior of suppressing coincident mapped labels.
+    """
+    combined_points = dict(original_points)
+    for label, point in mapped_points.items():
+        if label not in combined_points:
+            combined_points[label] = point
+
+    grouped = grouped_point_labels(combined_points, path_labels)
+    original_coords = list(original_points.values())
+    spin_up, spin_down = {}, {}
+    for label, point in grouped:
+        label = _order_mixed_label_left_to_right(
+            label,
+            point,
+            spin_up_center,
+            spin_down_center,
+            bz_span,
+        )
+        target = spin_up if any(
+            np.allclose(point, original, atol=1e-8, rtol=0.0)
+            for original in original_coords
+        ) else spin_down
+        target[label] = point
+    return spin_up, spin_down
 
 
 def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
@@ -987,17 +1126,34 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
 
     # ----- Figure 2: spin-up IBZ + spin-flip image -----
     mapped_cart_lines = {}
-    mapped_cart = {}
     for label, frac in coords.items():
         if str(label).startswith("_") or abs(np.array(frac)[axis]) >= 1e-4:
             continue
         mapped_frac = R_inv_T @ np.array(frac, dtype=float)
         mapped_frac[axis] = 0.0
         mapped_point = _to_2d(_cart_from_frac(mapped_frac, b_matrix), basis)
-        mapped_cart_lines[label + "'"] = mapped_point
-        if not any(np.allclose(mapped_point, orig, atol=1e-8)
-                   for orig in kpoints_cart.values()):
-            mapped_cart[label + "'"] = mapped_point
+        mapped_cart_lines[prime_point_label(label)] = mapped_point
+
+    if path_sequence is not None:
+        figure2_path_labels = {
+            alias
+            for point in path_sequence
+            if point is not None
+            for alias in label_aliases(point[3])
+        }
+    else:
+        figure2_path_labels = set(path_labels)
+        figure2_path_labels.update(
+            prime_point_label(label) for label in path_labels
+        )
+    up_display_points, down_display_points = _spinflip_display_points_2d(
+        kpoints_cart,
+        mapped_cart_lines,
+        figure2_path_labels,
+        spin_up_center=centroid_xy,
+        spin_down_center=k_prime_xy,
+        bz_span=max(float(np.max(np.ptp(bz_poly, axis=0))), 1e-8),
+    )
 
     fig2, ax2 = _setup_2d_ax("2D spin-flip path connections", bz_poly)
     avoid_pts = (list(kpoints_cart.values()) + list(mapped_cart_lines.values())
@@ -1038,16 +1194,17 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         ax2, b_matrix, axis, basis, bz_poly, zorder=51,
     )
     shared_center, shared_scale = _label_offset(shared_points)
-    _draw_labeled_points(ax2, kpoints_cart, "salmon", "darkred", prime=False,
+    _draw_labeled_points(ax2, up_display_points, "salmon", "darkred",
                          center=shared_center, offset_scale=shared_scale,
-                         path_labels=path_labels, bz_poly=bz_poly,
+                         path_labels=figure2_path_labels, bz_poly=bz_poly,
                          avoid_dir=op_line_dir,
                          avoid_dirs=reciprocal_axis_dirs,
-                         avoid_points=shared_points, zorder=213)
-    _draw_labeled_points(ax2, mapped_cart, "cornflowerblue", "navy", prime=True,
+                         avoid_points=shared_points,
+                         prime_label_color="navy", zorder=213)
+    _draw_labeled_points(ax2, down_display_points, "cornflowerblue", "navy",
                          bz_poly=bz_poly, avoid_dir=op_line_dir,
                          center=shared_center, offset_scale=shared_scale,
-                         path_labels={f"{label}'" for label in path_labels},
+                         path_labels=figure2_path_labels,
                          avoid_dirs=reciprocal_axis_dirs,
                          avoid_points=shared_points, zorder=213)
     threshold = 0.05 * max(np.max(np.linalg.norm(bz_poly, axis=1)), 1e-8)
