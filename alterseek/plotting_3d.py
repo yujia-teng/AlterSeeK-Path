@@ -1211,6 +1211,12 @@ def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0, axis=2):
                 color=color, zorder=221, clip_on=False)
 
 
+# The flat top view autoscales to its own content, while the 3D views leave a
+# wide margin around the BZ.  Scale the top view's window up by this factor so
+# the BZ reads at the same size next to them.
+_TOP_VIEW_VIEW_SCALE = 1.36
+
+
 def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  unique_ops, centroid_cart,
                                  hull_pts, hull_simplices,
@@ -1328,6 +1334,15 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                        axis=cut_axis)
 
     ax.set_aspect('equal', adjustable='box')
+    # Autoscale hugs the cross-section, so this flat view rendered its BZ much
+    # larger than the 3D views of the same case that sit beside it in a figure.
+    # Widen the view about its own centre, square, to match their scale.
+    x_lo, x_hi = ax.get_xlim()
+    y_lo, y_hi = ax.get_ylim()
+    center = (0.5 * (x_lo + x_hi), 0.5 * (y_lo + y_hi))
+    half = 0.5 * max(x_hi - x_lo, y_hi - y_lo) * _TOP_VIEW_VIEW_SCALE
+    ax.set_xlim(center[0] - half, center[0] + half)
+    ax.set_ylim(center[1] - half, center[1] + half)
     if show_title:
         cut_label = ('x', 'y', 'z')[cut_axis]
         ax.set_title('Spin-up / Spin-down BZ top view '

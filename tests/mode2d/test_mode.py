@@ -16,15 +16,31 @@ import pytest
 from alterseek import compute_centroid_hybrid as cc
 from alterseek import geometry
 from alterseek import symmetry
+from alterseek.mode2d.geometry import analyze_lattice
+from alterseek.mode2d.lattice_kpoints import build_path
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import (
     _figure_output_paths, generated_plain_path_segments,
 )
-from alterseek.plotting_2d import plot_2d_figures
+from alterseek.mode2d.plotting import _physical_lattice_title, plot_2d_figures
 
 
 def _diag(vals):
     return np.diag(np.asarray(vals, dtype=float))
+
+
+@pytest.mark.parametrize("hpkot_setting", ["oC1", "oC2", "oA2", "mC2"])
+def test_2d_figure_title_hides_hpkot_centered_setting(hpkot_setting):
+    assert _physical_lattice_title({"sc_type": hpkot_setting}) == (
+        "centered rectangular"
+    )
+
+
+def test_2d_figure_title_uses_native_physical_lattice_class():
+    assert _physical_lattice_title({
+        "sc_type": "oC1",
+        "lattice_class_2d": "centered_rectangular",
+    }) == "centered rectangular"
 
 
 # Reference operations with the vacuum on axis 2 (z); in-plane block = rows/cols (0,1).
@@ -37,16 +53,18 @@ C2X = _diag([1, -1, -1])                        # in-plane diag(1, -1) -> valid
 
 
 def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():
-    reference = [("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")]
-    butterfly, connections = cc._2d_tp1_butterfly_override(True, "tP1", 75)
+    lattice_2d = analyze_lattice(_diag([4.0, 4.0, 20.0]), 2)
+    path_data = build_path(lattice_2d, "4")
 
-    assert reference == [
-        ("GAMMA", "X"), ("X", "M"), ("M", "GAMMA")
+    assert path_data["path"] == [
+        (cc.GAMMA_LABEL, "X"), ("X", "M"), ("M", cc.GAMMA_LABEL)
     ]
-    assert butterfly == [(cc.GAMMA_LABEL, "X"), ("X", "M")]
-    assert connections == [cc.GAMMA_LABEL, "X_A"]
-    assert cc._2d_tp1_butterfly_override(False, "tP1", 75) == (None, None)
-    assert cc._2d_tp1_butterfly_override(True, "tP1", 89) == (None, None)
+    assert path_data["butterfly_path"] == [
+        (cc.GAMMA_LABEL, "X"), ("X", "M")
+    ]
+    assert path_data["butterfly_extra_vertices"] == [
+        cc.GAMMA_LABEL, "X_A"
+    ]
 
 
 def test_generated_plain_segments_match_centered_rectangular_butterfly():

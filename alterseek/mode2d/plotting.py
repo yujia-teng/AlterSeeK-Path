@@ -9,11 +9,11 @@ flat top-down view, instead of the tilted 3D BZ plate used for bulk crystals:
                                       (blue) with the general point k and its
                                       spin-flip partner k'.
 
-The vacuum axis is taken from ``centroid_result['vacuum_axis']`` (detected in
-the standardized frame by ``compute_centroid_hybrid``).  For the common
+The vacuum axis is taken from ``centroid_result['vacuum_axis']`` in the
+submitted calculation cell.  For the common
 ``kz = 0`` slab (vacuum on axis c) the screen axes are the Cartesian kx, ky;
-when seekpath permutes the axes (e.g. monoclinic -> unique axis b) the in-plane
-reciprocal vectors define an orthonormal screen basis instead.
+when analysis permutes the cell axes, the in-plane reciprocal vectors define an
+orthonormal screen basis instead.
 
 Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 """
@@ -21,7 +21,7 @@ Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 import os
 import numpy as np
 
-from .plotting_common import (
+from ..plotting_common import (
     IBZ_FACE_COLORS, _figure_output_paths, _math_label, _print_saved_paths,
     _save_figure, generated_plain_path_segments, grouped_point_labels,
 )
@@ -32,7 +32,7 @@ except Exception:  # pragma: no cover - scipy is a hard dependency in practice
     ConvexHull = None
 
 try:
-    from .symmetry import (
+    from ..symmetry import (
         _classify_spinflip_op, _doubled_ibz_extra_flags, _reduce_int_vector,
         _format_miller, _rotation_sense,
     )
@@ -50,12 +50,63 @@ def _cart_from_frac(frac, b_matrix):
     return f[0] * b_matrix[0] + f[1] * b_matrix[1] + f[2] * b_matrix[2]
 
 
-def _plane_projector(b_matrix, axis):
-    """Orthonormal 2D screen basis spanning the in-plane reciprocal vectors."""
+def _plane_projector(b_matrix, axis, lattice_class=None):
+    """2D screen basis (kx, ky) for the in-plane reciprocal vectors.
+
+    When the vacuum reciprocal vector is Cartesian-axis-aligned -- true for
+    every 2D structure this project's own workflow produces -- kx/ky are the
+    structure's own fixed Cartesian axes for the two in-plane directions,
+    never rotated to align with any lattice vector.  Falls back to the old
+    "rotate screen-x onto the first in-plane reciprocal vector" basis only
+    when the vacuum direction is not axis-aligned (e.g. a standardized cell
+    whose vacuum reciprocal vector was permuted onto a mixed direction).
+
+    A centred rectangular lattice is the one class where the submitted cell is
+    the primitive rhombus while the standard tables are drawn on the
+    conventional centred cell, whose axes A = a1 + a2 and B = a1 - a2 are the
+    lattice's mirror axes and are perpendicular to each other.  For that class
+    the screen frame is those conventional axes, so the figure is independent
+    of how the input file happened to be oriented: conventional a on screen x,
+    b on screen y, in both metric branches (which puts SIGMA_0 horizontal and Y
+    vertical for a < b, Y horizontal and DELTA_0 vertical for a > b).  Every
+    other 2D class has its conventional axes already equal to
+    the primitive ones, so nothing changes there.
+    """
     in_plane_axes = [i for i in range(3) if i != axis]
     b_matrix = np.array(b_matrix, dtype=float)
     g1 = b_matrix[in_plane_axes[0]]
     g2 = b_matrix[in_plane_axes[1]]
+    normal = np.cross(g1, g2)
+    normal_norm = np.linalg.norm(normal)
+    if normal_norm < 1e-14:
+        raise ValueError("collinear in-plane reciprocal vectors")
+    normal /= normal_norm
+
+    if lattice_class == "centered-rectangular":
+        # A = a1 + a2 is parallel to g1 + g2 and B = a1 - a2 to g2 - g1 (each
+        # conventional axis is orthogonal to the other).  Screen x is always
+        # the conventional a direction, in both metric branches.
+        conv_a = g1 + g2
+        e1 = conv_a / np.linalg.norm(conv_a)
+        # Derive screen y from the plane normal so the frame stays right-handed
+        # and the drawn sense of every rotation operation is preserved.
+        e2 = np.cross(normal, e1)
+        e2 /= np.linalg.norm(e2)
+        return (e1, e2, in_plane_axes)
+
+    axis_aligned = next(
+        (i for i in range(3) if abs(abs(normal[i]) - 1.0) < 1e-6), None
+    )
+    if axis_aligned is not None:
+        e1 = np.zeros(3)
+        e2 = np.zeros(3)
+        fixed_axes = [i for i in range(3) if i != axis_aligned]
+        e1[fixed_axes[0]] = 1.0
+        e2[fixed_axes[1]] = 1.0
+        if np.dot(normal, np.cross(e1, e2)) < 0.0:
+            e2 = -e2
+        return (e1, e2, in_plane_axes)
+
     e1_norm = np.linalg.norm(g1)
     if e1_norm < 1e-14:
         raise ValueError("invalid zero-length in-plane reciprocal vector")
@@ -77,7 +128,8 @@ def _to_2d(point, basis):
     return np.array([point[0], point[1]], dtype=float)
 
 
-def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False):
+def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
+                   lattice_class=None):
     """2D Wigner-Seitz BZ polygon for the selected reciprocal plane."""
     if ConvexHull is None:
         raise RuntimeError("scipy is required for 2D BZ polygon construction")
@@ -87,7 +139,7 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False):
         basis = None
         in_plane_axes = [0, 1]
     else:
-        basis = _plane_projector(b_matrix, axis)
+        basis = _plane_projector(b_matrix, axis, lattice_class=lattice_class)
         _, _, in_plane_axes = basis
     vectors = []
     for i in range(-radius, radius + 1):
@@ -137,6 +189,18 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False):
 # Drawing helpers
 # ---------------------------------------------------------------------------
 
+# Axes half-width as a multiple of the BZ radius.  Radius from Gamma (origin),
+# not the polygon's own bounding box, so the zoom level is invariant under
+# rotation of the screen frame.
+_AX_LIMIT_FACTOR = 1.22
+
+
+def _ax_limit(bz_poly):
+    """Half-width of the drawing area, shared by the axes and the b_i arrows."""
+    radius = max(float(np.max(np.linalg.norm(bz_poly, axis=1))), 1e-8)
+    return _AX_LIMIT_FACTOR * radius
+
+
 def _setup_2d_ax(title, bz_poly):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -144,11 +208,12 @@ def _setup_2d_ax(title, bz_poly):
     ax.plot(closed[:, 0], closed[:, 1], color="0.25", lw=2.2)
     ax.set_aspect("equal", adjustable="box")
     ax.set_axis_off()
-    ax.set_title(title, fontsize=20)
-    span = np.ptp(bz_poly, axis=0)
-    pad = 0.22 * max(span.max(), 1e-8)
-    ax.set_xlim(np.min(bz_poly[:, 0]) - pad, np.max(bz_poly[:, 0]) + pad)
-    ax.set_ylim(np.min(bz_poly[:, 1]) - pad, np.max(bz_poly[:, 1]) + pad)
+    # A b_i arrow pointing straight up ends just below the top of the axes, so
+    # the title needs a gap of its own rather than sitting on the axes edge.
+    ax.set_title(title, fontsize=20, pad=18)
+    limit = _ax_limit(bz_poly)
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
     return fig, ax
 
 
@@ -156,6 +221,8 @@ def _setup_2d_ax(title, bz_poly):
 # and below a marker than beside it.
 _LABEL_OFFSET_POINTS_X = 14.0
 _LABEL_OFFSET_POINTS_Y = 9.0
+# Extra gap for a label whose point also carries a reciprocal-axis arrow.
+_AXIS_LABEL_GAP_SCALE = 1.7
 
 
 def _bz_outward_normal(point, bz_poly):
@@ -257,6 +324,10 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
         norm = np.linalg.norm(direction)
         direction = (direction / norm if norm > 1e-8
                      else np.array([1.0, 0.0]))
+        # A label that has to share its point with a b_i arrow needs a wider
+        # berth than the standard gap, since the arrow shaft runs through the
+        # marker itself.
+        gap_scale = 1.0
         boundary_normal = _bz_outward_normal(point, bz_poly)
         if boundary_normal is not None:
             direction = boundary_normal
@@ -284,8 +355,13 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
                     tangent = _steer_off_line(
                         line_dir, line_dir, point, layout_points, offset_scale,
                     )
-                direction = direction + 0.75 * tangent
+                # Weighted towards the tangent rather than the outward
+                # normal: the outward direction here is exactly where the b_i
+                # arrow and its own bold label sit, so a mostly-radial label
+                # lands on the arrow shaft.
+                direction = direction + 1.4 * tangent
                 direction = direction / np.linalg.norm(direction)
+                gap_scale = _AXIS_LABEL_GAP_SCALE
                 break
         elif avoid_dir is not None:
             line_dir = np.asarray(avoid_dir, dtype=float)[:2]
@@ -324,7 +400,8 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
         ax.annotate(
             _math_label(name), xy=(point[0], point[1]),
             textcoords="offset points",
-            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            xytext=(_LABEL_OFFSET_POINTS_X * gap_scale * dx,
+                    _LABEL_OFFSET_POINTS_Y * gap_scale * dy),
             fontsize=24,
             color=label_color if label_color is not None else edgecolor,
             ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
@@ -436,6 +513,13 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
     """
     span = max(float(np.max(np.ptp(bz_poly, axis=0))), 1e-8)
     target = 0.60 * span
+    # With the fixed Cartesian frame a b_i can point straight up, where the
+    # unclipped arrow tip and its label would run into the figure title.  Cap
+    # each arrow per direction -- against the axes edge it actually approaches,
+    # not by a single shared length -- so a near-horizontal b_i keeps its full
+    # reach instead of being shortened by a vertical neighbour's limit.
+    label_gap = 0.04 * span
+    tip_budget = max(_ax_limit(bz_poly) * 0.94 - label_gap, 0.1 * span)
     origin = np.array([0.0, 0.0])
     color = "#202020"
     all_labels = [r"$\mathbf{b}_1$", r"$\mathbf{b}_2$", r"$\mathbf{b}_3$"]
@@ -451,8 +535,10 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
         unit = projected / length
         exit_t = _polygon_ray_exit(bz_poly, unit)
         exit_len = exit_t if exit_t is not None else target * 0.65
-        exit_pt = origin + unit * min(exit_len, target * 0.86)
-        end = origin + unit * max(target, exit_len * 1.16)
+        max_tip = tip_budget / max(float(np.max(np.abs(unit))), 1e-8)
+        tip_len = min(max(target, exit_len * 1.16), max_tip)
+        exit_pt = origin + unit * min(exit_len, tip_len * 0.86)
+        end = origin + unit * tip_len
         ax.plot([origin[0], exit_pt[0]], [origin[1], exit_pt[1]],
                 color=color, ls=":", lw=1.5, alpha=0.6, zorder=zorder,
                 clip_on=False)
@@ -467,7 +553,7 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
         ann.set_clip_on(False)
         if ann.arrow_patch is not None:
             ann.arrow_patch.set_clip_on(False)
-        offset = projected / length * (0.04 * span)
+        offset = unit * label_gap
         ax.text(end[0] + offset[0], end[1] + offset[1], label,
                 fontsize=24, fontweight="bold", ha="center", va="center",
                 color=color, zorder=zorder + 2, clip_on=False)
@@ -640,7 +726,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
         dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
         ax.annotate(
             label, xy=(anchor[0], anchor[1]), textcoords="offset points",
-            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            xytext=(_LABEL_OFFSET_POINTS_X * dx,
+                    _LABEL_OFFSET_POINTS_Y * dy),
             fontsize=22, fontweight='bold', color=COLOR,
             ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
             va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
@@ -672,7 +759,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
         dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
         ax.annotate(
             label, xy=(anchor[0], anchor[1]), textcoords="offset points",
-            xytext=(_LABEL_OFFSET_POINTS_X * dx, _LABEL_OFFSET_POINTS_Y * dy),
+            xytext=(_LABEL_OFFSET_POINTS_X * dx,
+                    _LABEL_OFFSET_POINTS_Y * dy),
             fontsize=22, fontweight='bold', color=COLOR,
             ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
             va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
@@ -698,7 +786,8 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     # A standardized fractional c axis is not necessarily Cartesian z.  For
     # example, oA2 can place its physical vacuum reciprocal vector along kx.
     # Always construct the screen basis from the physical reciprocal plane.
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis)
+    bz_poly, basis = _bz_polygon_2d(
+        b_matrix, axis, lattice_class=centroid_result.get("sc_type"))
 
     spin_down_mask = _classify_spin_down_ops_2d(
         b_matrix, unique_ops, R_for_kpts,
@@ -736,7 +825,11 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
         if extra_flags is not None else None
     )
 
-    fig, ax = plt.subplots(figsize=(9, 9))
+    # Same canvas and same limits as Figures 1 and 2 (_setup_2d_ax), so the BZ
+    # is drawn at an identical scale across all three views of a case.  Left to
+    # autoscale, this figure hugged the BZ and rendered it much larger than the
+    # other two.
+    fig, ax = plt.subplots(figsize=(8, 8))
     fill_alpha = 0.68
     up_labeled = down_labeled = False
     if identity_like or spin_down_mask.sum() == 0:
@@ -777,6 +870,9 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     ax.plot(closed[:, 0], closed[:, 1], color="black", lw=2.0, label="BZ boundary")
     _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly)
     ax.set_aspect("equal", adjustable="box")
+    limit = _ax_limit(bz_poly)
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
     if show_title:
         ax.set_title(r"Spin-up / Spin-down BZ ($k_{\rm vac}=0$)", fontsize=18)
     ax.set_axis_off()
@@ -792,6 +888,17 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
 # ---------------------------------------------------------------------------
 # Main plotting entry point
 # ---------------------------------------------------------------------------
+
+def _physical_lattice_title(centroid_result):
+    """Return a physical 2D lattice name without an HPKOT setting tag."""
+    lattice_class = centroid_result.get("lattice_class_2d")
+    if lattice_class:
+        return str(lattice_class).replace("_", " ")
+    sc_type = str(centroid_result.get("sc_type", "BZ"))
+    if sc_type.startswith(("oA", "oC", "mC")):
+        return "centered rectangular"
+    return sc_type.replace("_", " ").replace("-", " ")
+
 
 def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
                     output_dir=".", flip_ops_for_plot=None, save_pdf=False,
@@ -813,9 +920,10 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
     axis = int(centroid_result.get("vacuum_axis", 2))
     sc_type = centroid_result.get("sc_type", "BZ")
+    lattice_title = _physical_lattice_title(centroid_result)
     # Do not infer a Cartesian kx/ky section from a fractional-axis index.
     # The standardized basis may permute Cartesian axes.
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis)
+    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, lattice_class=sc_type)
     reciprocal_axis_dirs = [
         _to_2d(vec, basis)
         for i, vec in enumerate(b_matrix)
@@ -841,7 +949,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     saved = []
 
     # ----- Figure 1: 2D BZ + in-plane path + centroid -----
-    fig1, ax1 = _setup_2d_ax(f"2D BZ: {basename} ({sc_type})", bz_poly)
+    fig1, ax1 = _setup_2d_ax(
+        f"2D BZ: {basename} ({lattice_title})", bz_poly
+    )
     # Shade the IBZ itself: without it the doubled wedge is invisible and the
     # centroid star looks misplaced relative to the plain high-symmetry path.
     ibz_polygon_frac = centroid_result.get("ibz_polygon_frac")

@@ -2,6 +2,7 @@
 import sys
 
 from alterseek.kpoints import KPointsModifier
+from alterseek.mode2d.kpoints import KPointsModifier2D
 
 
 def main():
@@ -39,13 +40,14 @@ def main():
     )
     args = parser.parse_args(argv)
 
-    modifier = KPointsModifier(
-        mode_2d=args.mode_2d,
-        input_vacuum_axis=(
-            None if args.vacuum_axis is None
-            else {"a": 0, "b": 1, "c": 2}[args.vacuum_axis]
-        ),
+    vacuum_axis = (
+        None if args.vacuum_axis is None
+        else {"a": 0, "b": 1, "c": 2}[args.vacuum_axis]
     )
+    if args.mode_2d:
+        modifier = KPointsModifier2D(input_vacuum_axis=vacuum_axis)
+    else:
+        modifier = KPointsModifier()
     try:
         success = modifier.interactive_modify()
     except Exception as exc:

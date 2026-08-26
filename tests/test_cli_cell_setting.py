@@ -29,6 +29,7 @@ def recorded(monkeypatch):
     _Recorder.result = True
     _Recorder.error = None
     monkeypatch.setattr(alterseek_path, "KPointsModifier", _Recorder)
+    monkeypatch.setattr(alterseek_path, "KPointsModifier2D", _Recorder)
     return _Recorder.instances
 
 
@@ -51,8 +52,8 @@ def test_ssg_setting_flag_no_longer_exists(monkeypatch, recorded):
 
 def test_other_flags_still_route_through(monkeypatch, recorded):
     kwargs = _run(monkeypatch, recorded, ["--2d", "--vacuum-axis", "a"])
-    assert kwargs["mode_2d"] is True
     assert kwargs["input_vacuum_axis"] == 0
+    assert "mode_2d" not in kwargs
     assert "magnetic_setting" not in kwargs
 
 

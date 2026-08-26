@@ -403,7 +403,7 @@ def _analyze_kspace(
 
     # A slab with an mC HPKOT setting has the same physical centred-
     # rectangular BZ as oC/oA, but its 3D mC path does not contain the two
-    # metric-dependent 2D vertices.  Define the 2D-only table in the native
+    # metric-dependent 2D vertices.  Define the 2D-only table in the submitted
     # mC primitive reciprocal basis; never change the 3D HPKOT table itself.
     if mode_2d and sc_type in {'mC1', 'mC2', 'mC3'}:
         x_2d, mC_2d_points = _mC2d_centered_rectangular_path(
@@ -978,6 +978,27 @@ def run(
     analysis_cell=None,
     analysis_marker_type=None,
 ):
+    if mode_2d:
+        from .mode2d.compute_centroid import run as run_2d
+
+        return run_2d(
+            filename,
+            output_dir=output_dir,
+            show_plot=show_plot,
+            defer_show=defer_show,
+            verbose=verbose,
+            seekpath_type_numbers=seekpath_type_numbers,
+            mode_2d=True,
+            input_vacuum_axis=input_vacuum_axis,
+            view_elev=view_elev,
+            view_azim=view_azim,
+            symprec=symprec,
+            figure_basename=figure_basename,
+            save_pdf=save_pdf,
+            spin_log_current_run=spin_log_current_run,
+            analysis_cell=analysis_cell,
+            analysis_marker_type=analysis_marker_type,
+        )
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
