@@ -1,7 +1,4 @@
-"""Brillouin-zone / IBZ hull / centroid geometry.
-
-Extracted from compute_centroid_hybrid.py (restructuring phase 3).
-"""
+"""Brillouin-zone, IBZ-hull, and centroid geometry."""
 import itertools
 from fractions import Fraction
 

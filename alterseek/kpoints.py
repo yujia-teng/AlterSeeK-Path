@@ -1,7 +1,5 @@
 """KPointsModifier: read a KPOINTS file, insert the IBZ-centroid general
 k-point, drive the interactive Step 0-5 workflow, and write KPOINTS output.
-
-Extracted from alterseek_path.py (restructuring phase 4).
 """
 import os
 import warnings
@@ -417,7 +415,6 @@ class KPointsModifier:
             b_output = np.array(self.output_basis_matrix, dtype=float)
             k_out = k_frac @ b_kpoints @ np.linalg.inv(b_output)
         except Exception as exc:
-            # Stop rather than write unconverted coordinates and silently reproduce the oI3/221-P-d conventional-cell basis mismatch.
             raise RuntimeError(
                 f"Output-basis conversion failed for k-point '{point[3]}': {exc}. "
                 "Refusing to write unconverted coordinates into KPOINTS."
@@ -642,7 +639,6 @@ class KPointsModifier:
                 path_sequence.append(get_prime(last_pt))
                 butterflied.add(last_key)
 
-        # Remove trailing sentinel
         if path_sequence and path_sequence[-1] is None:
             path_sequence.pop()
 
@@ -656,7 +652,6 @@ class KPointsModifier:
             path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
             path_sequence.append(get_prime(pt))
 
-        # Print generated path as label string
         tokens = []  # list of label strings or '|' for breaks
         prev = None
         i = 0
@@ -685,7 +680,6 @@ class KPointsModifier:
             tokens.append(nxt[3])
             prev = nxt[3]
             i += 1
-        # Build display string: labels joined by '-', breaks become '|'.
         display_segments = []
         current_segment = []
         for t in tokens:
@@ -1055,7 +1049,7 @@ class KPointsModifier:
                                save_pdf=False):
         """Generate Figures 2-4 (spin-flip / spin-BZ / top-view cut) for the
         selected spin-flip operation; append any created figures to
-        display_figures.  Extracted from interactive_modify (phase 5)."""
+        display_figures."""
         # Generate Figures 2-4 through one shared call scaffold with per-figure keyword arguments.
         if centroid_result is not None and self.mode_2d:
             # In 2D mode, render top-down figures instead of the 3D BZ plate.
@@ -1222,11 +1216,8 @@ class KPointsModifier:
     ):
         """Step 3: choose a detected spin-flip operation R (default Option 1 /
         numbered / 'list').  Returns (R, selected_transformation_label).
-        Extracted from interactive_modify (phase 5). `preset_choice`, if given
-        (from alterseek_input.toml's `flip_option`), supplies the answer for
-        the first prompt instead of reading stdin; run() validates it (a
-        positive integer within range) before calling, so a preset always
-        selects its numbered option directly."""
+        `preset_choice`, if given by `flip_option`, supplies the answer for the
+        first prompt. `run()` validates it before calling this method."""
         def _op_name(op_input):
             try:
                 if centroid_result is not None and 'b_matrix' in centroid_result:

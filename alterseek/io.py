@@ -2,8 +2,7 @@
 .mcif, and any other ASE-readable format), writing helper POSCAR/mcif files,
 lattice geometry utilities, atomic text writes, and band-plot config writing.
 
-Extracted from alterseek_path.py (restructuring phase 4, renamed from
-io_vasp.py). pymatgen/ase imports are function-local (kept lazy).
+pymatgen/ASE imports are function-local to keep module import lightweight.
 """
 import os
 import warnings

@@ -23,7 +23,8 @@ from .mcif import (
 )
 
 # Deposited structures routinely carry coordinates rounded to five decimals, for which spglib's 1e-5 A default can hide real symmetry (for example, MnSe2's cubic Pa-3 parent reads as orthorhombic Pbca).
-# A tolerance of 1e-3 A remains far below a deliberate distortion: a 0.5% strain on a 4 A lattice is 0.02 A, twenty times larger, and it changes none of the 54 reference cases.
+# A tolerance of 1e-3 A remains far below a deliberate distortion: a 0.5%
+# strain on a 4 A lattice is 0.02 A, twenty times larger.
 # Override per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
 
@@ -156,7 +157,7 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
     }
 
 
-# --- HELPER 1: Write FULL details for human reading ---
+# Operation-file writers
 def write_operations_to_file(
     filename,
     rotations,
@@ -192,7 +193,6 @@ def write_operations_to_file(
     if verbose:
         print(f"[INFO] All operations written to '{filename}'")
 
-# --- HELPER 2: Write ONLY Flip Operations for automation ---
 def _spin_axis_from_moments(magmoms):
     """Return a normalized nonzero moment direction for a collinear structure."""
     for moment in np.asarray(magmoms, dtype=float):
@@ -303,7 +303,6 @@ def write_flip_ops_to_file(
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(flip_ops):
             f.write(f"Operation_{i+1}\n")
-            # Write matrix row by row
             for row in rot:
                 f.write(f"{row[0]} {row[1]} {row[2]}\n")
             f.write("\n")
@@ -577,10 +576,7 @@ def format_msg_without_soc(msg_type):
     return f"BNS {bns_number}, Type {_magnetic_type_label(msg_type.type)}"
 
 
-# ==========================================
 # Public analysis entry point
-# ==========================================
-
 class SpinSymmetryError(RuntimeError):
     """A required spin-symmetry analysis or output step failed."""
 
@@ -613,7 +609,7 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
 def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
          symprec=None, output_dir='.'):
     """Internal implementation for :func:`run`; failures raise exceptions."""
-    # 1. Structure Loading
+    # --- PART 1: Structure Loading ---
     if verbose:
         print("="*40)
         print("1. Structure Loading")
@@ -792,7 +788,6 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
     l0_label = f"{fsg_basic.get('l0_symbol', 'Unknown')} ({fsg_basic.get('l0_number', 'Unknown')})"
     empg = fsg_basic.get("empg", "Unknown")
 
-    # Print info
     counts = operation_count_summary(rotations, spin_rotations, spin_axis)
     unique_point_operations = counts['unique_point_operations']
     spin_split_diagnostic = altermagnetic_diagnostic(
@@ -828,7 +823,6 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
         print("5. Saving Results")
         print("="*40)
 
-    # Prepare label info for text file
     label_info_str = f"""Non-Magnetic Label: {non_mag_label}
 Magnetic Phase: {magnetic_phase}
 Oriented SSG: {ssg_label}
@@ -840,7 +834,6 @@ Spin-Only Group Type: {sog}
 MSG with SOC: {msg_label}
 MSG without SOC: {msg_without_soc_label}"""
 
-    # 1. Write the full readable log with LABELS
     os.makedirs(output_dir, exist_ok=True)
     submitted_basis = f"submitted structure '{os.path.basename(structure_file)}'"
     write_operations_to_file(
@@ -853,7 +846,6 @@ MSG without SOC: {msg_without_soc_label}"""
         basis_label=submitted_basis,
     )
 
-    # 2. Write the automation file
     flip_filename = os.path.join(output_dir, "spin_flip_operations.txt")
     preserve_filename = os.path.join(output_dir, "spin_preserve_operations.txt")
     flip_count = write_flip_ops_to_file(
@@ -919,10 +911,7 @@ MSG without SOC: {msg_without_soc_label}"""
     }
 
 
-# ==========================================
 # Standalone entry point
-# ==========================================
-
 if __name__ == "__main__":
     filename = input("Enter structure file name (default: POSCAR): ").strip()
     if not filename:

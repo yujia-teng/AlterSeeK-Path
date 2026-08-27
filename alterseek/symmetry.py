@@ -1,8 +1,4 @@
-"""Point-operation classification, 2D spin-flip filters, Laue/type mapping.
-
-Extracted from compute_centroid_hybrid.py (restructuring phase 2). Leaf module:
-depends only on numpy + scipy.
-"""
+"""Point-operation classification, 2D spin-flip filters, and Laue mapping."""
 import numpy as np
 from scipy.spatial import ConvexHull
 

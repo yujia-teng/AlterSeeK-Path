@@ -1,7 +1,4 @@
-"""3D Brillouin-zone / IBZ / spin-flip figures (matplotlib).
-
-Extracted from compute_centroid_hybrid.py (restructuring phase 1).
-"""
+"""3D Brillouin-zone, IBZ, and spin-flip figures."""
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -753,7 +750,8 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
             f = np.array(frac)
             ibz_orig[lbl] = f[0] * b1 + f[1] * b2 + f[2] * b3
     if not ibz_orig and kpoints_data:
-        # Older callers may provide no IBZ label map, so rebuild high-symmetry labels from KPOINTS while retaining k and k-prime only as guide points.
+        # Without an IBZ label map, derive high-symmetry labels from KPOINTS
+        # and retain k and k-prime only as guide points.
         for row in kpoints_data:
             if len(row) < 4:
                 continue
@@ -1021,7 +1019,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
             print("[Warning] Skipping spin-BZ figure: inconsistent spin-operation classes.")
             return
     else:
-        # Compatibility fallback for workflows that supply no preserve file.
+        # Without a preserve file, classify the available operations directly.
         spin_down_mask = _classify_spin_down_ops(
             b_matrix, unique_ops, centroid_cart, R, flip_ops_frac
         )

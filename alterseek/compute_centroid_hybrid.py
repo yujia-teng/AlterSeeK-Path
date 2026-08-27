@@ -6,7 +6,7 @@ Uses seekpath for:  lattice type detection, cell standardization
 Uses our own data:  curated IRBZ k-point vertices (HPKOT kP convention)
 
 This ensures the IRBZ shape is consistent for all space groups within
-the same extended Bravais lattice type while preserving paper-defined
+the same extended Bravais lattice type while preserving HPKOT caption-defined
 optional path points such as H_2.
 
 Supports all HPKOT extended Bravais lattice variations.

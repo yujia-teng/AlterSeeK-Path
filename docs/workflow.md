@@ -198,7 +198,7 @@ rounding noise hides symmetry that is really present -- MnSe2's genuinely cubic
 `Pa-3` parent reads as orthorhombic `Pbca`, which then decides whether the
 structure is treated as altermagnetic at all. `1e-3` A stays far below any
 deliberate distortion (a 0.5% strain on a 4 A lattice is 0.02 A, twenty times
-larger) and changes none of the reference cases.
+larger).
 
 Lower it if you are studying a structure with a real distortion smaller than
 `1e-3` A and need that distortion resolved rather than averaged away.

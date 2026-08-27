@@ -911,11 +911,10 @@ def prepare_submitted_cell_analysis(
             physical_operation_set_verified = True
         except RuntimeError as exc:
             if translation_index == 1:
-                # A primitive input already expresses the full physical G0 operation set modulo its own lattice translations.
-                # Several conventional Hall settings can therefore reduce to the same FindSpinGroup representatives, for example primitive Cm.
-                # That makes a unique Hall reconstruction impossible even though the native set is valid.
-                # Keep the marker-helper workflow because it needs G0's primitive operations to lower the chemical symmetry seen by SeeK-path.
-                # The marker helper does not need a chosen conventional Hall setting.
+                # Several conventional Hall settings can reduce to the same
+                # primitive operation set. The validated primitive operations
+                # still provide the point representatives required by the
+                # marker helper when a unique Hall reconstruction is impossible.
                 if not str(exc).startswith(
                     "Multiple inequivalent standard Hall settings"
                 ):
@@ -1064,7 +1063,7 @@ def prepare_submitted_cell_analysis(
         "nonmagnetic_primitive_symmetry": nonmagnetic_primitive_symmetry,
         "bz_helper_symmetry": bz_helper_symmetry,
         "uses_conventional_supercell_bz": uses_conventional_supercell_bz,
-        # Compatibility alias for internal callers during this redesign.
+        # Stable result key used by internal consumers.
         "analysis_symmetry": bz_helper_symmetry,
         "summary": {
             "marker_seeds": [

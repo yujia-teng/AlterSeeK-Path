@@ -1,18 +1,9 @@
-"""Atomic text writes.
-
-Every generated file goes through here, so a crash or a full disk mid-write
-leaves the previous version intact rather than a half-written POSCAR, MCIF, or
-operation list that looks loadable.
-
-Leaf module: stdlib only, so it can be imported from anywhere in the package
-(`find_sf_operations` in particular cannot import `io`, which imports it).
-"""
+"""Atomic UTF-8 text writes that never expose partial output."""
 import contextlib
 import os
 import uuid
 from io import StringIO
 
-# Scratch files stay beside their targets so os.replace is atomic, but their private names do not repeat the possibly long public basename.
 _SCRATCH_TOKEN_HEX = 16
 
 
@@ -24,7 +15,7 @@ def _atomic_write_text(path, text):
     """Write UTF-8 text beside *path*, then atomically replace the target."""
     target = os.path.abspath(os.fspath(path))
     parent = os.path.dirname(target)
-    # O_CREAT|O_EXCL with mode 0666 (instead of tempfile.mkstemp) lets the kernel apply the process umask itself, so a brand-new target gets the same mode a plain open() would create without mkstemp's 0600 or a process-global os.umask() round-trip that could race other threads.
+    # Mode 0666 lets the process umask set permissions.
     temporary = os.path.join(
         parent, f".alterseek-{_scratch_token()}.tmp"
     )
@@ -43,7 +34,7 @@ def _atomic_write_text(path, text):
     try:
         with handle:
             handle.write(text)
-        # Keep an existing target's mode (for example, group-readable outputs in shared cluster directories); a new target keeps the umask default.
+        # Preserve permissions when replacing an existing file.
         try:
             os.chmod(temporary, os.stat(target).st_mode & 0o7777)
         except OSError:
@@ -60,13 +51,7 @@ def _atomic_write_text(path, text):
 
 @contextlib.contextmanager
 def _atomic_open_text(path):
-    """Collect `.write()` calls and commit them atomically on a clean exit.
-
-    A drop-in replacement for `open(path, "w", encoding="utf-8",
-    newline="\\n")` in the writers that build a file line by line. If the body
-    raises partway through, nothing is written at all -- previously those
-    writers left a truncated file behind.
-    """
+    """Buffer text and replace *path* atomically after a clean exit."""
     buffer = StringIO()
     yield buffer
     _atomic_write_text(path, buffer.getvalue())

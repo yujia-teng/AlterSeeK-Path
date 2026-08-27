@@ -14,8 +14,6 @@ submitted calculation cell.  For the common
 ``kz = 0`` slab (vacuum on axis c) the screen axes are the Cartesian kx, ky;
 when analysis permutes the cell axes, the in-plane reciprocal vectors define an
 orthonormal screen basis instead.
-
-Ported from the original dev-branch ``alterseek_path_2d.py`` 2D figure stack.
 """
 
 import os
@@ -42,9 +40,7 @@ except Exception:  # pragma: no cover - op-visual is best-effort only
     _doubled_ibz_extra_flags = None
 
 
-# ---------------------------------------------------------------------------
 # Geometry helpers
-# ---------------------------------------------------------------------------
 
 def _cart_from_frac(frac, b_matrix):
     f = np.array(frac[:3], dtype=float)
@@ -56,11 +52,10 @@ def _plane_projector(b_matrix, axis, lattice_class=None):
 
     When the vacuum reciprocal vector is Cartesian-axis-aligned -- true for
     every 2D structure this project's own workflow produces -- kx/ky are the
-    structure's own fixed Cartesian axes for the two in-plane directions,
-    never rotated to align with any lattice vector.  Falls back to the old
-    "rotate screen-x onto the first in-plane reciprocal vector" basis only
-    when the vacuum direction is not axis-aligned (e.g. a standardized cell
-    whose vacuum reciprocal vector was permuted onto a mixed direction).
+    structure's own fixed Cartesian axes for the two in-plane directions.
+    When the vacuum direction is not axis-aligned, screen x follows the first
+    in-plane reciprocal vector and screen y completes a right-handed basis in
+    the physical reciprocal plane.
 
     A centred rectangular lattice is the one class where the submitted cell is
     the primitive rhombus while the standard tables are drawn on the
@@ -186,9 +181,7 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
     return poly[np.argsort(angles)], basis
 
 
-# ---------------------------------------------------------------------------
 # Drawing helpers
-# ---------------------------------------------------------------------------
 
 # Axes half-width as a multiple of the BZ radius.  Radius from Gamma (origin),
 # not the polygon's own bounding box, so the zoom level is invariant under
@@ -470,9 +463,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
             zorder=zorder + 1, annotation_clip=False)
 
 
-# ---------------------------------------------------------------------------
 # In-plane operation classification
-# ---------------------------------------------------------------------------
 
 def _axis_name(axis):
     return ("kx", "ky", "kz")[axis]
@@ -880,8 +871,8 @@ def _spinflip_display_points_2d(original_points, mapped_points, path_labels,
 
     Coincident original and mapped vertices are drawn once with the spin-up
     marker style, while every name used by the generated path is retained in
-    one slash-combined label, such as ``Y/Y'``.  The 3D figure keeps its
-    existing behavior of suppressing coincident mapped labels.
+    one slash-combined label, such as ``Y/Y'``. The 3D figure suppresses
+    coincident mapped labels.
     """
     combined_points = dict(original_points)
     for label, point in mapped_points.items():
@@ -1024,9 +1015,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     )
 
 
-# ---------------------------------------------------------------------------
 # Main plotting entry point
-# ---------------------------------------------------------------------------
 
 def _physical_lattice_title(centroid_result):
     """Return a physical 2D lattice name without an HPKOT setting tag."""

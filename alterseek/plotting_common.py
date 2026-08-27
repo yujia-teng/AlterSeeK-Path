@@ -1,7 +1,4 @@
-"""Shared figure I/O + label/style helpers.
-
-Extracted from compute_centroid_hybrid.py (restructuring phase 1).
-"""
+"""Shared figure I/O, label, and style helpers."""
 from functools import wraps
 import os
 

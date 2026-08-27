@@ -71,7 +71,7 @@ _NUMBER_CONFIG_KEYS = {
 GREEK_LABELS = {
     "GAMMA": r"$\Gamma$",
     "Γ": r"$\Gamma$",
-    "\u8795": r"$\Gamma$",  # Legacy mis-encoded Gamma.
+    "\u8795": r"$\Gamma$",  # Mis-encoded Gamma accepted in existing data files.
     "DELTA": r"$\Delta$",
     "Δ": r"$\Delta$",
     "LAMBDA": r"$\Lambda$",

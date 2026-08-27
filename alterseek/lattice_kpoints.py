@@ -12,9 +12,9 @@ SeeK-path.  Gamma is stored internally as the Greek label ``Γ``.  Other
 Greek and subscripted labels are preserved semantically, e.g. ``H_2`` is
 displayed as ``$H_2$``.
 
-The public HPKOT band path and the project-curated IBZ hull are related
+The public HPKOT band path and the AlterSeeK-Path IBZ hull are related
 but distinct objects.  This module stores all HPKOT points and can add
-project-only hidden closure vertices (labels beginning with ``_``) for
+hidden closure vertices (labels beginning with ``_``) for
 centroid/hull construction where the visible band-path labels do not close
 the selected irreducible domain.
 """
@@ -203,7 +203,9 @@ def _hpkot_table(ext_bravais: str):
     }
     path = _normalize_path(path)
 
-    # SeeK-path's bundled cP1/cF1/hP1 tables include optional HPKOT caption segments unconditionally, so keep their points but add the segments only for the paper's listed space groups.
+    # SeeK-path's bundled cP1/cF1/hP1 tables include optional HPKOT caption
+    # segments unconditionally. Their points remain available, while the
+    # segments are enabled only by the corresponding caption rules.
     if ext_bravais in {"cP1", "cP2"}:
         path = _strip_path_segments(path, [("M", "X_1")])
     elif ext_bravais in {"cF1", "cF2"}:
@@ -232,7 +234,7 @@ def _build_lattice_data():
         "_P1": ("-3/2+Z+S", "1/2-Z+S", "1-H"),
     }
 
-    # Retain aliases for older callers; new code should use HPKOT extended symbols.
+    # Normalize conventional short aliases to HPKOT extended symbols.
     aliases = {
         "CUB": "cP2", "CUB2": "cP1",
         "FCC": "cF2", "FCC2": "cF1",
@@ -264,7 +266,7 @@ LATTICE_DATA = _build_lattice_data()
 
 
 def canonical_lattice_type(lattice_type: str) -> str:
-    """Return the canonical HPKOT key for a lattice type or old alias."""
+    """Return the canonical HPKOT key for a lattice type or supported alias."""
     data = LATTICE_DATA[lattice_type]
     while "alias_for" in data:
         lattice_type = data["alias_for"]
@@ -319,9 +321,8 @@ def get_kpoints(
     """
     Return HPKOT/project k-points in primitive reciprocal coordinates kP.
 
-    Parameters keep the historical call shape used by this project.  For
-    monoclinic cells, ``alpha`` is treated as the monoclinic beta angle when
-    ``beta`` is not provided.
+    For monoclinic cells, ``alpha`` is treated as the monoclinic beta angle
+    when ``beta`` is not provided.
     """
     key = canonical_lattice_type(lattice_type)
     data = LATTICE_DATA[key]
@@ -350,7 +351,7 @@ def get_hull_kpoints(
     include_hidden=True,
     spacegroup_number=None,
 ):
-    """Return k-points used for the project IBZ hull/centroid."""
+    """Return k-points used for the AlterSeeK-Path IBZ hull and centroid."""
     key = canonical_lattice_type(lattice_type)
     points = get_kpoints(
         key, a=a, b=b, c=c, alpha=alpha, beta=beta, gamma=gamma,
@@ -372,7 +373,7 @@ def get_hull_kpoints(
 
 
 def get_hull_kpath(lattice_type, spacegroup_number=None):
-    """Return the project hull/display path, distinct from the HPKOT band path."""
+    """Return the IBZ hull/display path, distinct from the HPKOT band path."""
     key = canonical_lattice_type(lattice_type)
     if spacegroup_number is not None:
         sg = int(spacegroup_number)
@@ -384,7 +385,7 @@ def get_hull_kpath(lattice_type, spacegroup_number=None):
 
 def get_kpath(lattice_type, spacegroup_number=None, with_time_reversal=True):
     """
-    Return the HPKOT base path plus applicable paper-defined extra segments.
+    Return the HPKOT base path plus applicable caption-defined extra segments.
 
     ``with_time_reversal`` is accepted to keep the API explicit; path doubling
     for no-time-reversal workflows is handled by the caller because it also
@@ -435,7 +436,6 @@ def get_params(
     return {name: raw[name] for name, _expr in data["kparam_def"]}
 
 
-# Historical detection helper retained for scripts that import it directly.
 def get_bravais_type(
     spacegroup_number,
     conv_a,
