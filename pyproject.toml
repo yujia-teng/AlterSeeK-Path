@@ -30,4 +30,6 @@ alterseek-bandplot-abinit = "plotting.plot_alterband_abinit:main"
 py-modules = [
     "alterseek_path",
 ]
-packages = ["alterseek", "plotting"]
+
+[tool.setuptools.packages.find]
+include = ["alterseek*", "plotting*"]
