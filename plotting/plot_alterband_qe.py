@@ -42,6 +42,8 @@ _PLOT_STYLE = {
     "ytick.direction": "in",
 }
 
+DEFAULT_PLOT_CONFIG = "alterseek_plot_qe.toml"
+LEGACY_PLOT_CONFIG = "alterband_qe.toml"   # pre-2026-08 name, still read
 
 def _plot_style(func):
     @wraps(func)
@@ -498,12 +500,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--config",
         default=None,
-        help="TOML config file. Defaults to alterband_qe.toml if present.",
+        help="TOML config file. Defaults to alterseek_plot_qe.toml if present (alterband_qe.toml is still read when it is the only one there).",
     )
     parser.add_argument("-o", "--output", default=None, help="Override output file path.")
     args = parser.parse_args(argv)
 
-    config_path = Path(args.config) if args.config else Path("alterband_qe.toml")
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = Path(DEFAULT_PLOT_CONFIG)
+        if not config_path.exists() and Path(LEGACY_PLOT_CONFIG).exists():
+            config_path = Path(LEGACY_PLOT_CONFIG)
     try:
         config = (
             _validate_plot_config(_read_plot_config(config_path), config_path)

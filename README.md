@@ -116,7 +116,7 @@ Full path: 9 original segments -> 21 generated segments, 36 k-points
 >>> Step 5: Save
 Output code ([vasp]/qe/abinit): vasp
 Modified KPOINTS file written to: KPOINTS_alter
-Band plot config updated: alterband.toml (lattice_type = "hP2")
+Band plot config updated: alterseek_plot_vasp.toml (lattice_type = "hP2")
 
 Done.
 Displaying generated figure(s)...
@@ -169,7 +169,7 @@ alterseek-path bandplot
 ```
 
 This reads `KLABELS`/`REFORMATTED_BAND_UP.dat`/`REFORMATTED_BAND_DW.dat` and
-writes `alterband.png`, using settings from `alterband.toml` (written
+writes `alterband.png`, using settings from `alterseek_plot_vasp.toml` (written
 automatically by the main workflow) if present. See
 [Plotting](https://yujia-teng.github.io/AlterSeeK-Path/plotting/) for the
 full settings reference (energy window, split panels, gap width, etc.).

@@ -156,7 +156,7 @@ def test_main_reports_domain_invalid_setting_cleanly(tmp_path):
     down = tmp_path / "down.dat"
     up.write_text(band_text, encoding="utf-8")
     down.write_text(band_text, encoding="utf-8")
-    config = tmp_path / "alterband.toml"
+    config = tmp_path / "alterseek_plot_vasp.toml"
     config.write_text(
         f'klabels = "{klabels.as_posix()}"\n'
         f'up = "{up.as_posix()}"\n'

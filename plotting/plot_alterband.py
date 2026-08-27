@@ -18,6 +18,8 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 
+DEFAULT_PLOT_CONFIG = "alterseek_plot_vasp.toml"
+LEGACY_PLOT_CONFIG = "alterband.toml"   # pre-2026-08 name, still read
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_FIG_SIZE = (12.0, 5.0)
@@ -465,7 +467,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         default=None,
-        help="Optional TOML config file. Defaults to alterband.toml if present.",
+        help="Optional TOML config file. Defaults to alterseek_plot_vasp.toml if present (alterband.toml is still read when it is the only one there).",
     )
     parser.add_argument("--klabels", default=None, help="KLABELS file path.")
     parser.add_argument("--up", default=None, help="Spin-up band data file.")
@@ -501,7 +503,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    config_path = Path(args.config) if args.config else Path("alterband.toml")
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = Path(DEFAULT_PLOT_CONFIG)
+        if not config_path.exists() and Path(LEGACY_PLOT_CONFIG).exists():
+            config_path = Path(LEGACY_PLOT_CONFIG)
     def option(name: str, default: Any) -> Any:
         arg_value = getattr(args, name)
         if arg_value is not None:

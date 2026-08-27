@@ -28,7 +28,7 @@ By default, the plotter reads the standard VASPKIT output filenames:
 | `KLABELS` | VASPKIT task `211` | k-point tick labels |
 | `REFORMATTED_BAND_UP.dat` | VASPKIT task `211` | spin-up band data |
 | `REFORMATTED_BAND_DW.dat` | VASPKIT task `211` | spin-down band data |
-| `alterband.toml` | `alterseek-path` | optional plotting settings |
+| `alterseek_plot_vasp.toml` | `alterseek-path` | optional plotting settings |
 
 The default output is:
 
@@ -44,7 +44,10 @@ alterseek-path bandplot -o alterband.pdf
 
 ## Plot Settings
 
-If `alterband.toml` exists in the same directory, the band plotter uses it
+The plot config was called `alterband.toml` before 2026-08-27; that name is
+still read when the new one is absent.
+
+If `alterseek_plot_vasp.toml` exists in the same directory, the band plotter uses it
 automatically. The main `alterseek-path` workflow writes this file after
 KPOINTS generation, recording the detected lattice type. A typical
 configuration:
@@ -99,7 +102,7 @@ alterseek-bandplot-qe
 ```
 
 Settings are config-file only (there is no CLI-flag equivalent besides
-`--config`/`-o`). If `alterband_qe.toml` exists in the working directory, it
+`--config`/`-o`). If `alterseek_plot_qe.toml` exists in the working directory, it
 is used automatically:
 
 ```toml
@@ -158,7 +161,7 @@ own official `abinit_eignc_to_bandstructure.py` post-processing script
 uses.
 
 Settings are config-file only (there is no CLI-flag equivalent besides
-`--config`/`-o`). If `alterband_abinit.toml` exists in the working
+`--config`/`-o`). If `alterseek_plot_abinit.toml` exists in the working
 directory, it is used automatically:
 
 ```toml

@@ -18,6 +18,10 @@ from .find_sf_operations import (
     parse_magmoms,
 )
 
+DEFAULT_PLOT_CONFIG = "alterseek_plot_vasp.toml"
+DEFAULT_PLOT_CONFIG_QE = "alterseek_plot_qe.toml"
+DEFAULT_PLOT_CONFIG_ABINIT = "alterseek_plot_abinit.toml"
+
 
 def _group_poscar_sites(elements, positions, moment_keys=None):
     groups = []
@@ -203,7 +207,7 @@ def _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart):
     return lattice, positions, elements, moments, "cartesian"
 
 
-def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
+def write_bandplot_lattice_config(lattice_type, filename=DEFAULT_PLOT_CONFIG):
     """Record the detected lattice type for later band plotting."""
     if not lattice_type:
         return
@@ -240,7 +244,7 @@ def write_bandplot_lattice_config(lattice_type, filename="alterband.toml"):
         print(f"[Warning] Could not update band plot config '{filename}': {exc}")
 
 
-def write_qe_bandplot_config(filename="alterband_qe.toml"):
+def write_qe_bandplot_config(filename=DEFAULT_PLOT_CONFIG_QE):
     """Create the QE band-plot config file with a header comment, if missing."""
     if os.path.exists(filename):
         return
@@ -255,7 +259,7 @@ def write_qe_bandplot_config(filename="alterband_qe.toml"):
         print(f"[Warning] Could not create band plot config '{filename}': {exc}")
 
 
-def write_abinit_bandplot_config(filename="alterband_abinit.toml"):
+def write_abinit_bandplot_config(filename=DEFAULT_PLOT_CONFIG_ABINIT):
     """Create the ABINIT band-plot config file with a header comment, if missing."""
     if os.path.exists(filename):
         return

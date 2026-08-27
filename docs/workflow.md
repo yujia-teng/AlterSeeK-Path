@@ -71,7 +71,7 @@ Choose VASP (the default), Quantum ESPRESSO, or ABINIT. The workflow writes
 the fixed filename `KPOINTS_alter`, `KPOINTS_alter_qe`, or
 `KPOINTS_alter_abinit`; it does not ask for an output filename. It also
 creates or updates the corresponding plotting configuration —
-`alterband.toml`, `alterband_qe.toml`, or `alterband_abinit.toml`. See
+`alterseek_plot_vasp.toml`, `alterseek_plot_qe.toml`, or `alterseek_plot_abinit.toml`. See
 Output Files below for the full list, including figures.
 
 ## Output Files
@@ -86,9 +86,9 @@ record files go into `alterseek_output/`.
 | `KPOINTS_alter` | Altermagnetic k-path for VASP line-mode band calculations |
 | `KPOINTS_alter_qe` | Altermagnetic k-path in QE `K_POINTS crystal_b` format |
 | `KPOINTS_alter_abinit` | Altermagnetic k-path as an ABINIT `kptopt`/`ndivk`/`kptbounds` block |
-| `alterband.toml` | VASP band-plot configuration; the band plotter reads it from here |
-| `alterband_qe.toml` | QE band-plot configuration; likewise |
-| `alterband_abinit.toml` | ABINIT band-plot configuration; likewise |
+| `alterseek_plot_vasp.toml` | VASP band-plot configuration; the band plotter reads it from here |
+| `alterseek_plot_qe.toml` | QE band-plot configuration; likewise |
+| `alterseek_plot_abinit.toml` | ABINIT band-plot configuration; likewise |
 
 **`alterseek_output/`**
 

@@ -74,7 +74,7 @@ def _fmt_coord(value):
 # Fix the label width so the submitted and reference-cell fields align.
 _CELL_LABEL_WIDTH = 30
 
-# Place generated files in the output directory except KPOINTS_alter, which feeds the band calculation, and alterband.toml, which the band plotter reads from the working directory.
+# Place generated files in the output directory except KPOINTS_alter, which feeds the band calculation, and alterseek_plot_vasp.toml, which the band plotter reads from the working directory.
 OUTPUT_DIR = "alterseek_output"
 
 
