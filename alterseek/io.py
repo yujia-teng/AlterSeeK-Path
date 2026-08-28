@@ -24,13 +24,13 @@ DEFAULT_PLOT_CONFIG_ABINIT = "alterseek_plot_abinit.toml"
 
 def _group_poscar_sites(elements, positions, moment_keys=None):
     groups = []
-    site_to_group = {}
+    key_to_group = {}
     for idx, element in enumerate(elements):
         key = (element, moment_keys[idx]) if moment_keys is not None else (element,)
-        if key not in site_to_group:
-            site_to_group[key] = len(groups)
+        if key not in key_to_group:
+            key_to_group[key] = len(groups)
             groups.append((element, []))
-        groups[site_to_group[key]][1].append(idx)
+        groups[key_to_group[key]][1].append(idx)
     ordered_indices = [idx for _, indices in groups for idx in indices]
     symbols = [symbol for symbol, _ in groups]
     counts = [len(indices) for _, indices in groups]

@@ -733,8 +733,8 @@ def _write_seekpath_basis_mapping(
         "seekpath_rotation_matrix:",
         _fmt_matrix(rotation_matrix),
         "",
-        "# kpoints_output_lattice is the submitted direct lattice. Final VASP "
-        "and QE fractional coordinates use its reciprocal basis.",
+        "# kpoints_output_lattice is the submitted direct lattice. Final VASP, "
+        "QE, and ABINIT fractional coordinates use its reciprocal basis.",
         "kpoints_output_lattice:",
         _fmt_matrix(input_lattice),
         "",

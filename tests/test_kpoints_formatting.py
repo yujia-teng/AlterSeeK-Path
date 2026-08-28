@@ -127,7 +127,7 @@ def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
 
     vasp_output = tmp_path / "KPOINTS_alter"
     qe_output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file(points, str(vasp_output))
+    assert modifier.write_kpoints_file_vasp(points, str(vasp_output))
     assert modifier.write_kpoints_file_qe(points, str(qe_output))
 
     vasp_labels = [
@@ -165,7 +165,7 @@ def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
 
     vasp_output = tmp_path / "KPOINTS_alter"
     qe_output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file(path, str(vasp_output))
+    assert modifier.write_kpoints_file_vasp(path, str(vasp_output))
     assert modifier.write_kpoints_file_qe(path, str(qe_output))
 
     vasp_text = vasp_output.read_text(encoding="utf-8")
@@ -220,7 +220,7 @@ def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
     segments = [
         (start[3], end[3], break_before)
         for start, end, break_before, _index, _raw_label
-        in modifier._valid_segment_pairs(path)
+        in modifier._prepare_output_segments(path)
     ]
 
     assert segments == [
@@ -260,7 +260,7 @@ def test_writers_record_the_operation_source_basis(tmp_path):
     label = "magnetic primitive cell 'CASE_magnetic_primitive.mcif'"
 
     vasp_out = tmp_path / "KPOINTS_alter"
-    assert modifier.write_kpoints_file(
+    assert modifier.write_kpoints_file_vasp(
         points, str(vasp_out), matrix, "Option 2", operation_basis_label=label
     )
     assert vasp_out.read_text(encoding="utf-8").splitlines()[0].startswith(
@@ -296,7 +296,7 @@ def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
 
     monkeypatch.setattr(modifier, "_kpoint_for_output_basis", fail_on_second_point)
     with pytest.raises(RuntimeError, match="synthetic conversion failure"):
-        modifier.write_kpoints_file(
+        modifier.write_kpoints_file_vasp(
             [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
         )
     assert output.read_text(encoding="utf-8") == "keep me\n"
@@ -322,7 +322,7 @@ def test_qe_writer_does_not_damage_existing_file_on_conversion_failure(
 @pytest.mark.parametrize(
     ("writer_name", "filename"),
     [
-        ("write_kpoints_file", "KPOINTS_alter"),
+        ("write_kpoints_file_vasp", "KPOINTS_alter"),
         ("write_kpoints_file_qe", "KPOINTS_alter_qe"),
     ],
 )

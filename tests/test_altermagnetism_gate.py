@@ -518,6 +518,60 @@ def test_step1_internal_error_propagates_without_manual_fallback(
     assert not (tmp_path / "KPOINTS_alter").exists()
 
 
+def test_missing_centroid_aborts_without_manual_k_prompt(
+    tmp_path, monkeypatch, capsys
+):
+    """A malformed centroid result must not trigger basis-ambiguous input."""
+    from alterseek import kpoints as kpoints_module
+
+    (tmp_path / "POSCAR").write_text(
+        "test structure placeholder\n", encoding="utf-8"
+    )
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        'moments = ""\n',
+        encoding="utf-8",
+    )
+    centroid_result = {
+        "display_figures": [],
+        "sp_path": [("GAMMA", "X")],
+        "sp_point_coords": {
+            "GAMMA": [0.0, 0.0, 0.0],
+            "X": [0.5, 0.0, 0.0],
+        },
+        "b_matrix": np.eye(3),
+        "b_matrix_input": np.eye(3),
+        "sc_type": "oP1",
+        "point_group": "mmm",
+        "spacegroup": 61,
+    }
+
+    def forbid_spin_analysis(*args, **kwargs):
+        raise AssertionError("no-moments route must not run spin analysis")
+
+    input_stream = io.StringIO("")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", input_stream)
+    monkeypatch.setattr(kpoints_module, "find_sf_run", forbid_spin_analysis)
+    monkeypatch.setattr(
+        kpoints_module,
+        "prepare_submitted_cell_analysis",
+        lambda *a, **k: _synthetic_analysis_preparation(),
+    )
+    monkeypatch.setattr(
+        kpoints_module, "compute_centroid", lambda *a, **k: centroid_result
+    )
+
+    assert kpoints_module.KPointsModifier().interactive_modify() is False
+    output = capsys.readouterr().out
+
+    assert input_stream.tell() == 0
+    assert "IBZ centroid is unavailable. Aborting." in output
+    assert "Enter k-point" not in output
+    assert not (tmp_path / "KPOINTS_alter").exists()
+
+
 def test_workflow_gates_on_findspingroup_g0(tmp_path, monkeypatch):
     """The gate uses G0 while the path remains in the submitted lattice.
 

@@ -1,5 +1,6 @@
-"""KPointsModifier: read a KPOINTS file, insert the IBZ-centroid general
-k-point, drive the interactive Step 0-5 workflow, and write KPOINTS output.
+"""KPointsModifier: build the altermagnetic k-path around the IBZ-centroid
+general k-point, drive the interactive Step 0-5 workflow, and write the
+VASP, QE, and ABINIT path files.
 """
 import os
 import warnings
@@ -72,7 +73,7 @@ def _fmt_coord(value):
 # Fix the label width so the submitted and reference-cell fields align.
 _CELL_LABEL_WIDTH = 30
 
-# Place generated files in the output directory except KPOINTS_alter, which feeds the band calculation, and alterseek_plot_vasp.toml, which the band plotter reads from the working directory.
+# Keep diagnostics under OUTPUT_DIR; calculation inputs and plot configs stay in the working directory.
 OUTPUT_DIR = "alterseek_output"
 
 
@@ -131,13 +132,7 @@ def _cell_suffix(sites, lattice_tag):
 
 
 def _print_cell_rows(rows, note=None, note_after_index=0):
-    """Print the cell summary with every field in its own column.
-
-    Space-group symbols and numbers vary in width (``P6_3mc (186)`` against
-    ``Cmc2_1 (36)``), so without padding the fields ragged and the reader has
-    to hunt for what differs between the two cells -- which is the one thing
-    the block exists to show. Widths are taken from the rows actually printed.
-    """
+    """Print cell-summary fields in columns sized to the supplied rows."""
     sg_w = max(len(row[1]) for row in rows)
     pg_w = max(len(row[2]) for row in rows)
     laue_w = max(len(row[3]) for row in rows)
@@ -169,14 +164,10 @@ def _print_2d_structure_summary(centroid_result):
 
 
 def _g0_symmetry(sf_result, sites=None):
-    """Describe G0, the spatial part of the reported spin space group.
+    """Return symmetry metadata for FindSpinGroup's reported spatial subgroup G0.
 
-    FindSpinGroup reports G0 directly, so this is the symmetry that actually
-    holds once the magnetic order is accounted for, and reading it off the
-    reported group needs no tolerance. Re-detecting symmetry from coordinates
-    would instead describe the moment-stripped crystal, which for a supercell
-    altermagnet can still be the higher-symmetry parent. ``sites`` is optional
-    display metadata for the FindSpinGroup magnetic primitive reference.
+    Detecting symmetry from atomic coordinates alone could instead recover the
+    higher-symmetry nonmagnetic parent structure.
     """
     number = sf_result.get('g0_number')
     laue_group = laue_group_from_spacegroup_number(number)
@@ -192,14 +183,10 @@ def _g0_symmetry(sf_result, sites=None):
 
 
 def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
-    """Return a reason dict when magnetic G0's Laue group forbids
-    altermagnetism, or None when it permits it.
+    """Return why the working-cell symmetry forbids altermagnetism, or None.
 
-    The submitted lattice defines the BZ, but its moment-free coordinates may
-    have a higher parent symmetry. MnSe2 is the clean example: its parent is
-    cubic Pa-3 (Laue m-3), whereas magnetic G0 is orthorhombic Pbca (Laue mmm).
-    FindSpinGroup's G0 therefore supplies the point symmetry encoded in the
-    submitted-cell marker helper and used by this gate.
+    Fall back to the submitted-cell point group when no working-cell symmetry
+    is available.
     """
     if working_cell_symmetry is not None:
         return no_altermagnetism_reason(
@@ -257,10 +244,7 @@ def _validate_input_config(config):
 
 
 def _read_input_config(path=INPUT_CONFIG_FILE):
-    """Read optional per-run answers (structure, spin_axis, moments,
-    flip_option, path, output_code) from a TOML file. Any key present skips
-    its interactive prompt; missing keys (or a missing file) fall back to the
-    normal prompt unchanged."""
+    """Read and validate a per-run TOML config, or return an empty dict if absent."""
     if not os.path.exists(path):
         return {}
     try:
@@ -318,14 +302,11 @@ class KPointsModifier:
         )
 
     def _forces_2d_degeneracy(self, operation, centroid_result):
-        """True for a spin flip that equates both channels at every in-plane k.
+        """Return whether a spin flip enforces degeneracy throughout the 2D plane.
 
-        A plane-preserving spin-flip operation restricting to +I (U m_z) or -I
-        (U C_2z) on the slab plane maps every in-plane k to itself or to -k
-        while reversing spin, so E_up(k) = E_down(k) throughout the plane. Its
-        presence disqualifies the slab regardless of how many other spin-flip
-        operations act nontrivially, which is why it cannot simply be filtered
-        out of the operation list.
+        A plane-preserving C_2z T or U m_z operation acts as -I or +I in the
+        plane and enforces spin degeneracy at every in-plane k, ruling out
+        altermagnetic spin splitting.
         """
         if self.plane_normal_cartesian is None:
             raise RuntimeError("Physical 2D plane has not been configured")
@@ -343,12 +324,11 @@ class KPointsModifier:
 
     @staticmethod
     def _display_label(label: str) -> str:
-        # Reuse the VASP-safe normalization for console labels.
         return KPointsModifier._kpoints_label(label)
 
     @staticmethod
     def _kpoints_label(label: str) -> str:
-        """Return labels in a VASP-safe form for KPOINTS files."""
+        """Normalize point labels for generated path files."""
         safe_aliases = []
         for alias in label_aliases(label):
             safe_aliases.append(
@@ -403,7 +383,7 @@ class KPointsModifier:
         return count
     
     def _kpoint_for_output_basis(self, point: List) -> List:
-        """Convert an internal k-point to the POSCAR reciprocal basis for VASP."""
+        """Convert an internal k-point to the submitted cell's reciprocal basis."""
         if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
             return point
 
@@ -491,13 +471,10 @@ class KPointsModifier:
                                *,
                                path_points: Optional[List[List]] = None,
                                report: bool = True) -> List[List]:
-        """
-        Insert general k-points into every segment of the high symmetry path.
-        Per-segment butterfly: for each (A,B) segment:
-          - If A not yet opened: A-k | k'-A'
-          - Connect A' to B'
-          - Close: B'-k' | k-B
-        Points already butterflied in earlier chains appear as plain segments.
+        """Build the alternating plain/butterfly form of a high-symmetry path.
+
+        A full butterfly for A-B is A-k | k'-A'-B'-k' | k-B, with primed
+        points obtained using R^(-T). None marks path discontinuities.
         """
         source_path = self.kpoints_data if path_points is None else path_points
         if not source_path:
@@ -528,11 +505,11 @@ class KPointsModifier:
             tc = self.transform_kpoint(p, transformation_matrix)
             return [tc[0], tc[1], tc[2], prime_point_label(p[3])]
 
-        # --- Step 1: group flat kpoints_data into segment pairs ---
-        raw = self._globally_alias_coincident_path_points(source_path)
+        # --- Phase 1: group flat kpoints_data into segment pairs ---
+        raw = self._combine_coincident_path_labels(source_path)
         seg_pairs = [(raw[i], raw[i+1]) for i in range(0, len(raw) - 1, 2)]
 
-        # --- Step 2: build connected chains ---
+        # --- Phase 2: build connected chains ---
         chains = []
         current_chain = [seg_pairs[0][0], seg_pairs[0][1]]
         for sp_start, sp_end in seg_pairs[1:]:
@@ -543,13 +520,12 @@ class KPointsModifier:
                 current_chain = [sp_start, sp_end]
         chains.append(current_chain)
 
-        # --- Step 3: alternating plain / butterfly segments ---
-        # Pattern:
-        #   Even-indexed segment -- plain: emit A, B.
-        #   Odd-indexed segment -- butterfly: emit A, k, k', A', B', k', k, B.
-        # The first chain starts with a plain segment, while later chains start with a butterfly segment.
-        # Consecutive segments share an endpoint, whose duplicate is suppressed by the writers and display builder.
-        # GAMMA is self-conjugate: get_prime(GAMMA) = GAMMA.
+        # --- Phase 3: apply the paper's alternating plain/butterfly construction ---
+        # For the first chain A-B-C-..., keep A-B plain, then butterfly B-C:
+        # A-B-k | k'-B'-C'-k' | k-C.
+        # Even parity keeps the original segment; odd parity applies a butterfly.
+        # The first chain starts even; each later disconnected chain starts odd.
+        # Do not butterfly an endpoint twice; GAMMA maps to itself and stays unprimed.
         path_sequence = []
 
         def emit_plain(A, B):
@@ -562,7 +538,7 @@ class KPointsModifier:
             path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
             path_sequence.append(get_prime(A))
             path_sequence.append(get_prime(B))
-            # Skip closing a segment when B has already received butterfly treatment; this applies equally to GAMMA, X, W, and every other point.
+            # If B was already butterflied, omit the repeated B'-k' | k-B closure.
             if pt_key(B) not in butterflied:
                 path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
                 path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
@@ -571,7 +547,7 @@ class KPointsModifier:
         butterflied = set()  # pt_key of points that have received butterfly treatment
 
         for ci, chain in enumerate(chains):
-            # Dedup within chain (by coordinates, not labels)
+            # Merge consecutive coincident vertices while preserving all labels.
             unique = []
             for pt in chain:
                 if unique and coords_eq(unique[-1], pt):
@@ -579,7 +555,7 @@ class KPointsModifier:
                 else:
                     unique.append(pt.copy())
 
-            # Skip degenerate chains whose points all share the same coordinates, such as U_0--T for certain lattice parameters.
+            # Skip chains that collapse to a single reciprocal-space point.
             if len(unique) < 2:
                 labels = [p[3] for p in chain]
                 if report:
@@ -600,7 +576,7 @@ class KPointsModifier:
                 A_key = pt_key(A)
                 B_key = pt_key(B)
                 is_last = (s == len(unique) - 2)
-                # If A was already butterflied, continue from its active side; when the previous butterfly ended at A', the next plain segment must be A'->B rather than A'->A->B.
+                # If A was already butterflied, continue from A or A' without repeating its A-k | k'-A' connections.
                 if A_key in butterflied:
                     A_start = A
                     if path_sequence:
@@ -610,14 +586,14 @@ class KPointsModifier:
                                 and A_prime[3] != A[3]):
                             A_start = A_prime
                     emit_plain(A_start, B)
-                    # B is a new endpoint --partial butterfly B-k|k'-B'
+                    # Give an untreated chain endpoint B the partial butterfly B-k | k'-B'.
                     if B_key not in butterflied and is_last:
                         path_sequence.append(B.copy())
                         path_sequence.append([kpt[0], kpt[1], kpt[2], "k"])
                         path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
                         path_sequence.append(get_prime(B))
                         butterflied.add(B_key)
-                    # Hold parity only when butterflied A overrides a butterfly slot; when parity is already even, advance normally.
+                    # Keep odd parity so the next segment with an unbutterflied start receives the butterfly.
                     if parity % 2 == 0:
                         parity += 1
                 elif parity % 2 == 1:
@@ -629,7 +605,7 @@ class KPointsModifier:
                     emit_plain(A, B)
                     parity += 1
 
-            # Add butterfly treatment when the chain's final point still lacks it, as happens when the first chain contains only one plain segment.
+            # If the chain ends at an unbutterflied point B, add B-k | k'-B'.
             last_key = pt_key(unique[-1])
             if last_key not in butterflied:
                 last_pt = unique[-1]
@@ -642,7 +618,7 @@ class KPointsModifier:
         if path_sequence and path_sequence[-1] is None:
             path_sequence.pop()
 
-        # Doubled-IBZ append-only points are project-specific copied vertices sampled through the general point without adding duplicated high-symmetry edges.
+        # Append P-k | k'-P' for extra doubled-IBZ vertices outside the path.
         extra_general_points = extra_general_points or []
         for pt in extra_general_points:
             if path_sequence:
@@ -652,26 +628,24 @@ class KPointsModifier:
             path_sequence.append([kp[0],  kp[1],  kp[2],  "k'"])
             path_sequence.append(get_prime(pt))
 
-        tokens = []  # list of label strings or '|' for breaks
+        # Build a compact path preview; None and k/k' transitions mark breaks.
+        tokens = []
         prev = None
         i = 0
         while i < len(path_sequence) - 1:
             cur = path_sequence[i]
             nxt = path_sequence[i + 1]
-            # Chain boundary sentinel --insert break
             if cur is None or nxt is None:
                 if tokens and tokens[-1] != '|':
                     tokens.append('|')
                 i += 1
                 continue
-            # k↔k' connection --insert break
             if (cur[3] == "k" and nxt[3] == "k'") or \
                (cur[3] == "k'" and nxt[3] == "k"):
                 if tokens and tokens[-1] != '|':
                     tokens.append('|')
                 i += 1
                 continue
-            # same label --skip
             if cur[3] == nxt[3]:
                 i += 1
                 continue
@@ -713,11 +687,12 @@ class KPointsModifier:
 
         return path_sequence
 
-    def insert_general_kpoint(self, kpoint: List[float],
-                              extra_general_points: Optional[List[List]] = None) -> List[List]:
-        """Keep the ordinary path, then append compact high-symmetry/k connections."""
+    def build_ordinary_path_with_general_k(
+            self, kpoint: List[float],
+            extra_general_points: Optional[List[List]] = None) -> List[List]:
+        """Keep the ordinary path and append A-k-B connections through general k."""
         kpt = [kpoint[0], kpoint[1], kpoint[2], "k"]
-        raw = self._globally_alias_coincident_path_points(self.kpoints_data)
+        raw = self._combine_coincident_path_labels(self.kpoints_data)
         seg_pairs = [(raw[i], raw[i + 1]) for i in range(0, len(raw) - 1, 2)]
         path_sequence = []
         for idx, (start, end) in enumerate(seg_pairs):
@@ -759,12 +734,11 @@ class KPointsModifier:
         return path_sequence
     
     @staticmethod
-    def _globally_alias_coincident_path_points(points):
-        """Give every occurrence of a path coordinate the same combined label.
+    def _combine_coincident_path_labels(points):
+        """Return copies with coincident path labels combined, e.g. M/Z_0.
 
-        This runs before disconnected zero-length path parts are discarded. It
-        therefore preserves aliases from a degenerate part such as ``Z_0--M``
-        on nonzero occurrences of that same point elsewhere in the path.
+        Combining before zero-length segments are removed preserves every label
+        on retained occurrences of the same point.
         """
         groups = []
         assignments = []
@@ -793,7 +767,7 @@ class KPointsModifier:
         return copied
 
     @staticmethod
-    def _coalesce_coincident_path_points(new_kpoints):
+    def _merge_consecutive_coincident_path_points(new_kpoints):
         """Merge consecutive equal-coordinate path points and retain their names."""
         merged = []
         for index, point in enumerate(new_kpoints):
@@ -813,18 +787,14 @@ class KPointsModifier:
             merged.append((current, index))
         return merged
 
-    def _valid_segment_pairs(self, new_kpoints: List[List]):
-        """Collect the writable path segments shared by the VASP and QE writers.
+    def _prepare_output_segments(self, new_kpoints: List[List]):
+        """Prepare writable segments in the submitted cell's reciprocal basis.
 
-        Consecutive equal-coordinate high-symmetry names are retained as one
-        slash-combined label. Skips chain-boundary sentinels (``None``), direct
-        k<->k' connections, and any remaining zero-length pairs. Returns a list of
-        ``(start_out, end_out, break_before, index, end_raw_label)`` tuples:
-        endpoints converted to the output basis, ``break_before`` marking a
-        discontinuity with the previously kept segment, ``index`` the position
-        of the start point in *new_kpoints*, and the raw end-point label.
+        Merge consecutive coincident points, treat None and k-k' as path breaks,
+        and omit zero-length segments. Return
+        (start, end, break_before, start_index, raw_end_label) tuples.
         """
-        path_points = self._coalesce_coincident_path_points(new_kpoints)
+        path_points = self._merge_consecutive_coincident_path_points(new_kpoints)
         pairs = []
         forced_break = False
         i = 0
@@ -862,10 +832,7 @@ class KPointsModifier:
         return pairs
 
     def _general_kpoint_output_basis(self, general_kpoint) -> Optional[List[float]]:
-        """Return the general point k in the KPOINTS output basis, or None
-        when the conversion is unavailable. The output basis always belongs
-        to the submitted calculation cell; when it coincides with the
-        standardized basis the returned value equals the input."""
+        """Return k in the submitted cell's reciprocal basis, or None if unavailable."""
         if general_kpoint is None:
             return None
         if self.kpoints_basis_matrix is None or self.output_basis_matrix is None:
@@ -876,12 +843,12 @@ class KPointsModifier:
             return None
         return [float(out[0]), float(out[1]), float(out[2])]
 
-    def write_kpoints_file(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
-                           transformation_matrix: Optional[np.ndarray] = None,
-                           transformation_label: Optional[str] = None,
-                           operation_basis_label: Optional[str] = None):
-        """Write modified KPOINTS file with proper Line-Mode format and discontinuity"""
-        segments = self._valid_segment_pairs(new_kpoints)
+    def write_kpoints_file_vasp(self, new_kpoints: List[List], output_file: str = "KPOINTS_alter",
+                                transformation_matrix: Optional[np.ndarray] = None,
+                                transformation_label: Optional[str] = None,
+                                operation_basis_label: Optional[str] = None):
+        """Write the path in VASP line-mode KPOINTS format."""
+        segments = self._prepare_output_segments(new_kpoints)
         if not segments:
             print("Error writing file: path contains no writable segments.")
             return False
@@ -890,7 +857,7 @@ class KPointsModifier:
             flat_matrix = np.array(transformation_matrix).flatten()
             matrix_str = " ".join(f"{x:.8f}" for x in flat_matrix)
             label = f" ({transformation_label})" if transformation_label else ""
-            # The recorded Step-3 matrix uses the operation source's basis, which may differ from the submitted cell.
+            # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
             first_line = (
                 f"Selected spin-flip operation{label} in {basis_name} "
@@ -933,30 +900,29 @@ class KPointsModifier:
                               output_file: str = "KPOINTS_alter_qe",
                               transformation_matrix: Optional[np.ndarray] = None,
                               transformation_label: Optional[str] = None,
-                              ninterp: int = 30,
-                              operation_basis_label: Optional[str] = None):
-        """Write KPOINTS in QE K_POINTS crystal_b format."""
-        valid_pairs = self._valid_segment_pairs(new_kpoints)
-        if not valid_pairs:
+                               ninterp: int = 30,
+                               operation_basis_label: Optional[str] = None):
+        """Write the path in QE K_POINTS crystal_b format."""
+        segments = self._prepare_output_segments(new_kpoints)
+        if not segments:
             print("Error writing QE KPOINTS: path contains no writable segments.")
             return False
 
-        # Build a sequential waypoint list without shared endpoints.
-        # Use one interpolation point for dead-end k and the final waypoint; use ninterp elsewhere.
-        waypoints = []
-        for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(valid_pairs):
+        # List each path point once. Chain endpoints use 1; all other points use ninterp.
+        path_points = []
+        for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(segments):
             if idx == 0:
-                waypoints.append((sp_out, ninterp))
+                path_points.append((sp_out, ninterp))
             elif break_before:
-                previous_point, _ = waypoints[-1]
-                waypoints[-1] = (previous_point, 1)
-                waypoints.append((sp_out, ninterp))
-            waypoints.append((ep_out, ninterp))
-        final_point, _ = waypoints[-1]
-        waypoints[-1] = (final_point, 1)
+                previous_point, _ = path_points[-1]
+                path_points[-1] = (previous_point, 1)
+                path_points.append((sp_out, ninterp))
+            path_points.append((ep_out, ninterp))
+        final_point, _ = path_points[-1]
+        path_points[-1] = (final_point, 1)
 
-        lines = ["K_POINTS crystal_b\n", f"  {len(waypoints)}\n"]
-        for pt_out, ni in waypoints:
+        lines = ["K_POINTS crystal_b\n", f"  {len(path_points)}\n"]
+        for pt_out, ni in path_points:
             lbl = self._kpoints_label(pt_out[3])
             lines.append(
                 f"  {_fmt_coord(pt_out[0])}  {_fmt_coord(pt_out[1])}  "
@@ -966,7 +932,7 @@ class KPointsModifier:
             flat = np.array(transformation_matrix).flatten()
             mat_str = " ".join(f"{x:.8f}" for x in flat)
             lbl = f" ({transformation_label})" if transformation_label else ""
-            # As in the VASP writer, the Step-3 matrix uses the operation source's basis.
+            # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
             lines.append(
                 f"! Spin-flip operation{lbl} in {basis_name} "
@@ -989,34 +955,33 @@ class KPointsModifier:
                                   ndivk: int = 30,
                                   operation_basis_label: Optional[str] = None):
         """Write the k-path as an ABINIT kptopt/kptbounds/ndivk block."""
-        valid_pairs = self._valid_segment_pairs(new_kpoints)
-        if not valid_pairs:
+        segments = self._prepare_output_segments(new_kpoints)
+        if not segments:
             print("Error writing ABINIT KPOINTS: path contains no writable segments.")
             return False
 
-        # Build the same sequential waypoint chain as the QE writer: one entry per point, each carrying the division count for the segment that follows it.
-        # ABINIT's ndivk is this same per-segment count, listed separately from kptbounds rather than inline per point.
-        waypoints = []
-        for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(valid_pairs):
+        # List each path point once. Chain endpoints use 1; ndivk stores each following segment's division count separately from kptbounds.
+        path_points = []
+        for idx, (sp_out, ep_out, break_before, _i, _end_raw_label) in enumerate(segments):
             if idx == 0:
-                waypoints.append((sp_out, ndivk))
+                path_points.append((sp_out, ndivk))
             elif break_before:
-                previous_point, _ = waypoints[-1]
-                waypoints[-1] = (previous_point, 1)
-                waypoints.append((sp_out, ndivk))
-            waypoints.append((ep_out, ndivk))
-        final_point, _ = waypoints[-1]
-        waypoints[-1] = (final_point, 1)
+                previous_point, _ = path_points[-1]
+                path_points[-1] = (previous_point, 1)
+                path_points.append((sp_out, ndivk))
+            path_points.append((ep_out, ndivk))
+        final_point, _ = path_points[-1]
+        path_points[-1] = (final_point, 1)
 
-        n_segments = len(waypoints) - 1
-        segment_divisions = [ni for _, ni in waypoints[:-1]]
+        n_segments = len(path_points) - 1
+        segment_divisions = [ni for _, ni in path_points[:-1]]
 
         lines = [
             f"kptopt   -{n_segments}\n",
             "ndivk    " + " ".join(str(ni) for ni in segment_divisions) + "\n",
             "kptbounds\n",
         ]
-        for pt_out, _ni in waypoints:
+        for pt_out, _ni in path_points:
             lbl = self._kpoints_label(pt_out[3])
             lines.append(
                 f"   {_fmt_coord(pt_out[0])}   {_fmt_coord(pt_out[1])}   "
@@ -1026,7 +991,7 @@ class KPointsModifier:
             flat = np.array(transformation_matrix).flatten()
             mat_str = " ".join(f"{x:.8f}" for x in flat)
             lbl = f" ({transformation_label})" if transformation_label else ""
-            # As in the VASP/QE writers, the Step-3 matrix uses the operation source's basis.
+            # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
             lines.append(
                 f"# Spin-flip operation{lbl} in {basis_name} "
@@ -1047,10 +1012,7 @@ class KPointsModifier:
                                R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
                                preserve_ops_for_plot, new_kpoints, display_figures,
                                save_pdf=False):
-        """Generate Figures 2-4 (spin-flip / spin-BZ / top-view cut) for the
-        selected spin-flip operation; append any created figures to
-        display_figures."""
-        # Generate Figures 2-4 through one shared call scaffold with per-figure keyword arguments.
+        """Generate 2D or 3D spin-analysis figures for the selected operation and add them to display_figures."""
         if centroid_result is not None and self.mode_2d:
             # In 2D mode, render top-down figures instead of the 3D BZ plate.
             basename = (os.path.splitext(os.path.basename(struct_file))[0]
@@ -1120,14 +1082,12 @@ class KPointsModifier:
                 top_view_z0 = 0.0
                 top_view_axis = 2
                 if sc_type in ('mP1', 'mC1', 'mC2', 'mC3'):
-                    # Monoclinic 2/m carries its unique 2-fold axis, and the normal of the mirror in the same spin Laue group, along Cartesian y, so the informative section is perpendicular to ky rather than kz.
-                    # The plane still passes through Gamma; the shared epsilon offset below moves the sampled section just off ky = 0, where the two spin domains separate.
+                    # Cut perpendicular to the monoclinic twofold axis and sample just off ky=0 to reveal the bulk d-wave pattern.
                     top_view_axis = 1
                 elif (sc_type in ('hR1', 'hR2') or sc_type.startswith('c')):
-                    # b_matrix[2, 2] is not a reliable cut height because SeeK-path can orient the primitive cell so no reciprocal vector points along Cartesian z, making that element zero even when the BZ has a finite kz span.
-                    # Use the true Cartesian kz extent of the BZ boundary instead.
-                    # Rhombohedral and cubic cases reaching this branch have no vertical mirror, so a Gamma-centered kz=0 cut can show a degenerate or collapsed domain split.
-                    # Use half the BZ kz extent for rhombohedral cases and one quarter for cubic cases, where a half-height cut can coincide with a boundary plane and resemble the tetragonal pattern.
+                    # Measure the actual Cartesian kz extent from the BZ boundary because the primitive reciprocal vectors need not align with z.
+                    # Move off kz=0 to reveal the bulk g- or i-wave pattern, using z0=0.5*z_max for rhombohedral and 0.25*z_max for cubic.
+                    # Cubic uses 0.25*z_max because 0.5*z_max can coincide with a BZ boundary plane.
                     bz_pts = np.vstack(centroid_result['bz_loops'])
                     z_max = float(np.abs(bz_pts[:, 2]).max())
                     z_frac = 0.5 if sc_type in ('hR1', 'hR2') else 0.25
@@ -1214,10 +1174,7 @@ class KPointsModifier:
         preset_choice=None,
         operation_basis_label="operation-source structure",
     ):
-        """Step 3: choose a detected spin-flip operation R (default Option 1 /
-        numbered / 'list').  Returns (R, selected_transformation_label).
-        `preset_choice`, if given by `flip_option`, supplies the answer for the
-        first prompt. `run()` validates it before calling this method."""
+        """Select a detected spin-flip operation and return its matrix and option label."""
         def _op_name(op_input):
             try:
                 if centroid_result is not None and 'b_matrix' in centroid_result:
@@ -1296,16 +1253,11 @@ class KPointsModifier:
         centroid_result,
         operation_basis_label,
     ):
-        """Prepare operations in the fractional basis used for path work.
+        """Express spin operations in SeeK-path's standardized primitive basis.
 
-        The BZ and all figures use SeeK-path's standardized primitive basis,
-        so submitted-basis operations must be converted for internal geometry.
-        K-points are later converted back through Cartesian reciprocal space;
-        the original submitted-basis operation and the converted operation are
-        therefore two representations of the same physical mapping.
+        FindSpinGroup reports real-space fractional matrices in the submitted basis.
+        Convert their reciprocal-space actions through Cartesian coordinates so R^(-T) preserves the same physical k mapping after the basis change.
         """
-        # FindSpinGroup operations use the submitted fractional basis, whereas IBZ coordinates use the SeeK-path primitive reciprocal basis.
-        # Convert through Cartesian k-space so k', Figure 2, and the path use the same physical operation.
         #   R_cart_k       = b_input.T @ inv(R_input).T @ inv(b_input.T)
         #   R_prim^{-T}    = inv(b_prim.T) @ R_cart_k @ b_prim.T
         R_cart_for_plot = None
@@ -1410,8 +1362,7 @@ class KPointsModifier:
         view_azim = float(input_config['view_azim']) if 'view_azim' in input_config else None
         symprec = float(input_config['symprec']) if 'symprec' in input_config else None
         save_pdf = bool(input_config.get('save_pdf', False))
-        # The command line wins when it was given explicitly; otherwise the
-        # toml setting applies, matching how the other settings resolve.
+        # The command line wins when it was given explicitly; otherwise the toml setting applies, matching how the other settings resolve.
         if 'vacuum_axis' in input_config and not self._vacuum_axis_from_cli:
             self.input_vacuum_axis = _VACUUM_AXIS_INDEX[
                 str(input_config['vacuum_axis']).strip().lower()
@@ -1432,7 +1383,7 @@ class KPointsModifier:
                     return choice
                 print("Invalid output code. Enter 'vasp', 'qe', 'abinit', or press Enter for VASP.")
 
-        # Step 0: Compute spin-flip operations from structure
+        # --- Step 0: Compute spin-flip operations from structure ---
         print(f"\n{BOLD}>>> Step 0: Spin symmetry{RESET}")
         if self.mode_2d:
             print(
@@ -1463,7 +1414,7 @@ class KPointsModifier:
         analysis_preparation = None
 
         def _save_and_finish(path_points, R_matrix, R_label):
-            """Step 5: choose the output code, write the KPOINTS file (plus
+            """Step 5: choose the output code, write the path file (plus
             its band-plot config), and show any deferred figures."""
             print(f"\n{BOLD}>>> Step 5: Save{RESET}")
             code_choice = _choose_output_code()
@@ -1482,7 +1433,7 @@ class KPointsModifier:
                 if write_ok:
                     write_abinit_bandplot_config()
             else:
-                write_ok = self.write_kpoints_file(
+                write_ok = self.write_kpoints_file_vasp(
                     path_points, "KPOINTS_alter", R_matrix, R_label,
                     operation_basis_label=operation_basis_label,
                 )
@@ -1822,6 +1773,8 @@ class KPointsModifier:
                     f"plane: {exc} Aborting."
                 )
                 return False
+
+        # --- Step 1: Read the high-symmetry path from the centroid analysis ---
         print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
         sp_path   = centroid_result['sp_path']
         sp_coords = centroid_result['sp_point_coords']
@@ -1959,67 +1912,52 @@ class KPointsModifier:
             laue = no_altermag.get('laue_group', 'unknown')
             standard_path_reason = f"Laue group {laue}: no altermagnetism."
 
-        # Step 2: Auto-compute or manually enter general k-point
+        # --- Step 2: Use the automatically computed IBZ centroid ---
         print(f"\n{BOLD}>>> Step 2: General k-point{RESET}")
-        general_kpoint = None
-
-        if centroid_result is not None:
-            c = centroid_result.get('centroid_frac')
-            if c is None:
-                print("[Warning] The centroid result carries no IBZ centroid; "
-                      "enter the general k-point by hand.")
-            else:
-                general_kpoint = [c[0], c[1], c[2]]
-                centroid_basis = (
-                    "submitted calculation-cell basis"
-                    if centroid_result.get('path_source_2d')
-                    else "standardized basis"
-                )
-                print(
-                    f"IBZ centroid ({centroid_basis}): "
-                    f"[{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]"
-                )
+        if centroid_result is None or centroid_result.get('centroid_frac') is None:
+            print("[Error] IBZ centroid is unavailable. Aborting.")
+            return False
+        c = centroid_result['centroid_frac']
+        general_kpoint = [c[0], c[1], c[2]]
+        centroid_basis = (
+            "submitted calculation-cell basis"
+            if centroid_result.get('path_source_2d')
+            else "standardized basis"
+        )
+        print(
+            f"IBZ centroid ({centroid_basis}): "
+            f"[{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]"
+        )
         # Append the centroid only to a log owned by this run to avoid creating a centroid-only file or modifying a stale log.
-        if general_kpoint is not None:
-            out_k = self._general_kpoint_output_basis(general_kpoint)
-            if out_k is not None:
-                print(
-                    "IBZ centroid (KPOINTS output basis): "
-                    f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]"
-                )
-            if _step0_wrote_operation_log:
-                try:
-                    with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
-                              "a", encoding="utf-8", newline="\n") as f:
-                        centroid_basis_label = "standardized primitive basis"
-                        f.write(f"\nGeneral k-point (IBZ centroid, {centroid_basis_label}): "
-                                f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
-                        if out_k is not None:
-                            f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
-                                    f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
-                except OSError as exc:
-                    print("[Warning] Could not append the general k-point to "
-                          f"spin_operations.txt: {exc}")
-
-        if general_kpoint is None:
-            print("Format: kx ky kz (space-separated)")
-            while True:
-                try:
-                    print("Enter k-point: ", end='', flush=True)
-                    k_input = input().strip().split()
-                    if len(k_input) == 3:
-                        general_kpoint = [float(x) for x in k_input]
-                        break
-                    else:
-                        print("Please enter exactly 3 coordinates.")
-                except ValueError:
-                    print("Invalid input. Please enter three numbers.")
+        out_k = self._general_kpoint_output_basis(general_kpoint)
+        if out_k is not None:
+            print(
+                "IBZ centroid (KPOINTS output basis): "
+                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]"
+            )
+        if _step0_wrote_operation_log:
+            try:
+                with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
+                          "a", encoding="utf-8", newline="\n") as f:
+                    centroid_basis_label = (
+                        "submitted calculation-cell basis"
+                        if centroid_result.get('path_source_2d')
+                        else "standardized primitive basis"
+                    )
+                    f.write(f"\nGeneral k-point (IBZ centroid, {centroid_basis_label}): "
+                            f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
+                    if out_k is not None:
+                        f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
+                                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
+            except OSError as exc:
+                print("[Warning] Could not append the general k-point to "
+                      f"spin_operations.txt: {exc}")
 
         def _write_ordinary_path_and_stop(reason, reason_reported):
             if not reason_reported:
                 print(f"\n{BOLD}[Note] {reason}{RESET}")
             print("Writing ordinary k-path with general-k.")
-            standard_general_path = self.insert_general_kpoint(
+            standard_general_path = self.build_ordinary_path_with_general_k(
                 general_kpoint,
                 self.extra_general_points,
             )
@@ -2030,7 +1968,7 @@ class KPointsModifier:
                 standard_path_reason, standard_path_reason_reported
             )
 
-        # Step 3: Select a detected spin-flip operation
+        # --- Step 3: Select a detected spin-flip operation ---
         print(f"\n{BOLD}>>> Step 3: Spin-flip operation{RESET}")
         if _step0_wrote_flip_file is False:
             # Step 0 ran but found no spin-flip operations for this structure, so do not load a stale file from a previous run.
@@ -2040,8 +1978,7 @@ class KPointsModifier:
             flip_ops = self.load_flip_operations()
         preserve_ops = self.load_preserve_operations()
 
-        # Include inversion-extended spatial partners because multiplying by inversion does not change the spin-flip classification established from the spin rotation.
-        # Deduplicate after the extension.
+        # Add inversion partners because inversion changes only the spatial operation, not whether the spin operation flips or preserves spin.
         def _inversion_extended(ops):
             expanded = list(ops)
             for op in ops:
@@ -2053,8 +1990,8 @@ class KPointsModifier:
         flip_ops = _inversion_extended(flip_ops)
         preserve_ops = _inversion_extended(preserve_ops)
 
-        # Test in Cartesian reciprocal space: the fractional matrix may use a reordered magnetic-cell basis.
-        # A flip restricting to +/-I in the plane rejects the slab outright; the rest are filtered to those acting nontrivially.
+        # Test in Cartesian reciprocal space because the magnetic-cell fractional basis may have reordered axes.
+        # An in-plane action of +I or -I rules out 2D altermagnetic spin splitting; keep only other nontrivial plane-preserving flips.
         _flip_ops_emptied_2d = False
         if self.mode_2d and flip_ops:
             try:
@@ -2070,7 +2007,7 @@ class KPointsModifier:
                 print(f"[Error] 2D spin-operation filtering failed: {exc}")
                 return False
             if degeneracy_forcing_ops:
-                print("[2D mode] U m_z / U C_2z symmetry detected, "
+                print("[2D mode] C_2z T / U m_z symmetry detected, "
                       "not a 2D altermagnet.")
                 flip_ops = []
                 _flip_ops_emptied_2d = True
@@ -2089,8 +2026,7 @@ class KPointsModifier:
                     "2D altermagnet.",
                     True,
                 )
-            # Expected non-altermagnetic cases returned before Step 3, so reaching this 3D branch means the symmetry result and operation output disagree or the required file is missing or corrupt.
-            # Do not hide that inconsistency by writing a successful ordinary path.
+            # In 3D, reaching this point without flip operations indicates missing or inconsistent operation output, so abort instead of writing an ordinary path.
             print(
                 "[Error] Spin-symmetry analysis reached the altermagnetic path, "
                 "but no detected spin-flip point operation is available. "
@@ -2107,8 +2043,7 @@ class KPointsModifier:
             )
             return False
 
-        # The listed matrices use the operation-source fractional basis, so their axes cannot be read directly from the matrix integers.
-        # Convert through Cartesian space before classification so operation names match the figure labels.
+        # Classify operation names in Cartesian space because source-basis matrix axes may differ from the axes shown in the figures.
         R, selected_transformation_label = self._select_spin_flip_operation(
             flip_ops,
             centroid_result,
@@ -2129,7 +2064,8 @@ class KPointsModifier:
                     "physical slab plane or is trivial within it. Aborting."
                 )
                 return False
-        # Step 4: Process k-points
+
+        # --- Step 4: Process k-points ---
         print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
 
         (R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
@@ -2175,7 +2111,7 @@ class KPointsModifier:
         except Exception as exc:
             print(f"[Warning] Could not generate spin figures: {exc}")
 
-        # Step 5: Save modified file
+        # --- Step 5: Save modified file ---
         return _save_and_finish(
             output_kpoints, R, selected_transformation_label
         )
