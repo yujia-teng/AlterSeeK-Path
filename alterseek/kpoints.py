@@ -1574,7 +1574,6 @@ class KPointsModifier:
                         view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                         figure_basename=_figure_basename(struct_file),
                         save_pdf=save_pdf,
-                        spin_log_current_run=_step0_wrote_operation_log,
                         analysis_cell=analysis_preparation["analysis_cell"],
                         analysis_marker_type=analysis_preparation[
                             "analysis_marker_type"
@@ -1730,7 +1729,6 @@ class KPointsModifier:
                     view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                     figure_basename=_figure_basename(struct_file),
                     save_pdf=save_pdf,
-                    spin_log_current_run=_step0_wrote_operation_log,
                     analysis_cell=analysis_preparation["analysis_cell"],
                     analysis_marker_type=analysis_preparation[
                         "analysis_marker_type"

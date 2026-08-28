@@ -33,7 +33,6 @@ from .symmetry import (
 from .geometry import (
     get_symmetry_operations,
     calculate_volume_centroid,
-    compute_symbolic_centroid,
     get_bz_loops,
     build_symmetry_ibz_cell,
     triclinic_halfspace_normal,
@@ -65,7 +64,6 @@ def run(
     symprec=None,
     figure_basename=None,
     save_pdf=False,
-    spin_log_current_run=False,
     analysis_cell=None,
     analysis_marker_type=None,
 ):
@@ -93,7 +91,6 @@ def run(
             symprec=symprec,
             figure_basename=figure_basename,
             save_pdf=save_pdf,
-            spin_log_current_run=spin_log_current_run,
             analysis_cell=analysis_cell,
             analysis_marker_type=analysis_marker_type,
         )
@@ -132,7 +129,6 @@ def run(
         output_dir=output_dir,
         basename=basename,
         verbose=verbose,
-        spin_log_current_run=spin_log_current_run,
         analysis_marker_type=analysis_marker_type,
     )
 
@@ -612,10 +608,9 @@ def _write_optional_diagnostics(
     output_dir,
     basename,
     verbose,
-    spin_log_current_run,
     analysis_marker_type,
 ):
-    """Write optional standardization and symbolic-centroid diagnostics."""
+    """Write the optional standardized-cell and basis-mapping files."""
     standardized_structure_output = os.path.join(
         output_dir, f"{basename}_seekpath_standard.vasp"
     )
@@ -658,37 +653,6 @@ def _write_optional_diagnostics(
             print(f"Saved SeeK-path basis mapping: {standard_mapping_path}")
     except Exception as exc:
         print(f"[Warning] Could not write SeeK-path basis mapping: {exc}")
-
-    if spin_log_current_run and centroid['hull_matches_labels']:
-        try:
-            sym_centroid, _ = compute_symbolic_centroid(
-                analysis['kpoints_frac_centroid'],
-                centroid['hull'],
-                centroid['labels_list'],
-                analysis['centroid_type'],
-                analysis['conv_params'],
-            )
-            if sym_centroid is not None:
-                sym_lines = "\n".join(
-                    f"  {axis_name} = {sym_centroid[index]}"
-                    for index, axis_name in enumerate(['k1', 'k2', 'k3'])
-                )
-                try:
-                    with open(
-                        os.path.join(output_dir, "spin_operations.txt"),
-                        "a",
-                        encoding="utf-8",
-                        newline="\n",
-                    ) as stream:
-                        stream.write(
-                            "\nSymbolic IBZ centroid (fractional):\n"
-                            f"{sym_lines}\n"
-                        )
-                except OSError as exc:
-                    print("[Warning] Could not record the symbolic IBZ "
-                          f"centroid: {exc}")
-        except Exception as exc:
-            print(f"[Warning] Symbolic IBZ centroid unavailable: {exc}")
 
     return {
         'standardized_structure_path': standardized_structure_path,

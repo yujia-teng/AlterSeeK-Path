@@ -4,7 +4,6 @@ from fractions import Fraction
 
 import numpy as np
 from scipy.spatial import ConvexHull, HalfspaceIntersection, Voronoi
-import sympy as sp
 from .lattice_kpoints import LATTICE_DATA
 
 
@@ -36,93 +35,6 @@ def calculate_volume_centroid(hull):
         total_vol += vol
         w_cent += vol * (ref + a + b + c) / 4.0
     return w_cent / total_vol, total_vol
-
-
-def compute_symbolic_centroid(kpoints_frac, hull, labels_list, lattice_type, conv_params):
-    """Compute symbolic centroid (exact fractions or parametric)."""
-    data = LATTICE_DATA[lattice_type]
-
-    if 'kpoints' in data:
-        kp_sym = {k: [sp.nsimplify(c, rational=True) for c in v]
-                  for k, v in data['kpoints'].items()}
-        param_symbols = {}
-    elif 'params_func' in data:
-        actual = data['params_func'](
-            conv_params['a'], conv_params.get('b', conv_params['a']),
-            conv_params.get('c', conv_params['a']),
-            conv_params.get('alpha', 90.0))
-        param_symbols = {p: sp.Symbol(p, real=True, positive=True) for p in actual}
-        kp_from_func = data['kpoints_func'](param_symbols)
-        kp_sym = {k: [sp.nsimplify(c, rational=True) if isinstance(c, (int, float)) else c
-                       for c in v] for k, v in kp_from_func.items()}
-    else:
-        return None, {}
-
-    sym_points = [sp.Matrix(kp_sym[k]) for k in labels_list]
-    sym_ref = sum([sym_points[i] for i in hull.vertices], sp.zeros(3, 1)) / len(hull.vertices)
-
-    sym_total_vol = sp.Integer(0)
-    sym_weighted_centroid = sp.zeros(3, 1)
-
-    if 'params_func' in data:
-        num_params = data['params_func'](
-            conv_params['a'], conv_params.get('b', conv_params['a']),
-            conv_params.get('c', conv_params['a']),
-            conv_params.get('alpha', 90.0))
-        subs_list = [(param_symbols[k], num_params[k]) for k in param_symbols]
-    else:
-        subs_list = []
-
-    for simplex in hull.simplices:
-        a_s, b_s, c_s = sym_points[simplex[0]], sym_points[simplex[1]], sym_points[simplex[2]]
-        det_val = sp.Matrix([(a_s-sym_ref).T, (b_s-sym_ref).T, (c_s-sym_ref).T]).det()
-        num_det = float(det_val.subs(subs_list)) if subs_list else float(det_val)
-        sign = 1 if num_det >= 0 else -1
-        vol = sign * det_val / 6
-        sym_total_vol += vol
-        sym_weighted_centroid += vol * (sym_ref + a_s + b_s + c_s) / 4
-
-    raw_centroid = sp.Matrix(sym_weighted_centroid / sym_total_vol)
-    sym_centroid = simplify_symbolic_centroid(raw_centroid, lattice_type, param_symbols)
-    return sym_centroid, param_symbols
-
-
-def _relation_candidates(lattice_type, param_symbols):
-    """
-    Return substitution candidates used to eliminate dependent symbols.
-    Extend this map for other parametric lattice types as needed.
-    """
-    eta = param_symbols.get('eta')
-    nu = param_symbols.get('nu')
-
-    candidates = []
-    if lattice_type in ('RHL1', 'RHL2') and eta is not None and nu is not None:
-        candidates.append({nu: sp.Rational(3, 4) - eta / 2})
-        candidates.append({eta: sp.Rational(3, 2) - 2 * nu})
-    return candidates
-
-
-def _expr_complexity(expr):
-    """Lower is simpler."""
-    return (sp.count_ops(expr), len(str(expr)))
-
-
-def simplify_symbolic_centroid(expr_vec, lattice_type, param_symbols):
-    """
-    Simplify centroid expressions and optionally apply known parameter relations.
-    Chooses the least complex equivalent form.
-    """
-    base = sp.Matrix([sp.simplify(sp.together(e)) for e in expr_vec])
-    best = base
-    best_score = sum(_expr_complexity(e)[0] for e in base), sum(_expr_complexity(e)[1] for e in base)
-
-    for sub_map in _relation_candidates(lattice_type, param_symbols):
-        cand = sp.Matrix([sp.simplify(sp.together(e.subs(sub_map))) for e in expr_vec])
-        score = sum(_expr_complexity(e)[0] for e in cand), sum(_expr_complexity(e)[1] for e in cand)
-        if score < best_score:
-            best, best_score = cand, score
-
-    return best
 
 
 def get_bz_loops(b_matrix):
