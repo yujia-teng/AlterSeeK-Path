@@ -82,6 +82,7 @@ def _get_ibz_frame_edges(hull_pts, hull_simplices, hull_labels=None):
     from collections import defaultdict
     hull_pts = np.array(hull_pts)
     hull_labels = list(hull_labels) if hull_labels is not None else None
+    # The mC2 G group and the mC3 N group each span a quadrilateral face whose two diagonals survive the coplanarity test below, so drop them by label.
     forbidden_label_edges = {
         tuple(sorted(edge))
         for edge in (
@@ -165,7 +166,7 @@ def triclinic_halfspace_normal(lattice_key, search_limit=4):
     """Fractional normal of the plane whose positive side is the triclinic IBZ.
 
     Laue group -1 has two operations, so the fundamental domain is half the
-    Brillouin zone and *any* plane through Gamma cuts an admissible half.  The
+    Brillouin zone and any plane through Gamma cuts an admissible half.  The
     choice is therefore a convention.  This applies the axis-containing rule:
     walk the reciprocal axes in order and keep the first one that admits a
     plane containing it, on whose boundary that axis's own path point may lie
