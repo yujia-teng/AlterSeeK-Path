@@ -1,22 +1,19 @@
-"""
-Curated high-symmetry k-point data in the SeeK-path/HPKOT convention.
+"""High-symmetry k-point access in the SeeK-path/HPKOT convention.
 
-Primary source:
+The tables themselves are read from seekpath at import
+(`seekpath.hpkot.tools.get_path_data`), which implements Hinuma et al.,
+Comput. Mater. Sci. 128, 140-184 (2017), Tables 69-92.  This module only
+re-labels those points and adds the project-local data the IBZ hull needs.
 
-  Y. Hinuma, G. Pizzi, Y. Kumagai, F. Oba, I. Tanaka,
-  Computational Materials Science 128, 140-184 (2017), Tables 69-92.
+Coordinates are kP coordinates: fractional coefficients in the
+crystallographic primitive reciprocal basis used by SeeK-path.  Gamma is
+held internally as the Greek label ``Γ``; other Greek and subscripted
+labels are preserved semantically, e.g. ``H_2`` is displayed as ``$H_2$``.
 
-Coordinates returned by this module are kP coordinates: fractional
-coefficients in the crystallographic primitive reciprocal basis used by
-SeeK-path.  Gamma is stored internally as the Greek label ``Γ``.  Other
-Greek and subscripted labels are preserved semantically, e.g. ``H_2`` is
-displayed as ``$H_2$``.
-
-The public HPKOT band path and the AlterSeeK-Path IBZ hull are related
-but distinct objects.  This module stores all HPKOT points and can add
-hidden closure vertices (labels beginning with ``_``) for
-centroid/hull construction where the visible band-path labels do not close
-the selected irreducible domain.
+The public HPKOT band path and the AlterSeeK-Path IBZ hull are related but
+distinct objects.  Hidden closure vertices (labels beginning with ``_``) are
+added for centroid/hull construction where the visible band-path labels do
+not close the selected irreducible domain.
 """
 
 from __future__ import annotations

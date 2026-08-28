@@ -135,7 +135,6 @@ def test_core_figure_stage_uses_scoped_style_on_repeated_runs(
                 fig_basename="scope-test",
                 show_plot=False,
                 defer_show=False,
-                mode_2d=False,
                 view_elev=None,
                 view_azim=None,
                 save_pdf=False,
@@ -155,8 +154,6 @@ def test_kspace_analysis_restores_warning_filters_on_repeated_runs():
         centroid_module._analyze_kspace(
             structure,
             seekpath_type_numbers=None,
-            mode_2d=False,
-            input_vacuum_axis=2,
             symprec=None,
             verbose=False,
         )

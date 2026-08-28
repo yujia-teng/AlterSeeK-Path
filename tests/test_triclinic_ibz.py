@@ -182,8 +182,6 @@ def _triclinic_centroid_inputs():
     }
     cart = {label: point @ MNO2_B_MATRIX for label, point in frac.items()}
     return dict(
-        mode_2d=False,
-        vacuum_axis=2,
         sc_type="aP2",
         b_matrix=MNO2_B_MATRIX,
         unique_ops=[],

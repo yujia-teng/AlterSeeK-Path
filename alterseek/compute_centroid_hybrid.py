@@ -1,22 +1,10 @@
 #!/usr/bin/env python3
-"""
-IBZ Centroid Calculator (Hybrid: seekpath + HPKOT)
-================================================================
-Uses seekpath for:  lattice type detection, cell standardization
-Uses our own data:  curated IRBZ k-point vertices (HPKOT kP convention)
+"""IBZ centroid calculator.
 
-This ensures the IRBZ shape is consistent for all space groups within
-the same extended Bravais lattice type while preserving HPKOT caption-defined
-optional path points such as H_2.
-
-Supports all HPKOT extended Bravais lattice variations.
-
-Usage:
-    python compute_centroid_hybrid.py <structure_file>
-    python compute_centroid_hybrid.py <structure_file> <output_dir>
-
-Requires:
-    pip install seekpath pymatgen spglib numpy scipy matplotlib sympy
+Lattice-type detection, cell standardization, the high-symmetry points
+and paths all come from seekpath.  `lattice_kpoints` adds only the
+hull-closure and exclusion data needed to turn the HPKOT path points into a
+closed IBZ.
 """
 
 import sys
@@ -37,39 +25,6 @@ from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 # See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
 # Override it per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
-
-
-def _mC2d_centered_rectangular_path(submitted_lattice, vacuum_axis):
-    """Return the canonical 2D centred-rectangular path for an mC slab."""
-    in_plane = [index for index in range(3) if index != vacuum_axis]
-    first, second = np.asarray(submitted_lattice, dtype=float)[in_plane]
-    rectangular_axes = (first + second, first - second)
-    lengths = sorted(np.linalg.norm(vector) for vector in rectangular_axes)
-    if lengths[0] < 1e-10:
-        raise RuntimeError("Could not determine the mC 2D in-plane metric")
-    x_2d = 0.25 * (1.0 + (lengths[0] / lengths[1]) ** 2)
-    def point(first_value, second_value):
-        result = [0.0, 0.0, 0.0]
-        result[in_plane[0]] = first_value
-        result[in_plane[1]] = second_value
-        return result
-    points = {
-        GAMMA_LABEL: point(0.0, 0.0), 'Y': point(0.5, 0.5),
-        'S': point(0.0, 0.5), 'C': point(x_2d, 1.0 - x_2d),
-        'SIGMA': point(-x_2d, x_2d),
-    }
-    return x_2d, points
-
-
-def _2d_tp1_butterfly_override(mode_2d, lattice_type, spacegroup_number):
-    """Return the 2D 4/m butterfly override without changing its reference path."""
-    if not (mode_2d and lattice_type == 'tP1'
-            and 75 <= spacegroup_number <= 88):
-        return None, None
-    return (
-        [(GAMMA_LABEL, 'X'), ('X', 'M')],
-        [GAMMA_LABEL, 'X_A'],
-    )
 
 
 def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
@@ -202,11 +157,6 @@ from .symmetry import (
 from .geometry import (
     get_symmetry_operations,
     calculate_volume_centroid,
-    detect_vacuum_axis_2d,
-    trace_vacuum_axis_2d,
-    area_centroid_2d,
-    ordered_2d_polygon_frac,
-    check_input_slab,
     compute_symbolic_centroid,
     get_bz_loops,
     build_symmetry_ibz_cell,
@@ -214,7 +164,6 @@ from .geometry import (
     triclinic_half_bz_cell,
 )
 from .plotting_common import (
-    GAMMA_LABEL,
     _save_figure,
     _print_saved_paths,
     alterseek_plot_style,
@@ -227,8 +176,6 @@ def _analyze_kspace(
     *,
     analysis_cell=None,
     seekpath_type_numbers,
-    mode_2d,
-    input_vacuum_axis,
     symprec,
     verbose,
 ):
@@ -309,38 +256,6 @@ def _analyze_kspace(
     b_matrix_conv = np.linalg.inv(conventional_lattice).T
     b1, b2, b3 = b_matrix
 
-    vacuum_axis = None
-    if mode_2d:
-        # The declared input axis governs the slice; detection only cross-checks it.
-        detected_axis, vacuum_info = detect_vacuum_axis_2d(b_matrix)
-        vacuum_axis, trace_info = trace_vacuum_axis_2d(
-            a_matrix, input_vacuum_axis, b_matrix,
-            sp_result['rotation_matrix'],
-        )
-        if not trace_info['traced']:
-            vacuum_axis = detected_axis
-            print("[2D mode][Warning] input vacuum axis "
-                  f"'{'abc'[input_vacuum_axis]}' matches no single "
-                  "standardized axis; using the longest axis "
-                  f"'{'abc'[detected_axis]}' instead.")
-        elif vacuum_axis != detected_axis:
-            print("[2D mode][Warning] input vacuum axis "
-                  f"'{'abc'[input_vacuum_axis]}' maps to standardized "
-                  f"'{'abc'[vacuum_axis]}', but the longest standardized axis "
-                  f"is '{'abc'[detected_axis]}'; verify the structure is a "
-                  "proper slab.")
-        if verbose:
-            print(f"\n[2D mode] vacuum axis (standardized frame): "
-                  f"{vacuum_axis} ('{'abc'[vacuum_axis]}'); reciprocal norms "
-                  f"{[round(value, 4) for value in vacuum_info['reciprocal_norms']]}")
-        if not (vacuum_info['separated'] and vacuum_info['orthogonal']):
-            print("[2D mode][Warning] vacuum-axis detection is ambiguous "
-                  f"(separated={vacuum_info['separated']}, "
-                  f"orthogonal={vacuum_info['orthogonal']}); verify the "
-                  "structure is a proper slab.")
-        for warning_text in check_input_slab(a_matrix, input_vacuum_axis):
-            print(f"[2D mode][Warning] {warning_text}")
-
     sg = dataset.number
     laue_group = laue_group_from_point_group(dataset.pointgroup)
     no_altermag = no_altermagnetism_reason(dataset.pointgroup, sg)
@@ -377,18 +292,15 @@ def _analyze_kspace(
         for label in {label for segment in kpath for label in segment}
         if label in seekpath_point_coords
     }
-    # In the k_z = 0 plane the hP1/hP2 wedge already tiles exactly, so the 3D
-    # doubling would double-cover it. Tetragonal 75-88 still needs its doubling.
-    doubling_sg = None if (mode_2d and sc_type in ('hP1', 'hP2')) else sg
     kpoints_frac_centroid = get_hull_kpoints(
         sc_type,
         conv_params['a'],
         conv_params.get('b'),
         conv_params.get('c'),
         conv_params.get('alpha'),
-        spacegroup_number=doubling_sg,
+        spacegroup_number=sg,
     )
-    hull_kpath = get_hull_kpath(sc_type, spacegroup_number=doubling_sg)
+    hull_kpath = get_hull_kpath(sc_type, spacegroup_number=sg)
     display_labels = get_display_labels(sc_type)
     params = get_params(
         sc_type,
@@ -400,24 +312,6 @@ def _analyze_kspace(
     if params and verbose:
         print(f"Parameters: "
               f"{', '.join(f'{key}={value:.6f}' for key, value in params.items())}")
-
-    # A slab with an mC HPKOT setting has the same physical centred-
-    # rectangular BZ as oC/oA, but its 3D mC path does not contain the two
-    # metric-dependent 2D vertices.  Define the 2D-only table in the submitted
-    # mC primitive reciprocal basis; never change the 3D HPKOT table itself.
-    if mode_2d and sc_type in {'mC1', 'mC2', 'mC3'}:
-        x_2d, mC_2d_points = _mC2d_centered_rectangular_path(
-            a_matrix, input_vacuum_axis
-        )
-        kpath = [
-            (GAMMA_LABEL, 'Y'), ('Y', 'C'),
-            ('SIGMA', GAMMA_LABEL), (GAMMA_LABEL, 'S'),
-        ]
-        path_kpoints_frac = dict(mC_2d_points)
-        kpoints_frac_centroid = dict(mC_2d_points)
-        display_labels.update({'C': 'C', 'SIGMA': r'$\\Sigma$'})
-        if verbose:
-            print(f"[2D mode] mC centred-rectangular parameter: X_2D={x_2d:.6f}")
 
     path_kpoints_cart = {
         key: value[0] * b1 + value[1] * b2 + value[2] * b3
@@ -472,59 +366,8 @@ def _analyze_kspace(
     extra_general_vertices = [
         label for label in extra_general_vertices if label not in path_labels
     ]
-    if mode_2d:
-        def _in_plane_label(label):
-            value = (
-                band_kpoints_frac.get(label)
-                or kpoints_frac_centroid.get(label)
-                or path_kpoints_frac.get(label)
-            )
-            return value is not None and abs(value[vacuum_axis]) < 1e-4
-
-        band_kpath = [
-            segment for segment in band_kpath
-            if all(_in_plane_label(label) for label in segment)
-        ]
-        extra_general_vertices = [
-            label for label in extra_general_vertices
-            if _in_plane_label(label)
-        ]
-        path_labels = {
-            label for segment in band_kpath for label in segment
-        }
-        if doubled_ibz_case:
-            def _is_doubled_label(label):
-                base = label[1:] if label.startswith('_') else label
-                return (
-                    '_A' in base
-                    or '_B' in base
-                    or base.endswith('_0A')
-                )
-
-            connected_to_gamma = {
-                segment[1] if segment[0] == GAMMA_LABEL else segment[0]
-                for segment in band_kpath if GAMMA_LABEL in segment
-            }
-            doubled_labels = [
-                label for label in path_labels if _is_doubled_label(label)
-            ]
-            for label in doubled_labels:
-                if label not in connected_to_gamma:
-                    band_kpath.append((GAMMA_LABEL, label))
-            path_labels = {
-                label for segment in band_kpath for label in segment
-            }
-        if verbose:
-            print(f"[2D mode] in-plane band path: {len(band_kpath)} "
-                  f"segments, labels {sorted(path_labels)}")
-
-    # The ordinary tP1 reference remains the SeeK-path/HPKOT GAMMA-X-M-GAMMA path.
-    # Its 2D 4/m butterfly must not also retain the direct M-GAMMA segment because the IBZ centroid lies on that diagonal, whose two halves are already sampled by k-M and GAMMA-k.
-    # Build the alternating butterfly from the open GAMMA-X-M chain and connect GAMMA/X_A through k as separate vertices.
-    # Keep this metadata separate from band_kpath so ordinary-path output and Figure 1 stay unchanged.
-    butterfly_kpath, butterfly_extra_vertices = (
-        _2d_tp1_butterfly_override(mode_2d, sc_type, sg)
-    )
+    butterfly_kpath = None
+    butterfly_extra_vertices = None
 
     kpath_plot = band_kpath
     kpoints_cart_plot = dict(kpoints_cart_centroid)
@@ -544,7 +387,6 @@ def _analyze_kspace(
         'b_matrix': b_matrix,
         'b_matrix_input': b_matrix_input,
         'b_matrix_conv': b_matrix_conv,
-        'vacuum_axis': vacuum_axis,
         'sg': sg,
         'laue_group': laue_group,
         'no_altermagnetism': no_altermag,
@@ -679,8 +521,6 @@ def _format_plane(normal_frac):
 
 def _compute_ibz_centroid(
     *,
-    mode_2d,
-    vacuum_axis,
     sg,
     sc_type,
     b_matrix,
@@ -696,37 +536,7 @@ def _compute_ibz_centroid(
     ibz_polygon_labels = None
     hull_matches_labels = False
 
-    if mode_2d:
-        # In 2D slab mode, the physical IBZ is the k[vacuum_axis] = 0 cross-section.
-        # Restrict the curated hull points to that plane and take the 2D area centroid because the 3D volume centroid is meaningless and ConvexHull crashes on coplanar input.
-        in_plane_labels = [
-            lab for lab in labels_list
-            if abs(kpoints_frac_centroid[lab][vacuum_axis]) < 1e-4
-        ]
-        # An HPKOT <base>_2 point that is a distinct 3D hull vertex can become a redundant mirror-image duplicate after slicing to this 2D plane.
-        # This reduction is 2D-only.
-        base_labels = {lab for lab in in_plane_labels if not lab.endswith('_2')}
-        in_plane_labels = [
-            lab for lab in in_plane_labels
-            if not (lab.endswith('_2') and lab[:-2] in base_labels)
-        ]
-        frac_pts = np.array([
-            kpoints_frac_centroid[lab] for lab in in_plane_labels
-        ])
-        hull = None
-        centroid_frac, centroid_cart, ibz_volume = area_centroid_2d(
-            frac_pts, vacuum_axis, b_matrix
-        )
-        ibz_polygon_frac, ibz_polygon_labels = ordered_2d_polygon_frac(
-            frac_pts, vacuum_axis, labels=in_plane_labels
-        )
-        if verbose:
-            print(f"[2D mode] in-plane hull labels: {len(in_plane_labels)} / "
-                  f"{len(labels_list)} ({', '.join(in_plane_labels)})")
-            print(f"[2D mode] area centroid (frac): "
-                  f"[{centroid_frac[0]:.6f}, {centroid_frac[1]:.6f}, "
-                  f"{centroid_frac[2]:.6f}]  area={ibz_volume:.6f}")
-    elif sg in (1, 2):
+    if sg in (1, 2):
         # The curated triclinic points are not a closed IBZ hull, so use the Wigner-Seitz BZ instead.
         # Laue group -1 applies to both P1 and P-1, making the nonmagnetic IBZ half the BZ; the selected axis-containing plane fixes which half.
         hull = None
@@ -798,7 +608,6 @@ def _generate_figure1(
     fig_basename,
     show_plot,
     defer_show,
-    mode_2d,
     view_elev,
     view_azim,
     save_pdf,
@@ -844,7 +653,7 @@ def _generate_figure1(
         bz_center = np.mean(all_bz_pts, axis=0)
         bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
-        if show_plot and not mode_2d:
+        if show_plot:
             fig1, ax1 = setup_3d_ax(
                 fig1_title,
                 bz_loops,
@@ -910,7 +719,7 @@ def _generate_figure1(
                 plt.show()
                 elev1, azim1 = ax1.elev, ax1.azim
 
-        if not (show_plot and defer_show) and not mode_2d:
+        if not (show_plot and defer_show):
             fig1s, ax1s = setup_3d_ax(
                 fig1_title,
                 bz_loops,
@@ -1014,15 +823,11 @@ def run(
         filename,
         analysis_cell=analysis_cell,
         seekpath_type_numbers=seekpath_type_numbers,
-        mode_2d=mode_2d,
-        input_vacuum_axis=input_vacuum_axis,
         symprec=symprec,
         verbose=verbose,
     )
 
     centroid_result = _compute_ibz_centroid(
-        mode_2d=mode_2d,
-        vacuum_axis=analysis_result['vacuum_axis'],
         sg=analysis_result['sg'],
         sc_type=analysis_result['sc_type'],
         b_matrix=analysis_result['b_matrix'],
@@ -1050,7 +855,6 @@ def run(
         fig_basename=fig_basename,
         show_plot=show_plot,
         defer_show=defer_show,
-        mode_2d=mode_2d,
         view_elev=view_elev,
         view_azim=view_azim,
         save_pdf=save_pdf,
@@ -1124,8 +928,8 @@ def run(
         'unique_ops': analysis_result['unique_ops'],
         'b_matrix_conv': analysis_result['b_matrix_conv'],
         'b_matrix_input': analysis_result['b_matrix_input'],
-        'mode_2d': mode_2d,
-        'vacuum_axis': analysis_result['vacuum_axis'],
+        'mode_2d': False,
+        'vacuum_axis': None,
         'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
         'ibz_polygon_labels': centroid_result['ibz_polygon_labels'],
         'seekpath_rotation_matrix': np.array(

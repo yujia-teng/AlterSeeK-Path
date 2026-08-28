@@ -37,3 +37,4 @@ tmp_diagnostics/
 symbolic_centroids.md
 tests/QE bandplot/
 make_workflow_fig.py
+.vscode/

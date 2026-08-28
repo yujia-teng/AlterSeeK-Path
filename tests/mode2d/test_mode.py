@@ -15,13 +15,13 @@ import pytest
 import matplotlib.pyplot as plt
 
 from alterseek import compute_centroid_hybrid as cc
-from alterseek import geometry
 from alterseek import symmetry
 from alterseek.mode2d.geometry import analyze_lattice
 from alterseek.mode2d.lattice_kpoints import build_path
 from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
 from alterseek.plotting_common import (
-    _figure_output_paths, _math_label, generated_plain_path_segments,
+    GAMMA_LABEL, _figure_output_paths, _math_label,
+    generated_plain_path_segments,
 )
 from alterseek.mode2d.plotting import (
     _draw_op_visual_2d,
@@ -207,13 +207,13 @@ def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():
     path_data = build_path(lattice_2d, "4")
 
     assert path_data["path"] == [
-        (cc.GAMMA_LABEL, "X"), ("X", "M"), ("M", cc.GAMMA_LABEL)
+        (GAMMA_LABEL, "X"), ("X", "M"), ("M", GAMMA_LABEL)
     ]
     assert path_data["butterfly_path"] == [
-        (cc.GAMMA_LABEL, "X"), ("X", "M")
+        (GAMMA_LABEL, "X"), ("X", "M")
     ]
     assert path_data["butterfly_extra_vertices"] == [
-        cc.GAMMA_LABEL, "X_A"
+        GAMMA_LABEL, "X_A"
     ]
 
 
@@ -361,91 +361,6 @@ def test_2d_output_rejects_a_genuinely_out_of_plane_point():
 
     with pytest.raises(RuntimeError, match="outside the physical slab plane"):
         modifier._kpoint_for_output_basis([0.2, 0.3, 0.1, "bad"])
-
-
-# ---------------------------------------------------------------------------
-# Vacuum-axis detection
-# ---------------------------------------------------------------------------
-
-def test_detect_vacuum_axis_shortest_reciprocal():
-    # Reciprocal rows: axis 1 is much shorter -> the vacuum direction.
-    b = _diag([2.0, 0.3, 2.0])
-    axis, info = geometry.detect_vacuum_axis_2d(b)
-    assert axis == 1
-    assert info["separated"] and info["orthogonal"]
-
-
-def test_detect_vacuum_axis_ambiguous_when_cubic():
-    axis, info = geometry.detect_vacuum_axis_2d(_diag([1.0, 1.0, 1.0]))
-    assert not info["separated"]
-
-
-def test_trace_vacuum_axis_follows_the_declared_axis_through_reordering():
-    # RuF4 setting: input vacuum along c, SeeK-path puts it first and reports a
-    # rotated Cartesian frame, so the slice belongs on standardized axis a.
-    a_matrix = _diag([4.9857, 5.3615, 33.4249])
-    b_matrix = 2 * np.pi * np.linalg.inv(_diag([33.4249, 4.9857, 5.3615])).T
-    rotation = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    axis, info = geometry.trace_vacuum_axis_2d(a_matrix, 2, b_matrix, rotation)
-    assert axis == 0
-    assert info["traced"]
-
-
-def test_trace_vacuum_axis_reports_failure_when_no_axis_lines_up():
-    # A normal at 45 degrees to two standardized axes matches neither.
-    a_matrix = _diag([4.0, 4.0, 20.0])
-    b_matrix = 2 * np.pi * np.linalg.inv(_diag([4.0, 4.0, 20.0])).T
-    rotation = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, np.sqrt(0.5), -np.sqrt(0.5)],
-        [0.0, np.sqrt(0.5), np.sqrt(0.5)],
-    ])
-    _axis, info = geometry.trace_vacuum_axis_2d(a_matrix, 2, b_matrix, rotation)
-    assert not info["traced"]
-
-
-# ---------------------------------------------------------------------------
-# 2D area centroid + in-plane IBZ polygon
-# ---------------------------------------------------------------------------
-
-def test_area_centroid_unit_square():
-    pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
-    cfrac, ccart, area = geometry.area_centroid_2d(pts, 2, np.eye(3))
-    assert np.allclose(cfrac, [0.5, 0.5, 0.0])
-    assert cfrac[2] == 0.0
-    assert abs(area - 1.0) < 1e-9
-
-
-def test_area_centroid_triangle():
-    pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=float)
-    cfrac, _ccart, area = geometry.area_centroid_2d(pts, 2, np.eye(3))
-    assert np.allclose(cfrac, [1 / 3, 1 / 3, 0.0])
-    assert abs(area - 0.5) < 1e-9
-
-
-def test_ordered_polygon_drops_interior_point():
-    pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
-                    [0.5, 0.5, 0]], dtype=float)
-    poly = geometry.ordered_2d_polygon_frac(pts, 2)
-    assert len(poly) == 4                                  # interior point excluded
-    assert all(abs(p[2]) < 1e-12 for p in poly)
-
-
-# ---------------------------------------------------------------------------
-# Input-slab sanity check
-# ---------------------------------------------------------------------------
-
-def test_input_slab_clean():
-    assert geometry.check_input_slab(_diag([3.0, 3.0, 20.0]), 2) == []
-
-
-def test_input_slab_tilted_axis_warns():
-    tilted = np.array([[3., 0, 0], [0, 3, 0], [1.5, 0, 20.]])  # c not orthogonal to a
-    assert geometry.check_input_slab(tilted, 2)                       # non-empty
-
-
-def test_input_slab_no_vacuum_warns():
-    assert geometry.check_input_slab(_diag([3.0, 3.0, 2.0]), 2)       # c not the longest
 
 
 # ---------------------------------------------------------------------------
