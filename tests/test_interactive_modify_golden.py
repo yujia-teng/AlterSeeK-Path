@@ -133,7 +133,7 @@ def test_optional_spin_figure_failure_does_not_block_kpoints(
 def test_optional_figure1_failure_does_not_block_kpoints(
     tmp_path, monkeypatch, capsys
 ):
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
     from alterseek import kpoints as kpoints_module
 
     def fail_figure1(*args, **kwargs):
@@ -155,7 +155,7 @@ def test_optional_figure1_failure_does_not_block_kpoints(
 def test_optional_bz_geometry_failure_does_not_block_kpoints(
     tmp_path, monkeypatch, capsys
 ):
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
     from alterseek import kpoints as kpoints_module
 
     def fail_bz_geometry(*args, **kwargs):
@@ -178,7 +178,7 @@ def test_optional_bz_geometry_failure_does_not_block_kpoints(
 def test_optional_basis_mapping_failure_does_not_publish_marker_structure(
     tmp_path, monkeypatch, capsys
 ):
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
     from alterseek import kpoints as kpoints_module
 
     def fail_mapping(*args, **kwargs):
@@ -207,7 +207,7 @@ def test_optional_basis_mapping_failure_does_not_publish_marker_structure(
 def test_optional_symbolic_diagnostic_failure_does_not_block_kpoints(
     tmp_path, monkeypatch, capsys
 ):
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
     from alterseek import kpoints as kpoints_module
 
     def fail_symbolic_centroid(*args, **kwargs):

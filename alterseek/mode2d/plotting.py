@@ -557,7 +557,7 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
     """Draw the two in-plane reciprocal axis arrows (b_i, i != vacuum axis).
 
     Same convention as ``draw_projected_reciprocal_axes`` in
-    ``compute_centroid_hybrid.py`` (Figure 4): a dotted lead-in inside the BZ,
+    ``compute_centroid_3d.py`` (Figure 4): a dotted lead-in inside the BZ,
     a solid arrow outside, and a bold label at the tip. The vacuum-axis
     reciprocal vector is always perpendicular to this plane and carries no
     in-plane information, so it is skipped entirely (unlike the 3D top view,
@@ -683,7 +683,7 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
     Reuses the same op classification/labeling as the 3D Figure 2
     (``_classify_spinflip_op``/``describe_spinflip_op`` in
-    ``compute_centroid_hybrid.py``) and keeps the same 3-index (b1,b2,b3)
+    ``compute_centroid_3d.py``) and keeps the same 3-index (b1,b2,b3)
     reciprocal labeling convention, since the underlying operation is still
     the full 3x3 matrix -- only the drawing is 2D-specific:
 

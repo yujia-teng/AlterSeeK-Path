@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.spatial import ConvexHull
 
-from alterseek.compute_centroid_hybrid import run as compute_centroid
+from alterseek.compute_centroid_3d import run as compute_centroid
 from alterseek.mode2d.geometry import (
     analyze_lattice,
     build_bz,

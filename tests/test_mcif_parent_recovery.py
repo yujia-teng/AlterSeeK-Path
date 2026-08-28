@@ -1,6 +1,6 @@
 import numpy as np
 
-from alterseek.compute_centroid_hybrid import _select_mcif_parent_symprec
+from alterseek.compute_centroid_3d import _select_mcif_parent_symprec
 from alterseek.mcif import _parent_hint_from_cif_block
 
 
@@ -33,7 +33,7 @@ def test_parent_symprec_uses_smallest_value_matching_declared_parent(monkeypatch
         "transform": "2a,b,c;0,0,0",
     }
     monkeypatch.setattr(
-        "alterseek.compute_centroid_hybrid._declared_mcif_parent_hint",
+        "alterseek.compute_centroid_3d._declared_mcif_parent_hint",
         lambda _filename: hint,
     )
 

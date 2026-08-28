@@ -36,7 +36,7 @@ Standalone utilities are also available:
 
 ```bash
 python -m alterseek.find_sf_operations
-python -m alterseek.compute_centroid_hybrid POSCAR
+python -m alterseek.compute_centroid_3d POSCAR
 ```
 
 ## Coordinate Conventions

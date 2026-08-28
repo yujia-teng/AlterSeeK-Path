@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from alterseek import find_sf_operations as F
-from alterseek import compute_centroid_hybrid as C
+from alterseek import compute_centroid_3d as C
 from alterseek.kpoints import _validate_input_config
 
 

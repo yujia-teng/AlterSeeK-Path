@@ -38,7 +38,7 @@ def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, nu
     outside spglib's default symprec, causing the non-magnetic space group used
     for the altermagnetism Laue-group gate to be spuriously under-detected
     (e.g. a genuinely cubic parent misread as a lower-symmetry subgroup). This
-    mirrors compute_centroid_hybrid.py's ordinary-mode parent recovery: only
+    mirrors compute_centroid_3d.py's ordinary-mode parent recovery: only
     accept a loosened tolerance when it reproduces the structure's own declared
     parent space group, so a genuinely lower-symmetry structure is never
     over-symmetrized.

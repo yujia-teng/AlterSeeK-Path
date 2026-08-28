@@ -10,7 +10,7 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from alterseek.compute_centroid_hybrid import _compute_ibz_centroid, _format_plane
+from alterseek.compute_centroid_3d import _compute_ibz_centroid, _format_plane
 from alterseek.geometry import (
     calculate_volume_centroid,
     triclinic_half_bz_cell,
@@ -226,7 +226,7 @@ def test_workflow_triclinic_branch_falls_back_when_the_clip_fails(
         raise RuntimeError("synthetic clip failure")
 
     monkeypatch.setattr(
-        "alterseek.compute_centroid_hybrid.triclinic_half_bz_cell", _boom
+        "alterseek.compute_centroid_3d.triclinic_half_bz_cell", _boom
     )
     result = _compute_ibz_centroid(sg=2, **_triclinic_centroid_inputs())
 

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 
 from .find_sf_operations import SpinSymmetryError, run as find_sf_run
-from .compute_centroid_hybrid import run as compute_centroid
+from .compute_centroid_3d import run as compute_centroid
 from .symmetry import (no_altermagnetism_reason,
                        laue_group_from_spacegroup_number,
                        point_group_from_spacegroup_number,

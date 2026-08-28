@@ -57,7 +57,7 @@ warnings.filterwarnings("error", message="caller-owned sentinel")
 before_filters = list(warnings.filters)
 before_style = {key: mpl.rcParams[key] for key in style}
 
-import alterseek.compute_centroid_hybrid
+import alterseek.compute_centroid_3d
 import alterseek.find_sf_operations
 import plotting.plot_alterband
 import plotting.plot_alterband_qe
@@ -85,7 +85,7 @@ print(json.dumps({
 def test_core_figure_stage_uses_scoped_style_on_repeated_runs(
     tmp_path, monkeypatch
 ):
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
 
     observed_styles = []
 
@@ -146,7 +146,7 @@ def test_core_figure_stage_uses_scoped_style_on_repeated_runs(
 
 
 def test_kspace_analysis_restores_warning_filters_on_repeated_runs():
-    from alterseek import compute_centroid_hybrid as centroid_module
+    from alterseek import compute_centroid_3d as centroid_module
 
     structure = REPO_ROOT / "tests" / "references" / "case12_POSCAR"
     before = list(warnings.filters)

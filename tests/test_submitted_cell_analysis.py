@@ -11,7 +11,7 @@ from ase.io import read, write
 from scipy.spatial import ConvexHull
 
 import alterseek.ssg_setting as ssg_setting
-from alterseek.compute_centroid_hybrid import run as compute_centroid
+from alterseek.compute_centroid_3d import run as compute_centroid
 from alterseek.ssg_setting import prepare_submitted_cell_analysis
 from alterseek.ssg_setting import build_submitted_analysis_cell
 

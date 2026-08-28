@@ -945,7 +945,7 @@ def _generate_figure1(
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python -m alterseek.compute_centroid_hybrid <structure_file> [output_dir]")
+        print("Usage: python -m alterseek.compute_centroid_3d <structure_file> [output_dir]")
         sys.exit(1)
 
     structure_file = sys.argv[1]

@@ -1,4 +1,4 @@
-"""Tests for 2D / slab mode (compute_centroid_hybrid + the op classification).
+"""Tests for 2D / slab mode (compute_centroid_3d + the op classification).
 
 Covers the pieces that have no 3D analogue:
   * vacuum-axis detection in the standardized frame (incl. axis permutation),
@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import matplotlib.pyplot as plt
 
-from alterseek import compute_centroid_hybrid as cc
+from alterseek import compute_centroid_3d as cc
 from alterseek import symmetry
 from alterseek.mode2d.geometry import analyze_lattice
 from alterseek.mode2d.lattice_kpoints import build_path

@@ -3,7 +3,7 @@
 MAGNDATA MCIFs record the parent-to-child transformation and the parent space
 group alongside the magnetic structure. Both the spin-symmetry analysis
 (`find_sf_operations`) and the ordinary centroid route
-(`compute_centroid_hybrid`) use that declaration the same way: as ground truth
+(`compute_centroid_3d`) use that declaration the same way: as ground truth
 against which a loosened spglib tolerance may be accepted, because MCIF
 coordinates are commonly rounded to five decimals and the rounding noise can
 sit just outside the default symprec.
