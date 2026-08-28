@@ -21,130 +21,6 @@ import spglib
 
 from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
-
-# See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
-# Override it per run with `symprec` in alterseek_input.toml.
-_DEFAULT_SYMPREC = 1e-3
-
-
-def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
-    """Use the smallest conservative tolerance that recovers a declared parent.
-
-    Preferred whenever the file declares a parent, since it is validated
-    against the structure's own ground truth. `fallback` (the configured
-    symprec) applies when there is nothing to validate against.
-    """
-    if fallback is None:
-        fallback = _DEFAULT_SYMPREC
-    hint = _declared_mcif_parent_hint(filename)
-    if hint is None or len(positions) % hint["index"] != 0:
-        return fallback, None
-
-    expected_sites = len(positions) // hint["index"]
-    structure_cell = (cell, positions, numbers)
-    for symprec in _MCIF_PARENT_SYMPREC_CANDIDATES:
-        dataset = spglib.get_symmetry_dataset(structure_cell, symprec=symprec)
-        primitive = spglib.find_primitive(structure_cell, symprec=symprec)
-        if dataset is None or primitive is None or len(primitive[1]) != expected_sites:
-            continue
-        parent_number = hint.get("spacegroup_number")
-        if parent_number is not None and int(dataset.number) != parent_number:
-            continue
-        recovered = dict(hint)
-        recovered.update({
-            "symprec": symprec,
-            "input_sites": len(positions),
-            "primitive_sites": expected_sites,
-            "detected_spacegroup_number": int(dataset.number),
-            "detected_spacegroup_symbol": str(dataset.international),
-        })
-        return symprec, recovered
-    return fallback, None
-
-
-def _write_seekpath_standard_poscar(lattice, positions, types, output_path, source_name):
-    """Write the standardized input-cell setting used by SeeK-path."""
-    lattice = np.array(lattice, dtype=float)
-    positions = np.array(positions, dtype=float)
-    types = list(types)
-
-    species_order = []
-    grouped = {}
-    for pos, atomic_number in zip(positions, types):
-        symbol = Element.from_Z(int(atomic_number)).symbol
-        if symbol not in grouped:
-            species_order.append(symbol)
-            grouped[symbol] = []
-        grouped[symbol].append(pos)
-
-    lines = [
-        f"SeeK-path standardized cell from {source_name}",
-        "1.0",
-    ]
-    for row in lattice:
-        lines.append("   " + " ".join(f"{x:22.16f}" for x in row))
-    lines.append(" ".join(species_order))
-    lines.append(" ".join(str(len(grouped[symbol])) for symbol in species_order))
-    lines.append("Direct")
-    for symbol in species_order:
-        for pos in grouped[symbol]:
-            frac = np.mod(pos, 1.0)
-            lines.append("   " + " ".join(f"{x:22.16f}" for x in frac) + f" {symbol}")
-
-    with _atomic_open_text(output_path) as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def _write_seekpath_basis_mapping(
-    input_lattice,
-    primitive_lattice,
-    conventional_lattice,
-    rotation_matrix,
-    output_path,
-    source_name,
-):
-    """Record the submitted analysis lattice to SeeK-path basis chain."""
-    def _fmt_matrix(mat):
-        return "\n".join(
-            "  " + " ".join(f"{float(x): .10f}" for x in row)
-            for row in np.array(mat, dtype=float)
-        )
-
-    input_lattice = np.array(input_lattice, dtype=float)
-    primitive_lattice = np.array(primitive_lattice, dtype=float)
-    conventional_lattice = np.array(conventional_lattice, dtype=float)
-    rotation_matrix = np.array(rotation_matrix, dtype=float)
-    lines = [
-        "# SeeK-path standardization mapping",
-        f"# analysis_input_lattice is the lattice of {source_name}, "
-        "the cell given to SeeK-path.",
-        "# seekpath_standard_primitive_lattice is the internal HPKOT path basis.",
-        "# seekpath_standard_conventional_lattice is SeeK-path's conventional "
-        "diagnostic setting.",
-        "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
-        "",
-        "analysis_input_lattice:",
-        _fmt_matrix(input_lattice),
-        "",
-        "seekpath_standard_primitive_lattice:",
-        _fmt_matrix(primitive_lattice),
-        "",
-        "seekpath_standard_conventional_lattice:",
-        _fmt_matrix(conventional_lattice),
-        "",
-        "seekpath_rotation_matrix:",
-        _fmt_matrix(rotation_matrix),
-        "",
-        "# kpoints_output_lattice is the submitted direct lattice. Final VASP "
-        "and QE fractional coordinates use its reciprocal basis.",
-        "kpoints_output_lattice:",
-        _fmt_matrix(input_lattice),
-        "",
-    ]
-    with _atomic_open_text(output_path) as f:
-        f.write("\n".join(lines))
-
-
 from .lattice_kpoints import (
     get_kpoints, get_hull_kpoints, get_hull_kpath,
     get_display_labels, get_params, _normalize_label,
@@ -169,6 +45,186 @@ from .plotting_common import (
     alterseek_plot_style,
 )
 from .plotting_3d import setup_3d_ax, plot_ibz
+
+# See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
+# Override it per run with `symprec` in alterseek_input.toml.
+_DEFAULT_SYMPREC = 1e-3
+
+
+def run(
+    filename,
+    output_dir=None,
+    show_plot=True,
+    defer_show=False,
+    verbose=True,
+    seekpath_type_numbers=None,
+    mode_2d=False,
+    input_vacuum_axis=2,
+    view_elev=None,
+    view_azim=None,
+    symprec=None,
+    figure_basename=None,
+    save_pdf=False,
+    spin_log_current_run=False,
+    analysis_cell=None,
+    analysis_marker_type=None,
+):
+    if mode_2d:
+        from .mode2d.compute_centroid import run as run_2d
+
+        return run_2d(
+            filename,
+            output_dir=output_dir,
+            show_plot=show_plot,
+            defer_show=defer_show,
+            verbose=verbose,
+            seekpath_type_numbers=seekpath_type_numbers,
+            mode_2d=True,
+            input_vacuum_axis=input_vacuum_axis,
+            view_elev=view_elev,
+            view_azim=view_azim,
+            symprec=symprec,
+            figure_basename=figure_basename,
+            save_pdf=save_pdf,
+            spin_log_current_run=spin_log_current_run,
+            analysis_cell=analysis_cell,
+            analysis_marker_type=analysis_marker_type,
+        )
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(filename))
+    basename = os.path.splitext(os.path.basename(filename))[0]
+    # Keep all figures named after the submitted structure.
+    fig_basename = figure_basename or basename
+
+    if verbose:
+        print("=" * 60)
+        print(f"Processing: {filename}")
+        print("=" * 60)
+
+    analysis_result = _analyze_kspace(
+        filename,
+        analysis_cell=analysis_cell,
+        seekpath_type_numbers=seekpath_type_numbers,
+        symprec=symprec,
+        verbose=verbose,
+    )
+
+    centroid_result = _compute_ibz_centroid(
+        sg=analysis_result['sg'],
+        sc_type=analysis_result['sc_type'],
+        b_matrix=analysis_result['b_matrix'],
+        unique_ops=analysis_result['unique_ops'],
+        kpoints_frac_centroid=analysis_result['kpoints_frac_centroid'],
+        kpoints_cart_centroid=analysis_result['kpoints_cart_centroid'],
+        verbose=verbose,
+    )
+
+    diagnostic_result = _write_optional_diagnostics(
+        analysis_result,
+        centroid_result,
+        filename=filename,
+        output_dir=output_dir,
+        basename=basename,
+        verbose=verbose,
+        spin_log_current_run=spin_log_current_run,
+        analysis_marker_type=analysis_marker_type,
+    )
+
+    figure_result = _generate_figure1(
+        analysis_result,
+        centroid_result,
+        output_dir=output_dir,
+        fig_basename=fig_basename,
+        show_plot=show_plot,
+        defer_show=defer_show,
+        view_elev=view_elev,
+        view_azim=view_azim,
+        save_pdf=save_pdf,
+        verbose=verbose,
+    )
+    bz_loops = figure_result['bz_loops']
+    bz_center = figure_result['bz_center']
+    bz_span = figure_result['bz_span']
+    elev1 = figure_result['elev']
+    azim1 = figure_result['azim']
+    display_figures = figure_result['display_figures']
+
+    return {
+        'sc_type': analysis_result['sc_display'],
+        'lattice_key': analysis_result['sc_type'],
+        'seekpath_bravais': analysis_result[
+            'sp_result'
+        ]['bravais_lattice_extended'],
+        'spacegroup': analysis_result['sg'],
+        'sg_symbol': analysis_result['dataset'].international,
+        'point_group': analysis_result['dataset'].pointgroup,
+        'laue_group': analysis_result['laue_group'],
+        'no_altermagnetism': analysis_result['no_altermagnetism'],
+        'kpoints_frac': analysis_result['kpoints_frac'],
+        'centroid_cart': centroid_result['centroid_cart'],
+        'centroid_frac': centroid_result['centroid_frac'],
+        'ibz_volume': centroid_result['ibz_volume'],
+        'n_symmetry_ops': len(analysis_result['unique_ops']),
+        'sp_path': analysis_result['sp_result']['path'],
+        'sp_point_coords': analysis_result['sp_result']['point_coords'],
+        'b_matrix': analysis_result['b_matrix'],
+        'bz_loops': bz_loops,
+        'bz_center': bz_center,
+        'bz_span': bz_span,
+        'elev': elev1,
+        'azim': azim1,
+        'ibz_kpoints_frac': (
+            analysis_result['kpoints_frac_centroid']
+            if analysis_result['sg'] not in (1, 2)
+            else analysis_result['kpoints_frac']
+        ),
+        'path_kpoints_frac': analysis_result['kpoints_frac_for_output'],
+        'ibz_kpath': analysis_result['kpath_plot'],
+        'band_kpoints_frac': analysis_result['band_kpoints_frac'],
+        'band_kpath': analysis_result['band_kpath'],
+        'extra_general_vertices': analysis_result['extra_general_vertices'],
+        'butterfly_kpath': analysis_result['butterfly_kpath'],
+        'butterfly_extra_vertices': analysis_result[
+            'butterfly_extra_vertices'
+        ],
+        # The clipped triclinic half-BZ has no curated hull labels.
+        'hull_pts': (
+            centroid_result['points_arr']
+            if (
+                analysis_result['sg'] not in (1, 2)
+                or centroid_result['hull'] is not None
+            )
+            else None
+        ),
+        'hull_simplices': (
+            centroid_result['hull'].simplices.tolist()
+            if centroid_result['hull'] is not None
+            else None
+        ),
+        'hull_labels': (
+            centroid_result['labels_list']
+            if analysis_result['sg'] not in (1, 2)
+            else None
+        ),
+        'sym_ops_cart': analysis_result['sym_ops_cart'],
+        'unique_ops': analysis_result['unique_ops'],
+        'b_matrix_conv': analysis_result['b_matrix_conv'],
+        'b_matrix_input': analysis_result['b_matrix_input'],
+        'mode_2d': False,
+        'vacuum_axis': None,
+        'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
+        'ibz_polygon_labels': centroid_result['ibz_polygon_labels'],
+        'seekpath_rotation_matrix': np.array(
+            analysis_result['sp_result']['rotation_matrix']
+        ),
+        'standardized_structure_path': diagnostic_result[
+            'standardized_structure_path'
+        ],
+        'standard_mapping_path': diagnostic_result['standard_mapping_path'],
+        'symprec': analysis_result['symprec'],
+        'mcif_parent_recovery': analysis_result['mcif_parent_recovery'],
+        'display_figures': display_figures,
+    }
 
 
 def _analyze_kspace(
@@ -413,6 +469,135 @@ def _analyze_kspace(
     }
 
 
+def _select_mcif_parent_symprec(filename, cell, positions, numbers, fallback=None):
+    """Use the smallest conservative tolerance that recovers a declared parent.
+
+    Preferred whenever the file declares a parent, since it is validated
+    against the structure's own ground truth. `fallback` (the configured
+    symprec) applies when there is nothing to validate against.
+    """
+    if fallback is None:
+        fallback = _DEFAULT_SYMPREC
+    hint = _declared_mcif_parent_hint(filename)
+    if hint is None or len(positions) % hint["index"] != 0:
+        return fallback, None
+
+    expected_sites = len(positions) // hint["index"]
+    structure_cell = (cell, positions, numbers)
+    for symprec in _MCIF_PARENT_SYMPREC_CANDIDATES:
+        dataset = spglib.get_symmetry_dataset(structure_cell, symprec=symprec)
+        primitive = spglib.find_primitive(structure_cell, symprec=symprec)
+        if dataset is None or primitive is None or len(primitive[1]) != expected_sites:
+            continue
+        parent_number = hint.get("spacegroup_number")
+        if parent_number is not None and int(dataset.number) != parent_number:
+            continue
+        recovered = dict(hint)
+        recovered.update({
+            "symprec": symprec,
+            "input_sites": len(positions),
+            "primitive_sites": expected_sites,
+            "detected_spacegroup_number": int(dataset.number),
+            "detected_spacegroup_symbol": str(dataset.international),
+        })
+        return symprec, recovered
+    return fallback, None
+
+
+def _compute_ibz_centroid(
+    *,
+    sg,
+    sc_type,
+    b_matrix,
+    unique_ops,
+    kpoints_frac_centroid,
+    kpoints_cart_centroid,
+    verbose,
+):
+    """Compute the required numerical centroid from analyzed IBZ geometry."""
+    labels_list = list(kpoints_cart_centroid.keys())
+    points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
+    ibz_polygon_frac = None
+    ibz_polygon_labels = None
+    hull_matches_labels = False
+
+    if sg in (1, 2):
+        # The curated triclinic points are not a closed IBZ hull, so use the Wigner-Seitz BZ instead.
+        # Laue group -1 applies to both P1 and P-1, making the nonmagnetic IBZ half the BZ; the selected axis-containing plane fixes which half.
+        hull = None
+        normal_frac = triclinic_halfspace_normal(sc_type)
+        if normal_frac is not None:
+            try:
+                points_arr, hull = triclinic_half_bz_cell(b_matrix, normal_frac)
+                labels_list = []
+                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+            except Exception as exc:
+                hull = None
+                print("[Warning] Could not build the triclinic half-BZ "
+                      f"({exc}); using the mean of the curated k-points.")
+        if hull is None:
+            centroid_cart = np.mean(points_arr, axis=0)
+            ibz_volume = 0.0
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        if verbose:
+            if hull is not None:
+                print(f"\n[Note] Triclinic: IBZ = half BZ cut by "
+                      f"{_format_plane(normal_frac)} (Laue -1)")
+                print(f"IBZ centroid: [{centroid_frac[0]:.6f}, "
+                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]  "
+                      f"volume={ibz_volume:.6f}")
+            else:
+                print("\n[Note] Triclinic: IBZ shading skipped")
+                print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, "
+                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
+    else:
+        hull = ConvexHull(points_arr)
+        centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+        hull_matches_labels = True
+
+        # The mC2/mC3 HPKOT boundary-label hull is slightly larger than the true C2/m fundamental domain.
+        if sc_type in {'mC2', 'mC3'}:
+            mono_pts, mono_simplices = build_symmetry_ibz_cell(
+                b_matrix, unique_ops, centroid_cart
+            )
+            if mono_pts is not None and mono_simplices is not None:
+                points_arr = np.array(mono_pts, dtype=float)
+                hull = ConvexHull(points_arr)
+                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
+                centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
+                hull_matches_labels = False
+                if verbose:
+                    print("[Note] Using symmetry/Voronoi IBZ cell for "
+                          "monoclinic hull.")
+
+    return {
+        'labels_list': labels_list,
+        'points_arr': points_arr,
+        'hull': hull,
+        'centroid_cart': centroid_cart,
+        'centroid_frac': centroid_frac,
+        'ibz_volume': ibz_volume,
+        'ibz_polygon_frac': ibz_polygon_frac,
+        'ibz_polygon_labels': ibz_polygon_labels,
+        'hull_matches_labels': hull_matches_labels,
+    }
+
+
+def _format_plane(normal_frac):
+    """Render an integer fractional normal as a readable plane equation."""
+    terms = []
+    for index, coefficient in enumerate(normal_frac):
+        if not coefficient:
+            continue
+        axis = f"k{index + 1}"
+        magnitude = abs(coefficient)
+        term = axis if magnitude == 1 else f"{magnitude}*{axis}"
+        sign = "-" if coefficient < 0 else ("+" if terms else "")
+        terms.append(f"{sign}{term}")
+    return f"{''.join(terms)}=0"
+
+
 def _write_optional_diagnostics(
     analysis,
     centroid,
@@ -505,98 +690,87 @@ def _write_optional_diagnostics(
     }
 
 
-def _format_plane(normal_frac):
-    """Render an integer fractional normal as a readable plane equation."""
-    terms = []
-    for index, coefficient in enumerate(normal_frac):
-        if not coefficient:
-            continue
-        axis = f"k{index + 1}"
-        magnitude = abs(coefficient)
-        term = axis if magnitude == 1 else f"{magnitude}*{axis}"
-        sign = "-" if coefficient < 0 else ("+" if terms else "")
-        terms.append(f"{sign}{term}")
-    return f"{''.join(terms)}=0"
+def _write_seekpath_standard_poscar(lattice, positions, types, output_path, source_name):
+    """Write the standardized input-cell setting used by SeeK-path."""
+    lattice = np.array(lattice, dtype=float)
+    positions = np.array(positions, dtype=float)
+    types = list(types)
+
+    species_order = []
+    grouped = {}
+    for pos, atomic_number in zip(positions, types):
+        symbol = Element.from_Z(int(atomic_number)).symbol
+        if symbol not in grouped:
+            species_order.append(symbol)
+            grouped[symbol] = []
+        grouped[symbol].append(pos)
+
+    lines = [
+        f"SeeK-path standardized cell from {source_name}",
+        "1.0",
+    ]
+    for row in lattice:
+        lines.append("   " + " ".join(f"{x:22.16f}" for x in row))
+    lines.append(" ".join(species_order))
+    lines.append(" ".join(str(len(grouped[symbol])) for symbol in species_order))
+    lines.append("Direct")
+    for symbol in species_order:
+        for pos in grouped[symbol]:
+            frac = np.mod(pos, 1.0)
+            lines.append("   " + " ".join(f"{x:22.16f}" for x in frac) + f" {symbol}")
+
+    with _atomic_open_text(output_path) as f:
+        f.write("\n".join(lines) + "\n")
 
 
-def _compute_ibz_centroid(
-    *,
-    sg,
-    sc_type,
-    b_matrix,
-    unique_ops,
-    kpoints_frac_centroid,
-    kpoints_cart_centroid,
-    verbose,
+def _write_seekpath_basis_mapping(
+    input_lattice,
+    primitive_lattice,
+    conventional_lattice,
+    rotation_matrix,
+    output_path,
+    source_name,
 ):
-    """Compute the required numerical centroid from analyzed IBZ geometry."""
-    labels_list = list(kpoints_cart_centroid.keys())
-    points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
-    ibz_polygon_frac = None
-    ibz_polygon_labels = None
-    hull_matches_labels = False
+    """Record the submitted analysis lattice to SeeK-path basis chain."""
+    def _fmt_matrix(mat):
+        return "\n".join(
+            "  " + " ".join(f"{float(x): .10f}" for x in row)
+            for row in np.array(mat, dtype=float)
+        )
 
-    if sg in (1, 2):
-        # The curated triclinic points are not a closed IBZ hull, so use the Wigner-Seitz BZ instead.
-        # Laue group -1 applies to both P1 and P-1, making the nonmagnetic IBZ half the BZ; the selected axis-containing plane fixes which half.
-        hull = None
-        normal_frac = triclinic_halfspace_normal(sc_type)
-        if normal_frac is not None:
-            try:
-                points_arr, hull = triclinic_half_bz_cell(b_matrix, normal_frac)
-                labels_list = []
-                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
-            except Exception as exc:
-                hull = None
-                print("[Warning] Could not build the triclinic half-BZ "
-                      f"({exc}); using the mean of the curated k-points.")
-        if hull is None:
-            centroid_cart = np.mean(points_arr, axis=0)
-            ibz_volume = 0.0
-        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-        if verbose:
-            if hull is not None:
-                print(f"\n[Note] Triclinic: IBZ = half BZ cut by "
-                      f"{_format_plane(normal_frac)} (Laue -1)")
-                print(f"IBZ centroid: [{centroid_frac[0]:.6f}, "
-                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]  "
-                      f"volume={ibz_volume:.6f}")
-            else:
-                print("\n[Note] Triclinic: IBZ shading skipped")
-                print(f"Centroid (mean of k-points): [{centroid_frac[0]:.6f}, "
-                      f"{centroid_frac[1]:.6f}, {centroid_frac[2]:.6f}]")
-    else:
-        hull = ConvexHull(points_arr)
-        centroid_cart, ibz_volume = calculate_volume_centroid(hull)
-        centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-        hull_matches_labels = True
-
-        # The mC2/mC3 HPKOT boundary-label hull is slightly larger than the true C2/m fundamental domain.
-        if sc_type in {'mC2', 'mC3'}:
-            mono_pts, mono_simplices = build_symmetry_ibz_cell(
-                b_matrix, unique_ops, centroid_cart
-            )
-            if mono_pts is not None and mono_simplices is not None:
-                points_arr = np.array(mono_pts, dtype=float)
-                hull = ConvexHull(points_arr)
-                centroid_cart, ibz_volume = calculate_volume_centroid(hull)
-                centroid_frac = centroid_cart @ np.linalg.inv(b_matrix)
-                hull_matches_labels = False
-                if verbose:
-                    print("[Note] Using symmetry/Voronoi IBZ cell for "
-                          "monoclinic hull.")
-
-    return {
-        'labels_list': labels_list,
-        'points_arr': points_arr,
-        'hull': hull,
-        'centroid_cart': centroid_cart,
-        'centroid_frac': centroid_frac,
-        'ibz_volume': ibz_volume,
-        'ibz_polygon_frac': ibz_polygon_frac,
-        'ibz_polygon_labels': ibz_polygon_labels,
-        'hull_matches_labels': hull_matches_labels,
-    }
+    input_lattice = np.array(input_lattice, dtype=float)
+    primitive_lattice = np.array(primitive_lattice, dtype=float)
+    conventional_lattice = np.array(conventional_lattice, dtype=float)
+    rotation_matrix = np.array(rotation_matrix, dtype=float)
+    lines = [
+        "# SeeK-path standardization mapping",
+        f"# analysis_input_lattice is the lattice of {source_name}, "
+        "the cell given to SeeK-path.",
+        "# seekpath_standard_primitive_lattice is the internal HPKOT path basis.",
+        "# seekpath_standard_conventional_lattice is SeeK-path's conventional "
+        "diagnostic setting.",
+        "# rotation_matrix is reported by SeeK-path for the input-to-standard orientation.",
+        "",
+        "analysis_input_lattice:",
+        _fmt_matrix(input_lattice),
+        "",
+        "seekpath_standard_primitive_lattice:",
+        _fmt_matrix(primitive_lattice),
+        "",
+        "seekpath_standard_conventional_lattice:",
+        _fmt_matrix(conventional_lattice),
+        "",
+        "seekpath_rotation_matrix:",
+        _fmt_matrix(rotation_matrix),
+        "",
+        "# kpoints_output_lattice is the submitted direct lattice. Final VASP "
+        "and QE fractional coordinates use its reciprocal basis.",
+        "kpoints_output_lattice:",
+        _fmt_matrix(input_lattice),
+        "",
+    ]
+    with _atomic_open_text(output_path) as f:
+        f.write("\n".join(lines))
 
 
 @alterseek_plot_style
@@ -769,188 +943,11 @@ def _generate_figure1(
     }
 
 
-def run(
-    filename,
-    output_dir=None,
-    show_plot=True,
-    defer_show=False,
-    verbose=True,
-    seekpath_type_numbers=None,
-    mode_2d=False,
-    input_vacuum_axis=2,
-    view_elev=None,
-    view_azim=None,
-    symprec=None,
-    figure_basename=None,
-    save_pdf=False,
-    spin_log_current_run=False,
-    analysis_cell=None,
-    analysis_marker_type=None,
-):
-    if mode_2d:
-        from .mode2d.compute_centroid import run as run_2d
-
-        return run_2d(
-            filename,
-            output_dir=output_dir,
-            show_plot=show_plot,
-            defer_show=defer_show,
-            verbose=verbose,
-            seekpath_type_numbers=seekpath_type_numbers,
-            mode_2d=True,
-            input_vacuum_axis=input_vacuum_axis,
-            view_elev=view_elev,
-            view_azim=view_azim,
-            symprec=symprec,
-            figure_basename=figure_basename,
-            save_pdf=save_pdf,
-            spin_log_current_run=spin_log_current_run,
-            analysis_cell=analysis_cell,
-            analysis_marker_type=analysis_marker_type,
-        )
-    if output_dir is None:
-        output_dir = os.path.dirname(os.path.abspath(filename))
-    basename = os.path.splitext(os.path.basename(filename))[0]
-    # Keep all figures named after the submitted structure.
-    fig_basename = figure_basename or basename
-
-    if verbose:
-        print("=" * 60)
-        print(f"Processing: {filename}")
-        print("=" * 60)
-
-    analysis_result = _analyze_kspace(
-        filename,
-        analysis_cell=analysis_cell,
-        seekpath_type_numbers=seekpath_type_numbers,
-        symprec=symprec,
-        verbose=verbose,
-    )
-
-    centroid_result = _compute_ibz_centroid(
-        sg=analysis_result['sg'],
-        sc_type=analysis_result['sc_type'],
-        b_matrix=analysis_result['b_matrix'],
-        unique_ops=analysis_result['unique_ops'],
-        kpoints_frac_centroid=analysis_result['kpoints_frac_centroid'],
-        kpoints_cart_centroid=analysis_result['kpoints_cart_centroid'],
-        verbose=verbose,
-    )
-
-    diagnostic_result = _write_optional_diagnostics(
-        analysis_result,
-        centroid_result,
-        filename=filename,
-        output_dir=output_dir,
-        basename=basename,
-        verbose=verbose,
-        spin_log_current_run=spin_log_current_run,
-        analysis_marker_type=analysis_marker_type,
-    )
-
-    figure_result = _generate_figure1(
-        analysis_result,
-        centroid_result,
-        output_dir=output_dir,
-        fig_basename=fig_basename,
-        show_plot=show_plot,
-        defer_show=defer_show,
-        view_elev=view_elev,
-        view_azim=view_azim,
-        save_pdf=save_pdf,
-        verbose=verbose,
-    )
-    bz_loops = figure_result['bz_loops']
-    bz_center = figure_result['bz_center']
-    bz_span = figure_result['bz_span']
-    elev1 = figure_result['elev']
-    azim1 = figure_result['azim']
-    display_figures = figure_result['display_figures']
-
-    return {
-        'sc_type': analysis_result['sc_display'],
-        'lattice_key': analysis_result['sc_type'],
-        'seekpath_bravais': analysis_result[
-            'sp_result'
-        ]['bravais_lattice_extended'],
-        'spacegroup': analysis_result['sg'],
-        'sg_symbol': analysis_result['dataset'].international,
-        'point_group': analysis_result['dataset'].pointgroup,
-        'laue_group': analysis_result['laue_group'],
-        'no_altermagnetism': analysis_result['no_altermagnetism'],
-        'kpoints_frac': analysis_result['kpoints_frac'],
-        'centroid_cart': centroid_result['centroid_cart'],
-        'centroid_frac': centroid_result['centroid_frac'],
-        'ibz_volume': centroid_result['ibz_volume'],
-        'n_symmetry_ops': len(analysis_result['unique_ops']),
-        'sp_path': analysis_result['sp_result']['path'],
-        'sp_point_coords': analysis_result['sp_result']['point_coords'],
-        'b_matrix': analysis_result['b_matrix'],
-        'bz_loops': bz_loops,
-        'bz_center': bz_center,
-        'bz_span': bz_span,
-        'elev': elev1,
-        'azim': azim1,
-        'ibz_kpoints_frac': (
-            analysis_result['kpoints_frac_centroid']
-            if analysis_result['sg'] not in (1, 2)
-            else analysis_result['kpoints_frac']
-        ),
-        'path_kpoints_frac': analysis_result['kpoints_frac_for_output'],
-        'ibz_kpath': analysis_result['kpath_plot'],
-        'band_kpoints_frac': analysis_result['band_kpoints_frac'],
-        'band_kpath': analysis_result['band_kpath'],
-        'extra_general_vertices': analysis_result['extra_general_vertices'],
-        'butterfly_kpath': analysis_result['butterfly_kpath'],
-        'butterfly_extra_vertices': analysis_result[
-            'butterfly_extra_vertices'
-        ],
-        # The clipped triclinic half-BZ has no curated hull labels.
-        'hull_pts': (
-            centroid_result['points_arr']
-            if (
-                analysis_result['sg'] not in (1, 2)
-                or centroid_result['hull'] is not None
-            )
-            else None
-        ),
-        'hull_simplices': (
-            centroid_result['hull'].simplices.tolist()
-            if centroid_result['hull'] is not None
-            else None
-        ),
-        'hull_labels': (
-            centroid_result['labels_list']
-            if analysis_result['sg'] not in (1, 2)
-            else None
-        ),
-        'sym_ops_cart': analysis_result['sym_ops_cart'],
-        'unique_ops': analysis_result['unique_ops'],
-        'b_matrix_conv': analysis_result['b_matrix_conv'],
-        'b_matrix_input': analysis_result['b_matrix_input'],
-        'mode_2d': False,
-        'vacuum_axis': None,
-        'ibz_polygon_frac': centroid_result['ibz_polygon_frac'],
-        'ibz_polygon_labels': centroid_result['ibz_polygon_labels'],
-        'seekpath_rotation_matrix': np.array(
-            analysis_result['sp_result']['rotation_matrix']
-        ),
-        'standardized_structure_path': diagnostic_result[
-            'standardized_structure_path'
-        ],
-        'standard_mapping_path': diagnostic_result['standard_mapping_path'],
-        'symprec': analysis_result['symprec'],
-        'mcif_parent_recovery': analysis_result['mcif_parent_recovery'],
-        'display_figures': display_figures,
-    }
-
-
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python compute_centroid_hybrid.py <structure_file> [output_dir]")
+        print("Usage: python -m alterseek.compute_centroid_hybrid <structure_file> [output_dir]")
         sys.exit(1)
 
     structure_file = sys.argv[1]
     out_dir = sys.argv[2] if len(sys.argv) > 2 else None
     results = run(structure_file, out_dir)
-
