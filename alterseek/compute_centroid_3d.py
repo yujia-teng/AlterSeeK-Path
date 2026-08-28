@@ -22,7 +22,7 @@ import spglib
 from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 from .lattice_kpoints import (
-    get_kpoints, get_hull_kpoints, get_hull_kpath,
+    get_kpoints, get_hull_kpoints, get_hull_kpath, get_kpath,
     get_display_labels, get_params, _normalize_label,
 )
 from .symmetry import (
@@ -330,10 +330,7 @@ def _analyze_kspace(
     sc_type, conv_params = seekpath_to_hpkot_type(sp_result)
     sc_display = sc_type
     centroid_type = sc_type
-    kpath = [
-        (_normalize_label(start), _normalize_label(end))
-        for start, end in sp_result['path']
-    ]
+    kpath = get_kpath(sc_type, spacegroup_number=sg)
     seekpath_point_coords = {
         _normalize_label(label): list(coords)
         for label, coords in sp_result['point_coords'].items()

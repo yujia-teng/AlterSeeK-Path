@@ -42,15 +42,6 @@ def test_hull_kpoints_nonempty(lattice_type):
     assert GAMMA in hull
 
 
-def test_aliases_resolve_to_hpkot_keys():
-    assert lk.canonical_lattice_type("HEX") == "hP2"
-    assert lk.canonical_lattice_type("BCT2") == "tI2"
-    assert lk.canonical_lattice_type("ORCI") == "oI1"
-    # Canonical keys resolve to themselves.
-    for key in lk.HPKOT_LATTICE_TYPES:
-        assert lk.canonical_lattice_type(key) == key
-
-
 # ---------------------------------------------------------------------------
 # Convention goldens (non-negotiable project rules).
 # ---------------------------------------------------------------------------

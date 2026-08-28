@@ -1,19 +1,8 @@
-"""High-symmetry k-point access in the SeeK-path/HPKOT convention.
+"""Load HPKOT k-points and paths from SeeK-path.
 
-The tables themselves are read from seekpath at import
-(`seekpath.hpkot.tools.get_path_data`), which implements Hinuma et al.,
-Comput. Mater. Sci. 128, 140-184 (2017), Tables 69-92.  This module only
-re-labels those points and adds the project-local data the IBZ hull needs.
-
-Coordinates are kP coordinates: fractional coefficients in the
-crystallographic primitive reciprocal basis used by SeeK-path.  Gamma is
-held internally as the Greek label ``Γ``; other Greek and subscripted
-labels are preserved semantically, e.g. ``H_2`` is displayed as ``$H_2$``.
-
-The public HPKOT band path and the AlterSeeK-Path IBZ hull are related but
-distinct objects.  Hidden closure vertices (labels beginning with ``_``) are
-added for centroid/hull construction where the visible band-path labels do
-not close the selected irreducible domain.
+Coordinates are fractional coefficients in SeeK-path's crystallographic
+primitive reciprocal basis. This module normalizes labels and adds the
+project-specific data needed to construct the selected IBZ hull.
 """
 
 from __future__ import annotations
@@ -131,7 +120,7 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
 }
 
 
-# Cubic 23/m-3 and trigonal 3/-3 use the ordinary path without copied-sector segments.
+# Reference paths for doubled IBZs; cubic 23/m-3 and trigonal 3/-3 use the ordinary path.
 PROJECT_HULL_PATH_BY_SG = {
     ("tP1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"), ("M", "\u0393"),
@@ -192,7 +181,8 @@ def _format_display_label(label: str) -> str:
     return label
 
 
-def _hpkot_table(ext_bravais: str):
+def _load_hpkot_table(ext_bravais: str):
+    """Load and normalize one SeeK-path HPKOT table."""
     kparam_def, points_def, path = get_path_data(ext_bravais)
     points_def = {
         _normalize_label(label): tuple(exprs)
@@ -200,9 +190,8 @@ def _hpkot_table(ext_bravais: str):
     }
     path = _normalize_path(path)
 
-    # SeeK-path's bundled cP1/cF1/hP1 tables include optional HPKOT caption
-    # segments unconditionally. Their points remain available, while the
-    # segments are enabled only by the corresponding caption rules.
+    # SeeK-path includes segments specified only for particular space groups in the HPKOT table captions without applying those conditions.
+    # Keep their point definitions, but let EXTRA_PATH_RULES decide when to include the segments.
     if ext_bravais in {"cP1", "cP2"}:
         path = _strip_path_segments(path, [("M", "X_1")])
     elif ext_bravais in {"cF1", "cF2"}:
@@ -211,7 +200,6 @@ def _hpkot_table(ext_bravais: str):
         path = _strip_path_segments(path, [("K", "H_2")])
 
     return {
-        "source": "HPKOT",
         "kparam_def": kparam_def,
         "points_def": points_def,
         "kpath": path,
@@ -220,8 +208,8 @@ def _hpkot_table(ext_bravais: str):
     }
 
 
-def _build_lattice_data():
-    data = {key: _hpkot_table(key) for key in HPKOT_LATTICE_TYPES}
+def _load_lattice_data():
+    data = {key: _load_hpkot_table(key) for key in HPKOT_LATTICE_TYPES}
 
     # Project-curated mC1 closure vertices define the selected IBZ hull but are not public HPKOT labels, so exclude them from display labels and k-paths.
     data["mC1"]["hidden_points_def"] = {
@@ -231,43 +219,16 @@ def _build_lattice_data():
         "_P1": ("-3/2+Z+S", "1/2-Z+S", "1-H"),
     }
 
-    # Normalize conventional short aliases to HPKOT extended symbols.
-    aliases = {
-        "CUB": "cP2", "CUB2": "cP1",
-        "FCC": "cF2", "FCC2": "cF1",
-        "BCC": "cI1", "BCC2": "cI1",
-        "TET": "tP1", "TET2": "tP1",
-        "BCT1": "tI1", "BCT1_2": "tI1",
-        "BCT2": "tI2", "BCT2_2": "tI2",
-        "ORC": "oP1",
-        "ORCF1": "oF1", "ORCF2": "oF2", "ORCF3": "oF3",
-        "ORCI": "oI1",
-        "ORCC1": "oC1", "ORCC2": "oC2", "ORCC": "oC2",
-        "HEX": "hP2", "HEX2": "hP1", "HEX4": "hP1",
-        "RHL1": "hR1", "RHL1_2": "hR1",
-        "RHL2": "hR2", "RHL2_2": "hR2",
-        "MCL": "mP1",
-        "MCLC1": "mC1", "MCLC2_SC": "mC1",
-        "MCLC2": "mC2", "MCLC4_SC": "mC2", "MCLC4": "mC2",
-        "MCLC3": "mC3", "MCLC5": "mC3",
-        "TRI1a": "aP2", "TRI1b": "aP2",
-        "TRI2a": "aP3", "TRI2b": "aP3",
-    }
-    for alias, target in aliases.items():
-        data[alias] = {"alias_for": target}
-
     return data
 
 
-LATTICE_DATA = _build_lattice_data()
+LATTICE_DATA = _load_lattice_data()
 
 
 def canonical_lattice_type(lattice_type: str) -> str:
-    """Return the canonical HPKOT key for a lattice type or supported alias."""
-    data = LATTICE_DATA[lattice_type]
-    while "alias_for" in data:
-        lattice_type = data["alias_for"]
-        data = LATTICE_DATA[lattice_type]
+    """Return a validated HPKOT extended lattice key."""
+    if lattice_type not in LATTICE_DATA:
+        raise KeyError(lattice_type)
     return lattice_type
 
 
@@ -315,11 +276,9 @@ def get_kpoints(
     gamma=None,
     include_hidden=True,
 ):
-    """
-    Return HPKOT/project k-points in primitive reciprocal coordinates kP.
+    """Return evaluated HPKOT and project-specific k-points in the primitive reciprocal basis.
 
-    For monoclinic cells, ``alpha`` is treated as the monoclinic beta angle
-    when ``beta`` is not provided.
+    For monoclinic lattices, ``alpha`` supplies the beta angle when ``beta`` is omitted.
     """
     key = canonical_lattice_type(lattice_type)
     data = LATTICE_DATA[key]
@@ -380,14 +339,8 @@ def get_hull_kpath(lattice_type, spacegroup_number=None):
     return list(LATTICE_DATA[key]["kpath"])
 
 
-def get_kpath(lattice_type, spacegroup_number=None, with_time_reversal=True):
-    """
-    Return the HPKOT base path plus applicable caption-defined extra segments.
-
-    ``with_time_reversal`` is accepted to keep the API explicit; path doubling
-    for no-time-reversal workflows is handled by the caller because it also
-    needs operation-specific primed coordinates.
-    """
+def get_kpath(lattice_type, spacegroup_number=None):
+    """Return the HPKOT path with any space-group-specific extra segments."""
     key = canonical_lattice_type(lattice_type)
     path = list(LATTICE_DATA[key]["kpath"])
     if spacegroup_number is not None:
@@ -431,79 +384,3 @@ def get_params(
         return {}
     raw = _evaluate_kparams(data, a, b, c, alpha, beta, gamma)
     return {name: raw[name] for name, _expr in data["kparam_def"]}
-
-
-def get_bravais_type(
-    spacegroup_number,
-    conv_a,
-    conv_b,
-    conv_c,
-    conv_alpha=90.0,
-    conv_beta=90.0,
-    conv_gamma=90.0,
-    centering="P",
-):
-    """Best-effort HPKOT extended key from space group and cell parameters."""
-    sg = int(spacegroup_number)
-    centering = str(centering).upper()
-
-    if 195 <= sg <= 230:
-        if centering == "F":
-            return "cF1" if sg <= 206 else "cF2"
-        if centering == "I":
-            return "cI1"
-        return "cP1" if sg <= 206 else "cP2"
-    if 75 <= sg <= 142:
-        return "tI1" if centering == "I" and conv_c < conv_a else (
-            "tI2" if centering == "I" else "tP1")
-    if 143 <= sg <= 194:
-        if centering == "R":
-            return "hR1" if math.sqrt(3) * conv_a < math.sqrt(2) * conv_c else "hR2"
-        return "hP1" if sg <= 163 else "hP2"
-    if 16 <= sg <= 74:
-        if centering == "F":
-            a, b, c = sorted([conv_a, conv_b, conv_c])
-            inv_a2, inv_b2, inv_c2 = 1 / a**2, 1 / b**2, 1 / c**2
-            if abs(inv_a2 - (inv_b2 + inv_c2)) < 1e-8:
-                return "oF3"
-            return "oF1" if inv_a2 > inv_b2 + inv_c2 else "oF2"
-        if centering == "I":
-            largest = max((conv_a, "a"), (conv_b, "b"), (conv_c, "c"))[1]
-            return {"a": "oI2", "b": "oI3", "c": "oI1"}[largest]
-        if centering in {"C", "A", "B"}:
-            return "oC1" if conv_a < conv_b else "oC2"
-        return "oP1"
-    if 3 <= sg <= 15:
-        if centering in {"C", "A", "B"}:
-            beta_rad = math.radians(conv_beta)
-            if conv_b < conv_a * math.sin(beta_rad):
-                return "mC1"
-            cond = (
-                -conv_a * math.cos(beta_rad) / conv_c
-                + conv_a**2 * math.sin(beta_rad) ** 2 / conv_b**2
-            )
-            return "mC2" if cond < 1.0 else "mC3"
-        return "mP1"
-    return "aP2"
-
-
-ALL_LATTICE_TYPES = list(LATTICE_DATA.keys())
-CANONICAL_LATTICE_TYPES = HPKOT_LATTICE_TYPES
-FIXED_LATTICES = [
-    key for key in HPKOT_LATTICE_TYPES
-    if not LATTICE_DATA[key].get("kparam_def")
-]
-PARAMETRIC_LATTICES = [
-    key for key in HPKOT_LATTICE_TYPES
-    if LATTICE_DATA[key].get("kparam_def")
-]
-
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("HPKOT/SeeK-path k-point database")
-    print("=" * 60)
-    print(f"Canonical lattice types: {len(CANONICAL_LATTICE_TYPES)}")
-    for lt in CANONICAL_LATTICE_TYPES:
-        kp = get_kpoints(lt, a=5.0, b=6.0, c=7.0, alpha=100.0)
-        print(f"{lt:4s}: {len(kp):2d} k-points, {len(get_kpath(lt))} path segments")
