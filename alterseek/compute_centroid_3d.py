@@ -69,6 +69,13 @@ def run(
     analysis_cell=None,
     analysis_marker_type=None,
 ):
+    """Run the IBZ-centroid pipeline on one structure file.
+
+    With ``mode_2d`` the whole run is handed to ``mode2d.compute_centroid``,
+    which builds the 2D Brillouin zone from the in-plane lattice vectors
+    instead of slicing a 3D one.  Otherwise the four stages below run in
+    order: k-space analysis, centroid, optional diagnostics, and Figure 1.
+    """
     if mode_2d:
         from .mode2d.compute_centroid import run as run_2d
 
@@ -93,7 +100,6 @@ def run(
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
     basename = os.path.splitext(os.path.basename(filename))[0]
-    # Keep all figures named after the submitted structure.
     fig_basename = figure_basename or basename
 
     if verbose:
@@ -235,7 +241,7 @@ def _analyze_kspace(
     symprec,
     verbose,
 ):
-    """Perform the required structure, symmetry, IBZ, and path analysis."""
+    """Perform the structure, symmetry, IBZ, and path analysis."""
     if analysis_cell is None:
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -514,7 +520,7 @@ def _compute_ibz_centroid(
     kpoints_cart_centroid,
     verbose,
 ):
-    """Compute the required numerical centroid from analyzed IBZ geometry."""
+    """Compute the numerical centroid from the analyzed IBZ geometry."""
     labels_list = list(kpoints_cart_centroid.keys())
     points_arr = np.array([kpoints_cart_centroid[k] for k in labels_list])
     ibz_polygon_frac = None

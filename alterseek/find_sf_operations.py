@@ -16,6 +16,7 @@ import os
 import re
 import sympy as sp
 from .atomic_write import _atomic_open_text
+from .symmetry import laue_group_from_point_group
 from .mcif import (
     _MCIF_PARENT_SYMPREC_CANDIDATES,
     _declared_mcif_parent_hint,
@@ -23,8 +24,7 @@ from .mcif import (
 )
 
 # Deposited structures routinely carry coordinates rounded to five decimals, for which spglib's 1e-5 A default can hide real symmetry (for example, MnSe2's cubic Pa-3 parent reads as orthorhombic Pbca).
-# A tolerance of 1e-3 A remains far below a deliberate distortion: a 0.5%
-# strain on a 4 A lattice is 0.02 A, twenty times larger.
+# A tolerance of 1e-3 A remains far below a deliberate distortion: a 0.5% strain on a 4 A lattice is 0.02 A, twenty times larger.
 # Override per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
 
@@ -33,20 +33,11 @@ def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, nu
                                                 fallback=None):
     """Use the smallest conservative tolerance that recovers a declared parent.
 
-    MCIF-deposited coordinates are commonly rounded to 5 decimal places. For a
-    general (non-special) Wyckoff parameter, that rounding noise can sit just
-    outside spglib's default symprec, causing the non-magnetic space group used
-    for the altermagnetism Laue-group gate to be spuriously under-detected
-    (e.g. a genuinely cubic parent misread as a lower-symmetry subgroup). This
-    mirrors compute_centroid_3d.py's ordinary-mode parent recovery: only
-    accept a loosened tolerance when it reproduces the structure's own declared
-    parent space group, so a genuinely lower-symmetry structure is never
-    over-symmetrized.
-
-    This validated route is preferred whenever the file declares a parent,
-    because it is checked against the structure's own ground truth. `fallback`
-    (the configured symprec) is used when there is no declaration to check
-    against, or when no candidate reproduces it.
+    Candidates are tried from tight to loose, and the first one that reproduces
+    both the parent space group the file declares and its cell size wins, so the
+    tolerance is never loosened further than the declaration justifies.
+    `fallback` (the configured symprec) applies when the file declares no
+    parent, or when no candidate reproduces it.
     """
     if fallback is None:
         fallback = _DEFAULT_SYMPREC
@@ -65,27 +56,6 @@ def _select_mcif_symprec_for_non_magnetic_label(filename, lattice, positions, nu
             continue
         return symprec
     return fallback
-
-
-def _laue_group_from_point_group(point_group):
-    pg = str(point_group).strip().replace(' ', '')
-    pg = pg.replace('−', '-').replace('bar', '-')
-    mapping = {
-        '1': '-1', '-1': '-1',
-        '2': '2/m', 'm': '2/m', '2/m': '2/m',
-        '222': 'mmm', 'mm2': 'mmm', 'mmm': 'mmm',
-        '4': '4/m', '-4': '4/m', '4/m': '4/m',
-        '422': '4/mmm', '4mm': '4/mmm', '-42m': '4/mmm',
-        '-4m2': '4/mmm', '4/mmm': '4/mmm',
-        '3': '-3', '-3': '-3',
-        '32': '-3m', '3m': '-3m', '-3m': '-3m',
-        '6': '6/m', '-6': '6/m', '6/m': '6/m',
-        '622': '6/mmm', '6mm': '6/mmm', '-6m2': '6/mmm',
-        '-62m': '6/mmm', '6/mmm': '6/mmm',
-        '23': 'm-3', 'm-3': 'm-3',
-        '432': 'm-3m', '-43m': 'm-3m', 'm-3m': 'm-3m',
-    }
-    return mapping.get(pg)
 
 
 def _seekpath_lattice_tag(lattice, positions, numbers, symprec):
@@ -121,7 +91,7 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
                            symprec=None):
     """Return the structural (moment-free) space/point/Laue group of a cell.
 
-    The configured tolerance applies to every input format. Only the *extra*
+    The configured tolerance applies to every input format. Only the extra
     validated recovery is mcif-specific, because only an mcif declares a parent
     to validate against -- gating the tolerance itself on the file extension
     made the same structure report different symmetry as .mcif and as POSCAR.
@@ -143,56 +113,20 @@ def _non_magnetic_symmetry(structure_file, lattice, positions, numbers, is_mcif,
             'sites': None,
             'lattice': None,
         }
-    # The reported space group belongs to the primitive cell rather than necessarily to the submitted cell.
-    # A magnetic supercell input still reports its parent's space group, so report the primitive site count with it.
+    # spglib reports the primitive cell's group, so a magnetic supercell still shows its parent's; the primitive site count records which cell that is.
     primitive = spglib.find_primitive(cell, symprec=symprec)
     point_group = dataset.pointgroup
     return {
         'non_mag_label': f"{dataset.international} ({dataset.number})",
         'point_group': point_group,
-        'laue_group': _laue_group_from_point_group(point_group) or "Unknown",
+        'laue_group': laue_group_from_point_group(point_group) or "Unknown",
         'spacegroup_number': int(dataset.number),
         'sites': len(primitive[1]) if primitive is not None else None,
         'lattice': _seekpath_lattice_tag(lattice, positions, numbers, symprec),
     }
 
 
-# Operation-file writers
-def write_operations_to_file(
-    filename,
-    rotations,
-    translations,
-    spin_rotations,
-    label_info,
-    verbose=True,
-    basis_label="input structure",
-):
-    """Writes all spin symmetry operations to a text file."""
-    with _atomic_open_text(filename) as f:
-        f.write(
-            f"# Basis: {basis_label} real-space fractional basis "
-            "(a1, a2, a3).\n"
-        )
-        f.write(
-            "# Convention: x' = R x + t for fractional real-space "
-            "column coordinates.\n"
-        )
-        f.write("="*40 + "\n")
-        f.write("SPIN SYMMETRY LOG\n")
-        f.write("="*40 + "\n\n")
-        f.write(f"{label_info}\n\n")
-        f.write(f"Full space-group operations: {len(rotations)}\n")
-        f.write(f"Unique point operations: {count_unique_point_operations(rotations)}\n")
-        f.write("-" * 40 + "\n")
-        for i in range(len(rotations)):
-            f.write(f"Operation {i+1}:\n")
-            f.write(f"  Rotation:\n{rotations[i]}\n")
-            f.write(f"  Translation:\n{translations[i]}\n")
-            f.write(f"  Spin Rotation:\n{spin_rotations[i]}\n")
-            f.write("-" * 20 + "\n")
-    if verbose:
-        print(f"[INFO] All operations written to '{filename}'")
-
+# Spin-operation helpers
 def _spin_axis_from_moments(magmoms):
     """Return a normalized nonzero moment direction for a collinear structure."""
     for moment in np.asarray(magmoms, dtype=float):
@@ -264,6 +198,144 @@ def operation_count_summary(rotations, spin_rotations, spin_axis):
         'extended_spin_flip_operations': 2 * len(flip_indices),
         'extended_spin_preserve_operations': 2 * len(preserve_indices),
     }
+
+
+def count_unique_point_operations(rotations):
+    """Count unique spatial point operations, ignoring translations."""
+    unique_rots = []
+    for rot in rotations:
+        rot_arr = np.array(rot, dtype=int)
+        if not any(np.array_equal(rot_arr, existing) for existing in unique_rots):
+            unique_rots.append(rot_arr)
+    return len(unique_rots)
+
+
+def has_spin_flip_inversion(rotations, spin_rotations, spin_axis):
+    """Return True when inversion is an actual spin-flip operation."""
+    inversion = -np.eye(3, dtype=int)
+    for i in _operation_class_indices(spin_rotations, spin_axis, flip=True):
+        rot = rotations[i]
+        if (
+            np.array_equal(np.array(rot, dtype=int), inversion)
+        ):
+            return True
+    return False
+
+
+def has_spin_flip_translation(rotations, translations, spin_rotations, spin_axis):
+    """Return True when a pure nonzero translation flips spin."""
+    identity = np.eye(3, dtype=int)
+    for i in _operation_class_indices(spin_rotations, spin_axis, flip=True):
+        rot, trans = rotations[i], translations[i]
+        if not np.array_equal(np.array(rot, dtype=int), identity):
+            continue
+        trans_mod = np.mod(np.array(trans, dtype=float), 1.0)
+        trans_mod[np.isclose(trans_mod, 1.0, atol=1e-8)] = 0.0
+        if not np.allclose(trans_mod, 0.0, atol=1e-8):
+            return True
+    return False
+
+
+def altermagnetic_diagnostic(rotations, translations, spin_rotations, spin_axis, magnetic_phase):
+    """Summarize whether spin-flip operations indicate AM splitting or PT."""
+    if "Altermagnet" in str(magnetic_phase):
+        return ""
+    flip_indices = _operation_class_indices(spin_rotations, spin_axis, flip=True)
+    flip_point_ops, _ = _collect_point_ops(rotations, flip_indices)
+    inversion = -np.eye(3, dtype=int)
+    pt = any(np.array_equal(op, inversion) for op in flip_point_ops)
+    if pt:
+        return "PT symmetry detected, not altermagnet."
+    if has_spin_flip_translation(rotations, translations, spin_rotations, spin_axis):
+        return "Ut symmetry detected, not altermagnet."
+    if flip_point_ops:
+        return ""
+    return "No spin-flip point operation detected."
+
+
+def _fsg_operations_from_payload(payload):
+    """Convert FindSpinGroup input-setting SSG operations to NumPy arrays."""
+    operations = payload["ssg"]["ops"]
+    rotations = np.asarray([op["real_rotation"] for op in operations], dtype=float)
+    if np.allclose(rotations, np.rint(rotations), atol=1e-7):
+        rotations = np.rint(rotations).astype(int)
+    translations = np.asarray([op["translation"] for op in operations], dtype=float)
+    spin_rotations = np.asarray([op["spin_rotation"] for op in operations], dtype=float)
+    return rotations, translations, spin_rotations
+
+
+def _deduplicate_collinear_operations(rotations, translations, spin_rotations, spin_axis):
+    """Drop spin-only duplicates while keeping the input-setting spatial operations."""
+    compact = []
+    for rot, trans, spin_rot in zip(rotations, translations, spin_rotations):
+        mapped_axis = np.asarray(spin_rot, dtype=float) @ spin_axis
+        if np.allclose(mapped_axis, spin_axis, atol=1e-7):
+            spin_class = 1
+        elif np.allclose(mapped_axis, -spin_axis, atol=1e-7):
+            spin_class = -1
+        else:
+            continue
+        if any(
+            old_class == spin_class
+            and np.allclose(old_rot, rot, atol=1e-7)
+            and np.allclose(np.mod(old_trans - trans, 1.0), 0.0, atol=1e-7)
+            for old_rot, old_trans, _, old_class in compact
+        ):
+            continue
+        compact.append((rot, trans, spin_rot, spin_class))
+    return (
+        np.asarray([item[0] for item in compact]),
+        np.asarray([item[1] for item in compact]),
+        np.asarray([item[2] for item in compact]),
+    )
+
+
+def _display_ssg_symbol(symbol):
+    """Make FindSpinGroup's database symbol readable in terminal output."""
+    if not symbol:
+        return "Unknown"
+    return (
+        str(symbol)
+        .replace("\u221e", "infinity")
+        .replace("\u0401\u043e", "infinity")
+    )
+
+
+# Operation-file writers
+def write_operations_to_file(
+    filename,
+    rotations,
+    translations,
+    spin_rotations,
+    label_info,
+    verbose=True,
+    basis_label="input structure",
+):
+    """Writes all spin symmetry operations to a text file."""
+    with _atomic_open_text(filename) as f:
+        f.write(
+            f"# Basis: {basis_label} real-space fractional basis "
+            "(a1, a2, a3).\n"
+        )
+        f.write(
+            "# Convention: x' = R x + t for fractional real-space "
+            "column coordinates.\n"
+        )
+        f.write("="*40 + "\n")
+        f.write("SPIN SYMMETRY LOG\n")
+        f.write("="*40 + "\n\n")
+        f.write(f"{label_info}\n\n")
+        f.write(f"Full space-group operations: {len(rotations)}\n")
+        f.write(f"Unique point operations: {count_unique_point_operations(rotations)}\n")
+        f.write("-" * 40 + "\n")
+        for i in range(len(rotations)):
+            f.write(f"Operation {i+1}:\n")
+            f.write(f"  Rotation:\n{rotations[i]}\n")
+            f.write(f"  Translation:\n{translations[i]}\n")
+            f.write(f"  Spin Rotation:\n{spin_rotations[i]}\n")
+            f.write("-" * 20 + "\n")
+    if verbose:
+        print(f"[INFO] All operations written to '{filename}'")
 
 
 def write_flip_ops_to_file(
@@ -351,59 +423,69 @@ def write_preserve_ops_to_file(
     return len(preserve_ops)
 
 
-def count_unique_point_operations(rotations):
-    """Count unique spatial point operations, ignoring translations."""
-    unique_rots = []
-    for rot in rotations:
-        rot_arr = np.array(rot, dtype=int)
-        if not any(np.array_equal(rot_arr, existing) for existing in unique_rots):
-            unique_rots.append(rot_arr)
-    return len(unique_rots)
+# Magnetic space group without SOC
+def _magnetic_type_label(msg_type):
+    labels = {
+        1: "I",
+        2: "II",
+        3: "III",
+        4: "IV",
+    }
+    return labels.get(msg_type, str(msg_type))
 
 
-def has_spin_flip_inversion(rotations, spin_rotations, spin_axis):
-    """Return True when inversion is an actual spin-flip operation."""
-    inversion = -np.eye(3, dtype=int)
-    for i in _operation_class_indices(spin_rotations, spin_axis, flip=True):
-        rot = rotations[i]
-        if (
-            np.array_equal(np.array(rot, dtype=int), inversion)
-        ):
-            return True
-    return False
+def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis):
+    """
+    Compute the MSG without SOC from spin-space operations.
 
+    Only the original FindSpinGroup operations are used here. The
+    inversion-extended point operations written for k mapping are intentionally
+    excluded because they are not physical space-group operations.
+    """
+    msg_rotations = []
+    msg_translations = []
+    msg_time_reversals = []
 
-def has_spin_flip_translation(rotations, translations, spin_rotations, spin_axis):
-    """Return True when a pure nonzero translation flips spin."""
-    identity = np.eye(3, dtype=int)
-    for i in _operation_class_indices(spin_rotations, spin_axis, flip=True):
-        rot, trans = rotations[i], translations[i]
-        if not np.array_equal(np.array(rot, dtype=int), identity):
+    for rot, trans, spin_rot in zip(rotations, translations, spin_rotations):
+        mapped_axis = np.asarray(spin_rot, dtype=float) @ spin_axis
+        if np.allclose(mapped_axis, spin_axis, atol=1e-7):
+            time_reversal = False
+        elif np.allclose(mapped_axis, -spin_axis, atol=1e-7):
+            time_reversal = True
+        else:
             continue
-        trans_mod = np.mod(np.array(trans, dtype=float), 1.0)
-        trans_mod[np.isclose(trans_mod, 1.0, atol=1e-8)] = 0.0
-        if not np.allclose(trans_mod, 0.0, atol=1e-8):
-            return True
-    return False
+        rot_arr = np.asarray(rot, dtype=float)
+        rounded_rot = np.rint(rot_arr)
+        if not np.allclose(rot_arr, rounded_rot, atol=1e-7):
+            raise ValueError("non-integer spatial rotation found in MSG without SOC operations")
+        msg_rotations.append(rounded_rot.astype(int))
+        msg_translations.append(np.asarray(trans, dtype=float))
+        msg_time_reversals.append(time_reversal)
+
+    if not msg_rotations:
+        return None, 0, 0
+
+    msg_type = spglib.get_magnetic_spacegroup_type_from_symmetry(
+        np.asarray(msg_rotations, dtype=int),
+        np.asarray(msg_translations, dtype=float),
+        np.asarray(msg_time_reversals, dtype=bool),
+    )
+    return msg_type, len(msg_rotations), sum(bool(value) for value in msg_time_reversals)
 
 
-def altermagnetic_diagnostic(rotations, translations, spin_rotations, spin_axis, magnetic_phase):
-    """Summarize whether spin-flip operations indicate AM splitting or PT."""
-    if "Altermagnet" in str(magnetic_phase):
-        return ""
-    flip_indices = _operation_class_indices(spin_rotations, spin_axis, flip=True)
-    flip_point_ops, _ = _collect_point_ops(rotations, flip_indices)
-    inversion = -np.eye(3, dtype=int)
-    pt = any(np.array_equal(op, inversion) for op in flip_point_ops)
-    if pt:
-        return "PT symmetry detected, not altermagnet."
-    if has_spin_flip_translation(rotations, translations, spin_rotations, spin_axis):
-        return "Ut symmetry detected, not altermagnet."
-    if flip_point_ops:
-        return ""
-    return "No spin-flip point operation detected."
+def format_msg_without_soc(msg_type):
+    if msg_type is None:
+        return "Unknown"
+    bns_number, bns_symbol = MSG_INT_TO_BNS.get(
+        msg_type.uni_number,
+        (msg_type.bns_number, None),
+    )
+    if bns_symbol:
+        return f"{bns_symbol} (BNS {bns_number}), Type {_magnetic_type_label(msg_type.type)}"
+    return f"BNS {bns_number}, Type {_magnetic_type_label(msg_type.type)}"
 
 
+# Magnetic-moment and spin-axis input parsing
 def parse_magmoms(moments_str):
     """
     Parse scalar collinear moments from manual input.
@@ -465,115 +547,6 @@ def parse_cartesian_spin_axis(axis_str):
     if norm <= 1e-10:
         raise ValueError("spin axis cannot be the zero vector")
     return axis / norm
-
-
-def _display_ssg_symbol(symbol):
-    """Make FindSpinGroup's database symbol readable in terminal output."""
-    if not symbol:
-        return "Unknown"
-    return (
-        str(symbol)
-        .replace("\u221e", "infinity")
-        .replace("\u0401\u043e", "infinity")
-    )
-
-
-def _fsg_operations_from_payload(payload):
-    """Convert FindSpinGroup input-setting SSG operations to NumPy arrays."""
-    operations = payload["ssg"]["ops"]
-    rotations = np.asarray([op["real_rotation"] for op in operations], dtype=float)
-    if np.allclose(rotations, np.rint(rotations), atol=1e-7):
-        rotations = np.rint(rotations).astype(int)
-    translations = np.asarray([op["translation"] for op in operations], dtype=float)
-    spin_rotations = np.asarray([op["spin_rotation"] for op in operations], dtype=float)
-    return rotations, translations, spin_rotations
-
-
-def _deduplicate_collinear_operations(rotations, translations, spin_rotations, spin_axis):
-    """Drop spin-only duplicates while keeping the input-setting spatial operations."""
-    compact = []
-    for rot, trans, spin_rot in zip(rotations, translations, spin_rotations):
-        mapped_axis = np.asarray(spin_rot, dtype=float) @ spin_axis
-        if np.allclose(mapped_axis, spin_axis, atol=1e-7):
-            spin_class = 1
-        elif np.allclose(mapped_axis, -spin_axis, atol=1e-7):
-            spin_class = -1
-        else:
-            continue
-        if any(
-            old_class == spin_class
-            and np.allclose(old_rot, rot, atol=1e-7)
-            and np.allclose(np.mod(old_trans - trans, 1.0), 0.0, atol=1e-7)
-            for old_rot, old_trans, _, old_class in compact
-        ):
-            continue
-        compact.append((rot, trans, spin_rot, spin_class))
-    return (
-        np.asarray([item[0] for item in compact]),
-        np.asarray([item[1] for item in compact]),
-        np.asarray([item[2] for item in compact]),
-    )
-
-
-def _magnetic_type_label(msg_type):
-    labels = {
-        1: "I",
-        2: "II",
-        3: "III",
-        4: "IV",
-    }
-    return labels.get(msg_type, str(msg_type))
-
-
-def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis):
-    """
-    Compute the FindMagSym-style MSG without SOC from spin-space operations.
-
-    Only the original FindSpinGroup operations are used here. The
-    inversion-extended point operations written for k mapping are intentionally
-    excluded because they are not physical space-group operations.
-    """
-    msg_rotations = []
-    msg_translations = []
-    msg_time_reversals = []
-
-    for rot, trans, spin_rot in zip(rotations, translations, spin_rotations):
-        mapped_axis = np.asarray(spin_rot, dtype=float) @ spin_axis
-        if np.allclose(mapped_axis, spin_axis, atol=1e-7):
-            time_reversal = False
-        elif np.allclose(mapped_axis, -spin_axis, atol=1e-7):
-            time_reversal = True
-        else:
-            continue
-        rot_arr = np.asarray(rot, dtype=float)
-        rounded_rot = np.rint(rot_arr)
-        if not np.allclose(rot_arr, rounded_rot, atol=1e-7):
-            raise ValueError("non-integer spatial rotation found in MSG without SOC operations")
-        msg_rotations.append(rounded_rot.astype(int))
-        msg_translations.append(np.asarray(trans, dtype=float))
-        msg_time_reversals.append(time_reversal)
-
-    if not msg_rotations:
-        return None, 0, 0
-
-    msg_type = spglib.get_magnetic_spacegroup_type_from_symmetry(
-        np.asarray(msg_rotations, dtype=int),
-        np.asarray(msg_translations, dtype=float),
-        np.asarray(msg_time_reversals, dtype=bool),
-    )
-    return msg_type, len(msg_rotations), sum(bool(value) for value in msg_time_reversals)
-
-
-def format_msg_without_soc(msg_type):
-    if msg_type is None:
-        return "Unknown"
-    bns_number, bns_symbol = MSG_INT_TO_BNS.get(
-        msg_type.uni_number,
-        (msg_type.bns_number, None),
-    )
-    if bns_symbol:
-        return f"{bns_symbol} (BNS {bns_number}), Type {_magnetic_type_label(msg_type.type)}"
-    return f"BNS {bns_number}, Type {_magnetic_type_label(msg_type.type)}"
 
 
 # Public analysis entry point
@@ -748,7 +721,8 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
                 magmoms,
                 input_spin_setting="cartesian",
             )
-            # FindSpinGroup currently exposes its parsed-data input-setting route only through this private entry point, so keep its use isolated here until a public equivalent is available.
+            # As of findspingroup 0.15.6 the parsed-data input-setting route is exposed only through this private entry point 
+            # (the public ones read a file, which would discard the runtime moments), so keep its use isolated here until a public equivalent exists.
             fsg_input = _find_spin_group_input_ssg_from_parsed(
                 structure_file,
                 lattice,
