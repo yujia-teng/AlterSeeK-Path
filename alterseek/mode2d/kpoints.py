@@ -11,10 +11,3 @@ class KPointsModifier2D(KPointsModifier):
             mode_2d=True,
             input_vacuum_axis=input_vacuum_axis,
         )
-
-
-def run_2d(input_vacuum_axis=None):
-    """Run the interactive 2D workflow."""
-    return KPointsModifier2D(
-        input_vacuum_axis=input_vacuum_axis
-    ).interactive_modify()

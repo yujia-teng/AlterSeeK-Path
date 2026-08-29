@@ -1,10 +1,7 @@
 """Two-dimensional lattice and Brillouin-zone geometry.
 
-The submitted calculation-cell translations are the source of truth.  This
-module never replaces an orthogonal submitted supercell by a smaller hidden
-primitive cell.  It only rotates the physical plane into an internal screen
-frame, constructs its reciprocal lattice, and removes translations from the
-submitted-cell symmetry operations when building the reciprocal point group.
+The submitted calculation cell is the source of truth: this module never
+replaces an orthogonal submitted supercell by a smaller hidden primitive cell.
 """
 
 from dataclasses import dataclass
@@ -112,12 +109,9 @@ def analyze_lattice(
 ):
     """Build the intrinsic 2D geometry of the submitted calculation cell.
 
-    ``vacuum_axis`` may be any submitted lattice-vector index.  The selected
-    vacuum vector must be perpendicular to both periodic vectors and aligned
-    with a Cartesian axis.  The screen kx/ky frame is the structure's own
-    fixed Cartesian axes for the two in-plane directions -- it is never
-    rotated to align with any lattice vector; it never changes the submitted
-    cell.
+    ``vacuum_axis`` may be any submitted lattice-vector index, but that vector
+    must be perpendicular to both periodic vectors and aligned with a
+    Cartesian axis.
     """
     lattice = np.asarray(lattice, dtype=float)
     if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
@@ -155,10 +149,7 @@ def analyze_lattice(
 
     # Screen kx/ky are the submitted structure's own fixed Cartesian axes for
     # the two in-plane directions -- never rotated to align with any lattice
-    # vector.  The vacuum axis must be Cartesian-axis-aligned for this fixed
-    # frame to span the periodic plane; the orthogonality check above already
-    # requires vacuum to be perpendicular to both periodic vectors, and every
-    # 2D structure this project handles sets vacuum exactly along a, b, or c.
+    # vector, which is why the vacuum axis must itself be Cartesian-aligned.
     if abs(abs(vacuum_unit[0]) - 1.0) < 1e-6:
         fixed_axes = (1, 2)
     elif abs(abs(vacuum_unit[1]) - 1.0) < 1e-6:
