@@ -41,7 +41,7 @@ from .geometry import (
 )
 
 class _Arrow3D(FancyArrowPatch):
-    """FancyArrowPatch projected into 3D — paper-quality arrow from any view angle."""
+    """FancyArrowPatch whose endpoints are projected from 3D coordinates."""
     def __init__(self, xs, ys, zs, *args, **kwargs):
         super().__init__((0, 0), (0, 0), *args, **kwargs)
         self._verts3d = xs, ys, zs
@@ -56,6 +56,7 @@ class _Arrow3D(FancyArrowPatch):
 def _draw_ibz_faces_by_sector(ax, hull_pts, hull_simplices, hull_labels,
                               main_color, extra_color,
                               main_alpha=0.20, extra_alpha=0.14):
+    """Draw ordinary and project-added IBZ sectors with different fills."""
     points = np.array(hull_pts)
     labels = list(hull_labels) if hull_labels is not None else None
     extra_flags = (
@@ -106,19 +107,15 @@ def _get_view_direction(ax):
 
 
 def _classify_bz_edges(bz_loops, view_dir):
-    """
-    Classify BZ edges as front or back based on adjacent face normals.
+    """Classify BZ edges as front or back for the given view direction.
 
-    Each loop is one BZ face.  An edge shared by two faces is 'back' if
-    BOTH adjacent face normals point away from the viewer.
-    An edge belonging to only one face is 'back' if that face normal
-    points away from the viewer.
+    An edge is front-facing if any adjacent face points toward the viewer;
+    otherwise, it is back-facing.
     """
-    # Build edge --face-normal map
+    # Map each BZ edge to the normals of its adjacent faces.
     from collections import defaultdict
     edge_normals = defaultdict(list)
 
-    face_normals = []
     for loop in bz_loops:
         pts = loop[:-1]  # remove closing duplicate
         center = np.mean(pts, axis=0)
@@ -131,8 +128,6 @@ def _classify_bz_edges(bz_loops, view_dir):
             n = n / (np.linalg.norm(n) + 1e-15)
         else:
             n = np.array([0., 0., 0.])
-        face_normals.append(n)
-
         for i in range(len(pts)):
             p1 = tuple(np.round(pts[i], 8))
             p2 = tuple(np.round(pts[(i+1) % len(pts)], 8))
@@ -143,7 +138,6 @@ def _classify_bz_edges(bz_loops, view_dir):
     back_edges = []
 
     for edge_key, normals in edge_normals.items():
-        # Edge is front if ANY adjacent face is front-facing
         is_front = any(np.dot(n, view_dir) > 1e-6 for n in normals)
         seg = np.array([list(edge_key[0]), list(edge_key[1])])
         if is_front:
@@ -155,7 +149,7 @@ def _classify_bz_edges(bz_loops, view_dir):
 
 
 def draw_bz_edges(ax, bz_loops, dashed_back=False):
-    """Draw BZ edges. If dashed_back, use view-dependent solid/dashed."""
+    """Draw BZ edges, optionally dashing those behind the visible faces."""
     if dashed_back:
         view_dir = _get_view_direction(ax)
         front, back = _classify_bz_edges(bz_loops, view_dir)
@@ -171,8 +165,9 @@ def draw_bz_edges(ax, bz_loops, dashed_back=False):
                     c='black', ls='-', lw=1.5, alpha=0.6)
 
 
-def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
+def setup_3d_ax(title, bz_loops, b_matrix, bz_center,
                 elev=14, azim=20, dashed_back=False):
+    """Create 3D axes with the BZ frame and reciprocal-vector arrows."""
     b1, b2, b3 = b_matrix[0], b_matrix[1], b_matrix[2]
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
@@ -199,7 +194,7 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
         ax.text(tip[0] + outside[0]*0.08, tip[1] + outside[1]*0.08,
                 tip[2] + outside[2]*0.08, vec_labels[i],
                 color='black', fontsize=24, fontweight='bold', zorder=101)
-    # Use per-axis ranges so the BZ isn't squashed along short axes
+    # Use independent axis ranges so short BZ dimensions retain their scale.
     all_pts = np.vstack([np.array(loop) for loop in bz_loops])
     ranges = np.ptp(all_pts, axis=0)  # [dx, dy, dz]
     pad = 0.25  # fractional padding around BZ
@@ -213,8 +208,9 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center, bz_span,
     return fig, ax
 
 
-def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
+def plot_ibz(ax, kpoints_cart, kpath, hull, centroid_cart,
              hull_pts=None, lattice_type=None, hull_labels=None):
+    """Draw Figure 1's IBZ, path, high-symmetry points, and centroid."""
     points_list = list(kpoints_cart.values())
     # Draw IBZ faces (skipped only when no hull could be built)
     if hull is not None:
@@ -234,15 +230,20 @@ def plot_ibz(ax, kpoints_cart, kpath, display_labels, hull, centroid_cart,
                     alpha=style["alpha"], zorder=50)
     ibz_center = np.mean(points_list, axis=0)
     ibz_span = np.max(np.ptp(np.array(points_list), axis=0))
-    label_offset = ibz_span * 0.1  # scale offset to IBZ size
+    label_distance = ibz_span * 0.1
     path_labels = {label for segment in kpath for label in segment}
     for label, coords in grouped_point_labels(kpoints_cart, path_labels):
         ax.scatter(coords[0], coords[1], coords[2],
                    c='red', s=80, zorder=110, edgecolors='darkred', linewidths=0.5)
         direction = coords - ibz_center
         norm_dir = np.linalg.norm(direction)
-        offset = direction / norm_dir * label_offset if norm_dir > 1e-8 else np.array([0, 0, label_offset])
-        ax.text(coords[0]+offset[0], coords[1]+offset[1], coords[2]+offset[2],
+        label_displacement = (
+            direction / norm_dir * label_distance
+            if norm_dir > 1e-8 else np.array([0, 0, label_distance])
+        )
+        ax.text(coords[0] + label_displacement[0],
+                coords[1] + label_displacement[1],
+                coords[2] + label_displacement[2],
                 _math_label(label),
                 fontsize=22, color='black',
                 zorder=111, ha='center', va='center')
@@ -258,20 +259,19 @@ def _screen_xy(ax, pt3):
     return np.array([x, y])
 
 
-def _best_label_anchor(ax, candidates, avoid_pts):
-    """Pick the candidate 3D anchor whose projected screen position is farthest
-    from every avoid point. Generic placement so a label (e.g. a mirror m_{hkl})
-    clears the drawn high-symmetry points/labels in any case, not one structure.
-    """
-    candidates = np.asarray(candidates, dtype=float)
+def _best_operation_label_position(ax, positions, avoid_pts):
+    """Return the operation-label position farthest from the projected avoid points."""
+    positions = np.asarray(positions, dtype=float)
     if avoid_pts is None or len(avoid_pts) == 0:
-        return candidates[0]
+        return positions[0]
     avoid_screen = np.array([_screen_xy(ax, p) for p in avoid_pts])
-    best, best_score = candidates[0], -np.inf
-    for c in candidates:
-        d = float(np.min(np.linalg.norm(avoid_screen - _screen_xy(ax, c), axis=1)))
+    best, best_score = positions[0], -np.inf
+    for position in positions:
+        d = float(np.min(
+            np.linalg.norm(avoid_screen - _screen_xy(ax, position), axis=1)
+        ))
         if d > best_score:
-            best_score, best = d, c
+            best_score, best = d, position
     return best
 
 
@@ -287,27 +287,23 @@ def _is_operation_colour(colour):
     return bool(np.allclose(rgb, target, atol=0.02))
 
 
-def _label_obstacle_points(ax, samples=16):
-    """Screen samples of what a label must not cover, tagged by their artist.
-
-    The tag matters: a long edge contributes many samples, so counting samples
-    would let one crossing line outweigh moving the label off its own point.
-    Scoring counts distinct tags instead.
-    """
-    points = []
-    tags = []
-    tag = [0]
+def _drawn_points_for_label_layout(ax, samples_per_segment=16):
+    """Return screen points representing content that saved labels should not cover."""
+    drawn_points = []
+    drawn_part_ids = []
+    part_id = 0
 
     def to_display(point3d):
         x, y = _screen_xy(ax, point3d)
         return ax.transData.transform((x, y))
 
-    def sample(start, end):
+    def sample_line_segment(start, end):
+        nonlocal part_id
         start, end = np.asarray(start, float), np.asarray(end, float)
-        tag[0] += 1
-        for fraction in np.linspace(0.0, 1.0, samples):
-            points.append(to_display(start + (end - start) * fraction))
-            tags.append(tag[0])
+        part_id += 1
+        for fraction in np.linspace(0.0, 1.0, samples_per_segment):
+            drawn_points.append(to_display(start + (end - start) * fraction))
+            drawn_part_ids.append(part_id)
 
     curved_glyphs = []
     for line in ax.lines:
@@ -321,12 +317,11 @@ def _label_obstacle_points(ax, samples=16):
             span = np.linalg.norm(screen[-1] - screen[0])
             middle = screen[len(screen) // 2]
             bulge = np.linalg.norm(middle - 0.5 * (screen[0] + screen[-1]))
-            # The rotation arc bulges away from its chord; the axis line does
-            # not, and filling that one would blanket the whole plate.
+            # The rotation arc bulges away from its chord; the straight axis line does not, and treating it as a filled shape would cover most of the figure.
             if span > 0 and bulge > 0.25 * span:
                 curved_glyphs.append(screen)
         for first, second in zip(verts[:-1], verts[1:]):
-            sample(first, second)
+            sample_line_segment(first, second)
     for child in ax.get_children():
         if not isinstance(child, FancyArrowPatch):
             continue
@@ -334,39 +329,40 @@ def _label_obstacle_points(ax, samples=16):
         if verts3d is None:
             continue
         xs, ys, zs = verts3d
-        sample((xs[0], ys[0], zs[0]), (xs[-1], ys[-1], zs[-1]))
+        sample_line_segment(
+            (xs[0], ys[0], zs[0]),
+            (xs[-1], ys[-1], zs[-1]),
+        )
     for collection in ax.collections:
         offsets = getattr(collection, '_offsets3d', None)
         if offsets is None:
             continue
         xs, ys, zs = offsets
         for point in np.column_stack([xs, ys, zs]):
-            tag[0] += 1
-            points.append(to_display(point))
-            tags.append(tag[0])
-    # The rotation arc is an open curve, so sampling it alone leaves the inside
-    # of the loop looking free and a label drops into it. Fill the arc's own
-    # screen box so the glyph behaves as one solid object.
+            part_id += 1
+            drawn_points.append(to_display(point))
+            drawn_part_ids.append(part_id)
+    # Treat the rotation arc's screen-space bounding box as occupied so a label is not placed inside the arc.
     for screen in curved_glyphs:
         low, high = screen.min(axis=0), screen.max(axis=0)
-        tag[0] += 1
+        part_id += 1
         for x in np.linspace(low[0], high[0], 8):
             for y in np.linspace(low[1], high[1], 8):
-                points.append(np.array([x, y]))
-                tags.append(tag[0])
-    if not points:
+                drawn_points.append(np.array([x, y]))
+                drawn_part_ids.append(part_id)
+    if not drawn_points:
         return np.empty((0, 2)), np.empty(0, dtype=int)
-    return np.asarray(points, dtype=float), np.asarray(tags, dtype=int)
+    return (
+        np.asarray(drawn_points, dtype=float),
+        np.asarray(drawn_part_ids, dtype=int),
+    )
 
 
 def _relayout_labels_for_save(fig, ax, max_shift=2.0, rounds=2):
-    """Nudge the plate's labels off collisions for one fixed camera.
+    """Move labels away from overlaps in a fixed saved view.
 
-    Only the saved figure is solved: it is rebuilt at the view angle the user
-    settled on, so the projection no longer moves and each label can be scored
-    against the lines, arrows and neighbouring labels as they actually appear.
-    The interactive window keeps the plain 3D offsets, where any solve would
-    fight the camera being dragged.
+    Interactive labels retain their 3D positions because their screen positions
+    change as the camera moves.
     """
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -378,32 +374,31 @@ def _relayout_labels_for_save(fig, ax, max_shift=2.0, rounds=2):
         position_3d = getattr(text, 'get_position_3d', None)
         if position_3d is not None:
             x, y = _screen_xy(ax, position_3d())
-            anchor = ax.transData.transform((x, y))
+            original_position = ax.transData.transform((x, y))
         else:
-            anchor = text.get_transform().transform(text.get_position())
-        # Move the label onto the figure so it can be positioned in screen
-        # space; a Text3D can only be placed through the projection.
+            original_position = text.get_transform().transform(text.get_position())
+        # Replace each 3D label with a 2D copy so it can be repositioned in screen space.
         clone = fig.text(
-            *fig.transFigure.inverted().transform(anchor), text.get_text(),
+            *fig.transFigure.inverted().transform(original_position), text.get_text(),
             color=text.get_color(), fontsize=text.get_fontsize(),
             fontweight=text.get_fontweight(), ha=text.get_ha(),
             va=text.get_va(), zorder=200,
         )
         text.set_visible(False)
-        placed.append((clone, np.asarray(anchor, dtype=float)))
+        placed.append((clone, np.asarray(original_position, dtype=float)))
     if len(placed) < 2:
         return
 
-    obstacles, obstacle_tags = _label_obstacle_points(ax)
+    avoid_points, drawn_part_ids = _drawn_points_for_label_layout(ax)
     boxes = [clone.get_window_extent(renderer) for clone, _ in placed]
     step = float(np.median([box.height for box in boxes])) * 0.75
     if not np.isfinite(step) or step <= 0:
         return
 
     def box_for(index, offset):
-        clone, anchor = placed[index]
+        clone, original_position = placed[index]
         clone.set_position(
-            fig.transFigure.inverted().transform(anchor + offset)
+            fig.transFigure.inverted().transform(original_position + offset)
         )
         return clone.get_window_extent(renderer)
 
@@ -415,18 +410,17 @@ def _relayout_labels_for_save(fig, ax, max_shift=2.0, rounds=2):
             overlap = Bbox.intersection(box, other_box)
             if overlap is not None:
                 penalty += overlap.width * overlap.height
-        if len(obstacles):
+        if len(avoid_points):
             hits = (
-                (obstacles[:, 0] > box.x0) & (obstacles[:, 0] < box.x1)
-                & (obstacles[:, 1] > box.y0) & (obstacles[:, 1] < box.y1)
+                (avoid_points[:, 0] > box.x0) & (avoid_points[:, 0] < box.x1)
+                & (avoid_points[:, 1] > box.y0) & (avoid_points[:, 1] < box.y1)
             )
-            crossings = len(np.unique(obstacle_tags[hits]))
+            crossings = len(np.unique(drawn_part_ids[hits]))
             penalty += 1.2 * step * step * float(crossings)
-        # Keep the label near the point it names: the cost of walking away
-        # grows quadratically, so a small nudge is cheap and a long trip is not.
+        # Penalize larger shifts quadratically to keep each label near its point.
         shift = float(np.linalg.norm(offset)) / step
         penalty += 0.9 * step * step * shift * shift
-        # Tie-break upward, the usual place for a point label.
+        # Slightly prefer upward shifts, where point labels are conventionally placed.
         return penalty - 0.25 * step * float(offset[1])
 
     directions = np.array([
@@ -451,10 +445,8 @@ def _relayout_labels_for_save(fig, ax, max_shift=2.0, rounds=2):
             boxes[index] = box_for(index, best_offset)
 
 
-def _mirror_label_candidates(poly, bz_radius):
-    """Anchor candidates around a mirror-plane polygon: each rim vertex and edge
-    midpoint pushed outward (in-plane) and lifted slightly, so the label sits
-    just off the plane rim. The caller screen-tests these to avoid overlaps."""
+def _mirror_label_positions(poly, bz_radius):
+    """Return candidate label positions just beyond the mirror-plane polygon boundary."""
     poly = np.asarray(poly, dtype=float)
     c0 = poly.mean(axis=0)
     margin = bz_radius * 0.18
@@ -472,18 +464,13 @@ def _mirror_label_candidates(poly, bz_radius):
 
 def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
                     avoid_pts=None, elev=None, azim=None):
-    """
-    Draw the geometric visual for the chosen spin-flip operation on ax.
+    """Draw the selected spin-flip operation in the 3D BZ.
 
-      Mirror  (det=-1, tr=1)  : grey shaded plane through Γ + m_{hkl} label
-      Cn rotation (det=+1)    : bold colored axis arrow + curved rotation arrow
-      Inversion / Sn / identity : nothing drawn
+    A mirror is shown as a shaded plane. A proper rotation or rotoinversion is
+    shown as a colored axis and curved arrow. Identity and inversion are not drawn.
 
-    The mirror is labelled by its plane normal expressed as reduced integer
-    (hkl) indices in the figure's reciprocal (b1,b2,b3) basis.
-
-    elev/azim are the Matplotlib 3D view angles; they orient the curved
-    rotation arrow so its back gap stays away from the camera.
+    Mirror labels use the plane normal in the reciprocal basis. The view angles
+    orient the curved arrow relative to the camera.
     """
     op = _classify_spinflip_op(R_cart)
     op_type = op['type']
@@ -506,9 +493,9 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
             n = np.asarray(op['axis'], dtype=float)
             idx = _reduce_int_vector(n @ np.linalg.inv(b_matrix))
             m_label = _format_miller('m', idx)
-            # Place the label at the rim anchor farthest from existing screen-space points and labels so it does not land on a BZ-boundary point such as K.
-            candidates = _mirror_label_candidates(poly, bz_radius)
-            label_pt = _best_label_anchor(ax, candidates, avoid_pts)
+            # Place the label at the boundary position farthest from existing screen-space points so it does not land on a BZ-boundary point such as K.
+            positions = _mirror_label_positions(poly, bz_radius)
+            label_pt = _best_operation_label_position(ax, positions, avoid_pts)
             mlx, mly, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
             m_artist = ax.text2D(
                 mlx, mly, m_label, transform=ax.transData,
@@ -520,7 +507,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
                 lx, ly, _ = proj3d.proj_transform(*label_pt, ax.get_proj())
                 m_artist.set_position((lx, ly))
 
-            ax._alterseek_arc_updater = _update_mirror_label
+            ax._alterseek_operation_visual_updater = _update_mirror_label
 
     elif op_type in ('rotation', 'rotoreflection') and op['axis'] is not None:
         axis = np.array(op['axis'], dtype=float)
@@ -545,7 +532,7 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
             color=AXIS_COLOR, lw=1.6, ls='--', alpha=0.55,
             zorder=OP_ZORDER,
         )
-        # Solid arrowhead at the tip (like the c_n axis arrow in the reference).
+        # Draw a solid arrowhead at the positive end of the axis.
         head_len = bz_radius * 0.18
         shaft_pt = tip - axis * head_len
         # Upper shaft stops at the arrow base; the final segment is the arrow.
@@ -680,17 +667,16 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
             )
             label_artist.set_position((label_x_now, label_y_now))
 
-        ax._alterseek_arc_updater = _update_camera_facing_arc
+        ax._alterseek_operation_visual_updater = _update_camera_facing_arc
 
 
-def _connect_arc_view_follow(fig, ax):
+def _connect_operation_visual_view_follow(fig, ax):
+    """Update the operation visual when the interactive camera moves.
+
+    Rotation arcs remain on the visible side, while projected arrows and labels
+    remain aligned with their 3D positions.
     """
-    Make the rotation arc follow the camera in an interactive window: whenever
-    the user drags to a new view, re-orient the arc so its arrowhead stays on
-    the near (visible) side instead of swinging behind the BZ. No-op if the axis
-    has no rotation arc (mirror/identity/inversion ops).
-    """
-    updater = getattr(ax, '_alterseek_arc_updater', None)
+    updater = getattr(ax, '_alterseek_operation_visual_updater', None)
     if updater is None:
         return
     state = {'view': (ax.elev, ax.azim)}
@@ -705,15 +691,14 @@ def _connect_arc_view_follow(fig, ax):
     fig.canvas.mpl_connect('motion_notify_event', _on_move)
 
 
-def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
+def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
                           kpoints_data, ibz_kpoints_frac,
                           hull_pts, hull_simplices,
                           centroid_frac, R,
-                          output_path, elev=14, azim=20, show_plot=True,
-                          block=True, path_sequence=None, R_cart=None,
-                          defer_show=False, unique_ops=None, save_pdf=False):
-    """
-    Generate the spin-flip connection figure (replaces Fig 2 / mapped-BZ figure).
+                          output_path, path_sequence, elev=14, azim=20,
+                          show_plot=True, block=True, R_cart=None,
+                          defer_show=False, save_pdf=False):
+    """Plot the 3D spin-flip IBZs and generated path connections.
 
     Shows the 3D BZ with:
       - Salmon shading   : spin-up IBZ (original)
@@ -722,13 +707,15 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
       - Blue solid lines : spin-down segments of the generated path (primed / k')
       - Gold star / label: k  (IBZ centroid) with dashed lines to original high-sym points
       - Blue circle      : k' (spin-flip partner) with dashed lines to mapped high-sym points
-      - Pink plane       : mirror plane (only when R is a pure mirror)
+      - Operation visual : mirror plane or rotation/rotoinversion axis and arrow
 
-    path_sequence : list returned by KPointsModifier.insert_general_kpoints(), optional.
+    path_sequence : list returned by KPointsModifier.insert_general_kpoints().
         Each entry is [kx, ky, kz, label] (fractional coords) or None (segment break).
-        When provided, only the generated-path segments are drawn, coloured by spin side.
-        When None, falls back to drawing all raw KPOINTS file segments in red.
+        It controls the generated high-symmetry segments and k/k' connections.
     """
+    if path_sequence is None or len(path_sequence) == 0:
+        raise ValueError("Figure 2 requires a nonempty generated path_sequence")
+
     b1, b2, b3 = b_matrix[0], b_matrix[1], b_matrix[2]
     b_T = b_matrix.T
     b_T_inv = np.linalg.inv(b_T)   # maps Cartesian k -> fractional
@@ -750,8 +737,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
             f = np.array(frac)
             ibz_orig[lbl] = f[0] * b1 + f[1] * b2 + f[2] * b3
     if not ibz_orig and kpoints_data:
-        # Without an IBZ label map, derive high-symmetry labels from KPOINTS
-        # and retain k and k-prime only as guide points.
+        # If the IBZ label map is unavailable, derive its unprimed high-symmetry points from KPOINTS; k and k' are handled separately.
         for row in kpoints_data:
             if len(row) < 4:
                 continue
@@ -762,8 +748,8 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 ibz_orig[lbl] = row[0] * b1 + row[1] * b2 + row[2] * b3
 
     # Apply R^{-T} to the original high-symmetry points to obtain the spin-down IBZ.
-    # Keep only noncoincident mapped points for labels to avoid stacked labels such as Gamma and Gamma-prime.
-    # Keep every mapped point for dashed lines so k-prime can still connect to a self-mapped point without a separate prime label.
+    # Keep only noncoincident mapped points for labels to avoid stacked labels such as Gamma and Gamma'.
+    # Keep every mapped point for dashed lines so k' can still connect to a self-mapped point without a separate primed label.
     ibz_mapped       = {}
     ibz_mapped_lines = {}
     for lbl, frac in ibz_kpoints_frac.items():
@@ -780,7 +766,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         if not coincident:
             ibz_mapped[lbl + "'"] = pt
 
-    # Spin-down IBZ hull vertices (apply same fractional transform to each vertex)
+    # Map the Figure 1 hull vertices to the spin-down IBZ in Cartesian coordinates.
     mapped_hull_pts = None
     if hull_pts is not None:
         mapped_hull_pts = (R_cart @ np.array(hull_pts).T).T
@@ -790,12 +776,10 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         else None
     )
 
-    # Filter threshold: skip connections shorter than 5% of BZ radius
     bz_radius = np.max(np.linalg.norm(np.vstack(bz_loops), axis=1))
-    threshold = 0.05 * bz_radius
 
     def _draw(ax):
-        # Draw the mirror plane or rotation axis before the IBZ so the IBZ remains on top.
+        # Draw the operation visual first; the mirror plane stays below the IBZ, while rotation and rotoinversion axes use a high z-order so they remain visible.
         # Pass existing high-symmetry points and reciprocal-axis tips so the operation label can avoid them in screen space.
         avoid = list(ibz_orig.values()) + list(ibz_mapped.values())
         avoid += [b1 * 0.5, b2 * 0.5, b3 * 0.5]
@@ -814,7 +798,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]],
                         c='darkred', lw=1.8, alpha=0.85, zorder=10)
 
-        # Spin-down IBZ: the same Figure-1 hull mapped by the chosen spin-flip op.
+        # Spin-down IBZ: the same Figure 1 hull mapped by the chosen spin-flip operation.
         down_pts, down_simplices = mapped_hull_pts, hull_simplices
         if down_pts is not None and down_simplices is not None:
             down_pts = np.array(down_pts)
@@ -825,8 +809,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                 ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]],
                         c='navy', lw=1.8, alpha=0.85, zorder=10)
 
-        # Use path_sequence only for label order and look up geometry from the original and mapped Figure 1 coordinate maps.
-        # This keeps Figure 2 in the same high-symmetry convention as Figure 1 even when different bases reuse a label.
+        # Use path_sequence for the connection order, but draw each label at its Figure 1 coordinate so Figures 1 and 2 use the same plotting basis.
         def _path_point(label):
             if label in ('k', "k'"):
                 return None
@@ -846,36 +829,33 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
                     return pt
             return None
 
-        if path_sequence is not None:
-            for A, B, spin_side in generated_plain_path_segments(path_sequence):
-                pa_c = _path_point(A[3])
-                pb_c = _path_point(B[3])
-                if pa_c is None or pb_c is None:
-                    continue
-                col = 'navy' if spin_side == 'down' else 'red'
-                ax.plot([pa_c[0], pb_c[0]], [pa_c[1], pb_c[1]], [pa_c[2], pb_c[2]],
-                        c=col, lw=4.0, alpha=0.9, zorder=50)
-        else:
-            # Fallback: draw all raw KPOINTS file segments in red
-            for i in range(0, len(kpoints_data) - 1, 2):
-                p1c = (kpoints_data[i][0] * b1 + kpoints_data[i][1] * b2
-                       + kpoints_data[i][2] * b3)
-                p2c = (kpoints_data[i+1][0] * b1 + kpoints_data[i+1][1] * b2
-                       + kpoints_data[i+1][2] * b3)
-                ax.plot([p1c[0], p2c[0]], [p1c[1], p2c[1]], [p1c[2], p2c[2]],
-                        c='red', lw=2.5, alpha=0.9, zorder=50)
+        for A, B, spin_side in generated_plain_path_segments(path_sequence):
+            pa_c = _path_point(A[3])
+            pb_c = _path_point(B[3])
+            if pa_c is None or pb_c is None:
+                continue
+            col = 'navy' if spin_side == 'down' else 'red'
+            ax.plot([pa_c[0], pb_c[0]], [pa_c[1], pb_c[1]], [pa_c[2], pb_c[2]],
+                    c=col, lw=4.0, alpha=0.9, zorder=50)
 
-        # Label helpers — use combined span/center so offset scale matches Fig 1
-        _all_pts = np.array(list(ibz_orig.values()) + list(ibz_mapped.values()))
-        _lbl_center = np.mean(_all_pts, axis=0) if len(_all_pts) else np.zeros(3)
-        # Derive label offsets from the original IBZ only because a distant mapped sector, such as one flipped by C2, would otherwise inflate the span and push every label away from its point.
-        _orig_pts = np.array(list(ibz_orig.values())) if ibz_orig else _all_pts
-        _lbl_span = max(np.max(np.ptp(_orig_pts, axis=0)), 1e-8) if len(_orig_pts) else 1.0
-        _off_sc = _lbl_span * 0.1
-        label_source = path_sequence if path_sequence is not None else kpoints_data
+        # Use the center of both IBZs to place each label outward from the plotted points.
+        all_ibz_points = np.array(list(ibz_orig.values()) + list(ibz_mapped.values()))
+        combined_center = (
+            np.mean(all_ibz_points, axis=0)
+            if len(all_ibz_points) else np.zeros(3)
+        )
+        # Set the label-to-point distance from the original IBZ size so a distant mapped IBZ does not move labels too far from their points.
+        original_ibz_points = (
+            np.array(list(ibz_orig.values())) if ibz_orig else all_ibz_points
+        )
+        original_ibz_span = (
+            max(np.max(np.ptp(original_ibz_points, axis=0)), 1e-8)
+            if len(original_ibz_points) else 1.0
+        )
+        label_distance = original_ibz_span * 0.1
         sequence_labels = {
             alias
-            for point in label_source
+            for point in path_sequence
             if point is not None
             for alias in label_aliases(point[3])
         }
@@ -884,26 +864,27 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
             for lbl, hpt in grouped_point_labels(pts_dict, sequence_labels):
                 ax.scatter(*hpt, c=color, s=60, zorder=110,
                            edgecolors=edgecolor, linewidths=0.5)
-                direction = hpt - _lbl_center
+                direction = hpt - combined_center
                 nd = np.linalg.norm(direction)
-                off = direction / nd * _off_sc if nd > 1e-8 else np.array([0, 0, _off_sc])
-                ax.text(*(hpt + off), _math_label(lbl), fontsize=22, color=edgecolor,
+                label_displacement = (
+                    direction / nd * label_distance
+                    if nd > 1e-8 else np.array([0, 0, label_distance])
+                )
+                ax.text(*(hpt + label_displacement), _math_label(lbl), fontsize=22, color=edgecolor,
                         zorder=111, ha='center', va='center')
 
         _label_pts(ibz_orig,   color='salmon',          edgecolor='darkred')
         _label_pts(ibz_mapped, color='cornflowerblue',  edgecolor='navy')
 
-        # k --original high-sym points (dashed blue)
+        # Draw the dashed k-to-high-symmetry path connections.
         for hpt in ibz_orig.values():
-            if np.linalg.norm(hpt - k_cart) > threshold:
-                ax.plot([hpt[0], k_cart[0]], [hpt[1], k_cart[1]], [hpt[2], k_cart[2]],
-                        c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40)
+            ax.plot([hpt[0], k_cart[0]], [hpt[1], k_cart[1]], [hpt[2], k_cart[2]],
+                    c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40)
 
-        # Use all mapped points for dashed connections from k-prime so self-mapped high-symmetry points remain connected.
+        # Draw the dashed k'-to-mapped-high-symmetry path connections, including self-mapped points.
         for hpt in ibz_mapped_lines.values():
-            if np.linalg.norm(hpt - kp_cart) > threshold:
-                ax.plot([hpt[0], kp_cart[0]], [hpt[1], kp_cart[1]], [hpt[2], kp_cart[2]],
-                        c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40)
+            ax.plot([hpt[0], kp_cart[0]], [hpt[1], kp_cart[1]], [hpt[2], kp_cart[2]],
+                    c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40)
 
         # k and k' markers
         ax.scatter(*k_cart, c='gold', s=300, marker='*',
@@ -913,12 +894,12 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
         ax.legend(loc='upper right', fontsize=18)
 
     fig, ax = setup_3d_ax("Spin-flip path connections",
-                          bz_loops, b_matrix, bz_center, bz_span,
+                          bz_loops, b_matrix, bz_center,
                           elev=elev, azim=azim, dashed_back=False)
     _draw(ax)
-    # In an interactive window, keep the rotation arc facing the camera on drag.
+    # Keep the operation visual aligned with the camera in the interactive window.
     if show_plot:
-        _connect_arc_view_follow(fig, ax)
+        _connect_operation_visual_view_follow(fig, ax)
     plt.tight_layout()
 
     display_fig = fig if show_plot and defer_show else None
@@ -928,7 +909,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
             try:
                 save_figure, save_ax = setup_3d_ax(
                     "Spin-flip path connections",
-                    bz_loops, b_matrix, bz_center, bz_span,
+                    bz_loops, b_matrix, bz_center,
                     elev=ax.elev, azim=ax.azim,
                     dashed_back=True,
                 )
@@ -960,9 +941,9 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     elif not show_plot:
         plt.close(fig)
 
-    # Re-render with dashed back-edges for saved PNG
+    # Re-render with dashed back edges for the saved output.
     fig_save, ax_save = setup_3d_ax("Spin-flip path connections",
-                                    bz_loops, b_matrix, bz_center, bz_span,
+                                    bz_loops, b_matrix, bz_center,
                                     elev=elev, azim=azim, dashed_back=True)
     _draw(ax_save)
     plt.tight_layout()
@@ -979,7 +960,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center, bz_span,
     return display_fig
 
 
-def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
+def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
                         unique_ops, centroid_cart,
                         hull_pts, hull_simplices,
                         R, output_path,
@@ -1019,14 +1000,14 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
             print("[Warning] Skipping spin-BZ figure: inconsistent spin-operation classes.")
             return
     else:
-        # Without a preserve file, classify the available operations directly.
+        # Without separate spin-preserving operation data, classify the available operations directly.
         spin_down_mask = _classify_spin_down_ops(
             b_matrix, unique_ops, centroid_cart, R, flip_ops_frac
         )
 
     def _draw(ax):
         if show_helper_plane:
-            draw_kz0_helper_plane(ax, bz_loops, z0=z0, axis=cut_axis)
+            draw_cut_plane_boundary(ax, bz_loops, z0=z0, axis=cut_axis)
 
         if mapped_spin_hulls is not None:
             cells_to_draw = mapped_spin_hulls
@@ -1050,7 +1031,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
         ax.legend(loc='upper right', fontsize=10)
 
     fig, ax = setup_3d_ax("Spin-up (red) / Spin-down (blue) BZ",
-                          bz_loops, b_matrix, bz_center, bz_span,
+                          bz_loops, b_matrix, bz_center,
                           elev=elev, azim=azim, dashed_back=False)
     _draw(ax)
     plt.tight_layout()
@@ -1062,7 +1043,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
             try:
                 save_figure, save_ax = setup_3d_ax(
                     "Spin-up (red) / Spin-down (blue) BZ",
-                    bz_loops, b_matrix, bz_center, bz_span,
+                    bz_loops, b_matrix, bz_center,
                     elev=ax.elev, azim=ax.azim,
                     dashed_back=True,
                 )
@@ -1090,9 +1071,9 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
     elif not show_plot:
         plt.close(fig)
 
-    # Re-render with dashed back-edges for saved PNG
+    # Re-render with dashed back edges for the saved output.
     fig, ax = setup_3d_ax("Spin-up (red) / Spin-down (blue) BZ",
-                          bz_loops, b_matrix, bz_center, bz_span,
+                          bz_loops, b_matrix, bz_center,
                           elev=elev, azim=azim, dashed_back=True)
     _draw(ax)
     plt.tight_layout()
@@ -1108,8 +1089,8 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center, bz_span,
     return display_fig
 
 
-def draw_kz0_helper_plane(ax, bz_loops, z0=0.0, pad=0.08, axis=2):
-    """Draw the k[axis]=z0 BZ-section outline without changing any BZ geometry."""
+def draw_cut_plane_boundary(ax, bz_loops, z0=0.0, axis=2):
+    """Draw the boundary where the k[axis] = z0 plane intersects the BZ."""
     outline = _bz_kz_plane_outline(bz_loops, z0=z0, axis=axis)
     if outline is not None:
         i0, i1 = _IN_PLANE_AXES[axis]
@@ -1141,7 +1122,7 @@ def draw_cut_plane_axis_key(ax, outline, axis, color='#202020'):
         # fontweight does not reach mathtext, so the bold comes from \mathbf, matching the b-arrow and high-symmetry labels.
         ax.text(x0 + dx * 1.12, y0 + dy * 1.12, rf'$\mathbf{{k_{name}}}$',
                 fontsize=20, ha=ha, va=va, color=color, clip_on=False)
-    # Annotations do not extend the data limits, so anchor the key's own extent with invisible points.
+    # Annotations do not extend the data limits, so include the key's extent with invisible points.
     ax.plot([x0, x0 + 1.45 * arm, x0], [y0, y0, y0 + 1.45 * arm], alpha=0.0)
 
 
@@ -1209,9 +1190,7 @@ def draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=0.0, axis=2):
                 color=color, zorder=221, clip_on=False)
 
 
-# The flat top view autoscales to its own content, while the 3D views leave a
-# wide margin around the BZ.  Scale the top view's window up by this factor so
-# the BZ reads at the same size next to them.
+# Expand the top-view limits so the BZ appears at the same size as in the 3D figures, which use wider margins.
 _TOP_VIEW_VIEW_SCALE = 1.36
 
 
@@ -1226,7 +1205,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
                                  show_projected_axes=True,
                                  show_legend=False,
                                  hull_labels=None, save_pdf=False):
-    """Draw a darker top-view k[cut_axis]=z0 slice of the Figure 3 spin-BZ coloring."""
+    """Draw a darker top view of the Figure 3 spin-BZ section at k[cut_axis] = z0."""
     if hull_pts is None or hull_simplices is None or not len(unique_ops):
         print("[Note] Skipping spin-BZ top-view figure (no hull or symmetry ops available).")
         return
@@ -1250,6 +1229,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         spin_down_mask = _classify_spin_down_ops(
             b_matrix, unique_ops, centroid_cart, R, flip_ops_frac)
 
+    # Move the spin-up and spin-down section slightly off the requested plane, toward the centroid when possible, so a sector-boundary cut has unambiguous colors.
     z_span = np.ptp(np.vstack(bz_loops)[:, cut_axis])
     z_eps = max(float(z_span) * 1e-6, 1e-8)
     side = np.sign(centroid_cart[cut_axis] - z0)
@@ -1261,8 +1241,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     up_labeled = False
     down_labeled = False
 
-    # Ordinary HPKOT labels ending in _2, such as mP1 B_2/D_2 and hR-family points, are real hull vertices rather than project-doubled copies.
-    # Treat a hull as doubled only when it contains a genuine copied _A label.
+    # Only a project-added _A-style label identifies a doubled IBZ; ordinary HPKOT _2 labels alone do not.
     extra_flags = (
         _doubled_ibz_extra_flags(hull_labels) if hull_labels is not None
         else None
@@ -1322,19 +1301,16 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
         closed = np.vstack([outline, outline[0]])
         ax.plot(closed[:, 0], closed[:, 1], color='black', lw=2.0, label='BZ boundary')
         if cut_axis != 2:
-            # kz cuts keep their established look; a cut on another plane needs its in-plane axes named.
+            # Add an in-plane coordinate key when the cut is not the usual constant-kz plane.
             draw_cut_plane_axis_key(ax, outline, cut_axis)
 
     if show_projected_axes and abs(z0) < 1e-8:
-        # Reciprocal-axis arrows start at Gamma's hardcoded (0, 0) projection, so they are meaningful only when the cut plane passes through Gamma at z0 = 0.
-        # At another cut height the BZ cross-section is centered elsewhere and the arrows would point to the wrong location.
+        # Draw reciprocal-axis arrows only for a cut through Gamma because their displayed origin is fixed at Gamma.
         draw_projected_reciprocal_axes(ax, b_matrix, bz_loops, z0=z0,
                                        axis=cut_axis)
 
     ax.set_aspect('equal', adjustable='box')
-    # Autoscale hugs the cross-section, so this flat view rendered its BZ much
-    # larger than the 3D views of the same case that sit beside it in a figure.
-    # Widen the view about its own centre, square, to match their scale.
+    # Expand the square plot limits so the BZ appears at the same size as in the 3D figures.
     x_lo, x_hi = ax.get_xlim()
     y_lo, y_hi = ax.get_ylim()
     center = (0.5 * (x_lo + x_hi), 0.5 * (y_lo + y_hi))
@@ -1343,8 +1319,9 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     ax.set_ylim(center[1] - half, center[1] + half)
     if show_title:
         cut_label = ('x', 'y', 'z')[cut_axis]
+        cut_value = f'{float(z0):.6g}'
         ax.set_title('Spin-up / Spin-down BZ top view '
-                     f'($k_{cut_label} = 0$)', fontsize=18)
+                     f'($k_{cut_label} = {cut_value}$)', fontsize=18)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_axis_off()

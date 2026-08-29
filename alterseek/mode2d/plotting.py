@@ -431,7 +431,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
         name = str(label)
         if prime and not name.endswith("'"):
             name += "'"
-        # Offset in typographic units and anchor the near edge of the text box,
+        # Offset in typographic units and align the near edge of the text box,
         # so the gap does not shrink as the label gets wider or the wedge smaller.
         dx, dy = float(direction[0]), float(direction[1])
         text_color = label_color if label_color is not None else edgecolor
@@ -648,20 +648,17 @@ def _finish_2d_figure(fig, output_path, save_pdf, deferred_figures=None):
     return expected_paths
 
 
-def _line_label_anchor(p_pos, p_neg, avoid_pts):
-    """Pick whichever end of a through-Gamma line is farthest from the
-    already-drawn high-symmetry points/labels, so the op label doesn't land
-    on top of them. Same idea as the 3D ``_best_label_anchor``, simplified
-    since there is no camera/projection in the 2D figures."""
-    candidates = [p_pos, p_neg]
+def _line_operation_label_position(p_pos, p_neg, avoid_pts):
+    """Return the line endpoint farthest from the avoid points."""
+    positions = [p_pos, p_neg]
     if avoid_pts is None or len(avoid_pts) == 0:
-        return candidates[0]
+        return positions[0]
     avoid = np.asarray(avoid_pts, dtype=float)
-    best, best_score = candidates[0], -np.inf
-    for c in candidates:
-        d = float(np.min(np.linalg.norm(avoid - c, axis=1)))
+    best, best_score = positions[0], -np.inf
+    for position in positions:
+        d = float(np.min(np.linalg.norm(avoid - position, axis=1)))
         if d > best_score:
-            best_score, best = d, c
+            best_score, best = d, position
     return best
 
 
@@ -783,13 +780,13 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
         idx = _reduce_int_vector(axis_full @ np.linalg.inv(b_matrix))
         label = _format_miller('2', idx)
-        anchor = _line_label_anchor(p_pos, p_neg, avoid_pts)
-        sign = 1.0 if np.array_equal(anchor, p_pos) else -1.0
-        # The anchor sits on the BZ boundary, so offset the text box's near edge
+        label_position = _line_operation_label_position(p_pos, p_neg, avoid_pts)
+        sign = 1.0 if np.array_equal(label_position, p_pos) else -1.0
+        # The label position sits on the BZ boundary, so offset the text box's near edge
         # outward rather than centring it there, which straddles the boundary.
         dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
         ax.annotate(
-            label, xy=(anchor[0], anchor[1]), textcoords="offset points",
+            label, xy=(label_position[0], label_position[1]), textcoords="offset points",
             xytext=(_LABEL_OFFSET_POINTS_X * dx,
                     _LABEL_OFFSET_POINTS_Y * dy),
             fontsize=22, fontweight='bold', color=COLOR,
@@ -815,13 +812,13 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
 
         idx = _reduce_int_vector(normal3 @ np.linalg.inv(b_matrix))
         label = _format_miller('m', idx)
-        anchor = _line_label_anchor(p_pos, p_neg, avoid_pts)
-        sign = 1.0 if np.array_equal(anchor, p_pos) else -1.0
-        # The anchor sits on the BZ boundary, so offset the text box's near edge
+        label_position = _line_operation_label_position(p_pos, p_neg, avoid_pts)
+        sign = 1.0 if np.array_equal(label_position, p_pos) else -1.0
+        # The label position sits on the BZ boundary, so offset the text box's near edge
         # outward rather than centring it there, which straddles the boundary.
         dx, dy = float(sign * line_dir[0]), float(sign * line_dir[1])
         ax.annotate(
-            label, xy=(anchor[0], anchor[1]), textcoords="offset points",
+            label, xy=(label_position[0], label_position[1]), textcoords="offset points",
             xytext=(_LABEL_OFFSET_POINTS_X * dx,
                     _LABEL_OFFSET_POINTS_Y * dy),
             fontsize=22, fontweight='bold', color=COLOR,

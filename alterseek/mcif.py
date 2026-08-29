@@ -1,15 +1,8 @@
-"""Declared nonmagnetic-parent hints read from an MCIF file.
+"""MCIF-specific moment validation and nonmagnetic-parent metadata.
 
-MAGNDATA MCIFs record the parent-to-child transformation and the parent space
-group alongside the magnetic structure. Both the spin-symmetry analysis
-(`find_sf_operations`) and the ordinary centroid route
-(`compute_centroid_3d`) use that declaration the same way: as ground truth
-against which a loosened spglib tolerance may be accepted, because MCIF
-coordinates are commonly rounded to five decimals and the rounding noise can
-sit just outside the default symprec.
-
-Leaf module: numpy at import, pymatgen only inside the functions that need it,
-so it can be imported from anywhere in the package without a cycle.
+MAGNDATA MCIF coordinates are commonly rounded. The declared parent
+transformation and space group allow a looser spglib tolerance when it
+reproduces that parent.
 """
 import warnings
 
@@ -25,14 +18,10 @@ def _validate_collinear_moments(
     moments,
     moment_tolerance=_MCIF_COLLINEAR_MOMENT_TOLERANCE,
 ):
-    """Reject MCIF moments that do not share one collinear spin axis.
+    """Reject MCIF moments that are not collinear.
 
-    Zero moments are ignored. For each nonzero Cartesian moment, compare the
-    absolute norm of its component transverse to the first nonzero moment's
-    normalized axis. The 0.02 tolerance is in the MCIF moment units (normally
-    Bohr magnetons), matching FindSpinGroup's default moment-tolerance scale
-    and accommodating rounded deposited moment components. Parallel and
-    antiparallel directions are treated equivalently.
+    Zero moments are ignored, and parallel and antiparallel moments are treated
+    as collinear. The tolerance accommodates rounded moment components.
     """
     moments = np.asarray(moments, dtype=float)
     norms = np.linalg.norm(moments, axis=1)

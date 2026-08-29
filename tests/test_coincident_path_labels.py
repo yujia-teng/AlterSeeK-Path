@@ -69,7 +69,7 @@ def test_3d_ibz_draws_one_marker_and_one_path_label_per_coincident_group():
     ax = fig.add_subplot(111, projection="3d")
     try:
         plot_ibz(
-            ax, points, [("A", "E")], {}, None,
+            ax, points, [("A", "E")], None,
             np.array([0.5, 0.0, 0.0]),
         )
         assert [text.get_text() for text in ax.texts] == [

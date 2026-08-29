@@ -115,7 +115,6 @@ def test_core_figure_stage_uses_scoped_style_on_repeated_runs(
         "sc_display": "tP1",
         "b_matrix": centroid_module.np.eye(3),
         "kpath_plot": [],
-        "display_labels_plot": {},
         "kpoints_cart_plot": {},
     }
     centroid = {

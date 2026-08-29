@@ -23,7 +23,7 @@ from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 from .lattice_kpoints import (
     get_kpoints, get_hull_kpoints, get_hull_kpath, get_kpath,
-    get_display_labels, get_params, _normalize_label,
+    get_params, _normalize_label,
 )
 from .symmetry import (
     laue_group_from_point_group,
@@ -146,7 +146,6 @@ def run(
     )
     bz_loops = figure_result['bz_loops']
     bz_center = figure_result['bz_center']
-    bz_span = figure_result['bz_span']
     elev1 = figure_result['elev']
     azim1 = figure_result['azim']
     display_figures = figure_result['display_figures']
@@ -172,7 +171,6 @@ def run(
         'b_matrix': analysis_result['b_matrix'],
         'bz_loops': bz_loops,
         'bz_center': bz_center,
-        'bz_span': bz_span,
         'elev': elev1,
         'azim': azim1,
         'ibz_kpoints_frac': (
@@ -356,7 +354,6 @@ def _analyze_kspace(
         spacegroup_number=sg,
     )
     hull_kpath = get_hull_kpath(sc_type, spacegroup_number=sg)
-    display_labels = get_display_labels(sc_type)
     params = get_params(
         sc_type,
         conv_params['a'],
@@ -460,7 +457,6 @@ def _analyze_kspace(
         'butterfly_kpath': butterfly_kpath,
         'butterfly_extra_vertices': butterfly_extra_vertices,
         'kpath_plot': kpath_plot,
-        'display_labels_plot': display_labels,
         'kpoints_cart_plot': kpoints_cart_plot,
         'kpoints_frac_for_output': kpoints_frac_for_output,
         'symprec': symprec,
@@ -760,7 +756,6 @@ def _generate_figure1(
     sc_display = analysis['sc_display']
     b_matrix = analysis['b_matrix']
     kpath_plot = analysis['kpath_plot']
-    display_labels_plot = analysis['display_labels_plot']
     kpoints_cart_plot = analysis['kpoints_cart_plot']
     hull = centroid['hull']
     centroid_cart = centroid['centroid_cart']
@@ -784,7 +779,6 @@ def _generate_figure1(
     )
     bz_loops = None
     bz_center = None
-    bz_span = None
     fig1 = None
     fig1s = None
     try:
@@ -792,7 +786,6 @@ def _generate_figure1(
         bz_loops = get_bz_loops(b_matrix)
         all_bz_pts = np.vstack(bz_loops)
         bz_center = np.mean(all_bz_pts, axis=0)
-        bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
         if show_plot:
             fig1, ax1 = setup_3d_ax(
@@ -800,7 +793,6 @@ def _generate_figure1(
                 bz_loops,
                 b_matrix,
                 bz_center,
-                bz_span,
                 elev=default_elev,
                 azim=default_azim,
             )
@@ -808,7 +800,6 @@ def _generate_figure1(
                 ax1,
                 kpoints_cart_plot,
                 kpath_plot,
-                display_labels_plot,
                 hull,
                 centroid_cart,
                 hull_pts=points_arr,
@@ -825,7 +816,6 @@ def _generate_figure1(
                             bz_loops,
                             b_matrix,
                             bz_center,
-                            bz_span,
                             elev=ax.elev,
                             azim=ax.azim,
                             dashed_back=True,
@@ -834,7 +824,6 @@ def _generate_figure1(
                             save_ax,
                             kpoints_cart_plot,
                             kpath_plot,
-                            display_labels_plot,
                             hull,
                             centroid_cart,
                             hull_pts=points_arr,
@@ -866,7 +855,6 @@ def _generate_figure1(
                 bz_loops,
                 b_matrix,
                 bz_center,
-                bz_span,
                 elev=elev1,
                 azim=azim1,
                 dashed_back=True,
@@ -875,7 +863,6 @@ def _generate_figure1(
                 ax1s,
                 kpoints_cart_plot,
                 kpath_plot,
-                display_labels_plot,
                 hull,
                 centroid_cart,
                 hull_pts=points_arr,
@@ -903,7 +890,6 @@ def _generate_figure1(
     return {
         'bz_loops': bz_loops,
         'bz_center': bz_center,
-        'bz_span': bz_span,
         'elev': elev1,
         'azim': azim1,
         'display_figures': display_figures,

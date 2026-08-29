@@ -1052,7 +1052,6 @@ class KPointsModifier:
             )
             view_kwargs = dict(
                 bz_center=centroid_result.get('bz_center'),
-                bz_span=centroid_result.get('bz_span'),
                 elev=centroid_result.get('elev', 14),
                 azim=centroid_result.get('azim', 20),
             )
@@ -1068,7 +1067,6 @@ class KPointsModifier:
                         R_cart=R_cart_for_plot,
                         block=False,
                         path_sequence=new_kpoints,
-                        unique_ops=centroid_result.get('unique_ops'),
                         **view_kwargs,
                     ),
                 ))
