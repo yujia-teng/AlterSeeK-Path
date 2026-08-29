@@ -136,8 +136,8 @@ def _get_bz_path_style(lattice_type, k1, k2):
 
 
 def _figure_output_paths(output_path, extra_formats=None):
-    """Return the requested figure output paths, preserving the requested
-    extension as the default. Set ALTERSEEK_BZ_FORMATS (e.g. "png,pdf") to
+    """Return the requested figure output paths (``bz.png`` ->
+    ``["bz.png", "bz.pdf"]``). Set ALTERSEEK_BZ_FORMATS (e.g. "png,pdf") to
     override the format list entirely, or ALTERSEEK_BZ_EXTRA_FORMATS (e.g.
     "pdf") to add formats on top of the default. ``extra_formats`` adds
     formats for one call without modifying process-wide environment state."""
@@ -243,11 +243,12 @@ def generated_plain_path_segments(path_sequence):
 
 
 def grouped_point_labels(points, path_labels, atol=POINT_COINCIDENCE_ATOL):
-    """Group coincident plotted points and choose path-aware display labels.
+    """Merge high-symmetry points that land on the same spot into one label.
 
-    A coincident group uses all of its labels that occur in the path. If none
-    occurs there, its first label is retained so an IBZ vertex does not become
-    anonymous merely because it has equivalent names.
+    A, B and C at the same coordinates are drawn as "A/B/C". Names missing
+    from the plotted path are dropped, so it shows "A/B" when C is not in
+    the path. If none of the names is in the path, the first is kept anyway
+    so the vertex still gets a label. Names starting with "_" are skipped.
     """
     preferred = {
         alias
