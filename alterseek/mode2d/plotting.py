@@ -8,12 +8,12 @@ flat top-down view, instead of the tilted 3D BZ plate used for bulk crystals:
   * Figure 2 (``*_2d_spinflip_*``) -- spin-up IBZ (red) and its spin-flip image
                                       (blue) with the general point k and its
                                       spin-flip partner k'.
+  * Figure 3 (``*_2d_spinbz_*``)   -- every symmetry image of the IBZ tiling
+                                      the BZ, colored red/blue by spin.
 
-The vacuum axis is taken from ``centroid_result['vacuum_axis']`` in the
-submitted calculation cell.  For the common
-``kz = 0`` slab (vacuum on axis c) the screen axes are the Cartesian kx, ky;
-when analysis permutes the cell axes, the in-plane reciprocal vectors define an
-orthonormal screen basis instead.
+The vacuum axis is taken from ``centroid_result['vacuum_axis']``; the screen
+basis for the remaining two in-plane directions is chosen by
+``_plane_projector``.
 """
 
 import os
@@ -25,22 +25,15 @@ from ..plotting_common import (
     grouped_point_labels, label_aliases, prime_point_label,
 )
 
-try:
-    from scipy.spatial import ConvexHull
-except Exception:  # pragma: no cover - scipy is a hard dependency in practice
-    ConvexHull = None
+from scipy.spatial import ConvexHull
 
-try:
-    from ..symmetry import (
-        _classify_spinflip_op, _doubled_ibz_extra_flags, _reduce_int_vector,
-        _format_miller, _rotation_sense,
-    )
-except Exception:  # pragma: no cover - op-visual is best-effort only
-    _classify_spinflip_op = None
-    _doubled_ibz_extra_flags = None
+from ..symmetry import (
+    _classify_spinflip_op, _doubled_ibz_extra_flags, _reduce_int_vector,
+    _format_miller, _rotation_sense,
+)
 
 
-# Geometry helpers
+# --- Geometry helpers ---
 
 def _cart_from_frac(frac, b_matrix):
     f = np.array(frac[:3], dtype=float)
@@ -50,23 +43,11 @@ def _cart_from_frac(frac, b_matrix):
 def _plane_projector(b_matrix, axis, lattice_class=None):
     """2D screen basis (kx, ky) for the in-plane reciprocal vectors.
 
-    When the vacuum reciprocal vector is Cartesian-axis-aligned -- true for
-    every 2D structure this project's own workflow produces -- kx/ky are the
-    structure's own fixed Cartesian axes for the two in-plane directions.
-    When the vacuum direction is not axis-aligned, screen x follows the first
-    in-plane reciprocal vector and screen y completes a right-handed basis in
-    the physical reciprocal plane.
-
-    A centred rectangular lattice is the one class where the submitted cell is
-    the primitive rhombus while the standard tables are drawn on the
-    conventional centred cell, whose axes A = a1 + a2 and B = a1 - a2 are the
-    lattice's mirror axes and are perpendicular to each other.  For that class
-    the screen frame is those conventional axes, so the figure is independent
-    of how the input file happened to be oriented: conventional a on screen x,
-    b on screen y, in both metric branches (which puts SIGMA_0 horizontal and Y
-    vertical for a < b, Y horizontal and DELTA_0 vertical for a > b).  Every
-    other 2D class has its conventional axes already equal to
-    the primitive ones, so nothing changes there.
+    Screen x/y are the structure's own Cartesian axes when the vacuum
+    direction is axis-aligned, and follow the first in-plane reciprocal
+    vector otherwise.  A centred rectangular lattice instead uses its
+    conventional axes A = a1 + a2 and B = a1 - a2, so the figure does not
+    depend on how the input file happened to be oriented.
     """
     in_plane_axes = [i for i in range(3) if i != axis]
     b_matrix = np.array(b_matrix, dtype=float)
@@ -79,9 +60,8 @@ def _plane_projector(b_matrix, axis, lattice_class=None):
     normal /= normal_norm
 
     if lattice_class == "centered-rectangular":
-        # A = a1 + a2 is parallel to g1 + g2 and B = a1 - a2 to g2 - g1 (each
-        # conventional axis is orthogonal to the other).  Screen x is always
-        # the conventional a direction, in both metric branches.
+        # The conventional axis A = a1 + a2 is parallel to g1 + g2, so screen x
+        # is the conventional a direction in both metric branches.
         conv_a = g1 + g2
         e1 = conv_a / np.linalg.norm(conv_a)
         # Derive screen y from the plane normal so the frame stays right-handed
@@ -127,8 +107,6 @@ def _to_2d(point, basis):
 def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
                    lattice_class=None):
     """2D Wigner-Seitz BZ polygon for the selected reciprocal plane."""
-    if ConvexHull is None:
-        raise RuntimeError("scipy is required for 2D BZ polygon construction")
     if cartesian_xy:
         if axis != 2:
             raise ValueError("Cartesian kx/ky 2D plotting requires the kz=0 plane")
@@ -181,11 +159,11 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
     return poly[np.argsort(angles)], basis
 
 
-# Drawing helpers
+# --- Drawing helpers ---
 
-# Axes half-width as a multiple of the BZ radius.  Radius from Gamma (origin),
-# not the polygon's own bounding box, so the zoom level is invariant under
-# rotation of the screen frame.
+# Zoom: the drawing half-width is 1.22x the Gamma-to-furthest-vertex distance,
+# leaving a 22% margin around the BZ.  Measuring from Gamma rather than the
+# polygon's bounding box keeps the zoom unchanged when the screen frame rotates.
 _AX_LIMIT_FACTOR = 1.22
 
 
@@ -202,8 +180,8 @@ def _setup_2d_ax(title, bz_poly):
     ax.plot(closed[:, 0], closed[:, 1], color="0.25", lw=2.2)
     ax.set_aspect("equal", adjustable="box")
     ax.set_axis_off()
-    # A b_i arrow pointing straight up ends just below the top of the axes, so
-    # the title needs a gap of its own rather than sitting on the axes edge.
+    # A b_i arrow pointing straight up nearly reaches the top of the axes, so
+    # the title needs padding to clear it.
     ax.set_title(title, fontsize=20, pad=18)
     limit = _ax_limit(bz_poly)
     ax.set_xlim(-limit, limit)
@@ -211,8 +189,8 @@ def _setup_2d_ax(title, bz_poly):
     return fig, ax
 
 
-# Text boxes are much wider than tall, so an equal gap looks larger above
-# and below a marker than beside it.
+# How far a label sits from its marker, in points.  The x gap is larger because
+# a text box is much wider than tall, so equal gaps would look uneven.
 _LABEL_OFFSET_POINTS_X = 14.0
 _LABEL_OFFSET_POINTS_Y = 9.0
 # Extra gap for a label whose point also carries a reciprocal-axis arrow.
@@ -220,12 +198,12 @@ _AXIS_LABEL_GAP_SCALE = 1.7
 
 
 def _bz_outward_normal(point, bz_poly):
-    """Outward normal of the BZ edge(s) a point sits on, horizontal preferred.
+    """Outward normal of the BZ edge(s) a point sits on.
 
-    Labels for boundary points read best pushed straight out of the zone rather
-    than along the radial direction from the drawn wedge, which for an edge or
-    corner point aims diagonally and lands the text on the boundary line. At a
-    corner two normals apply and the horizontal one leaves the most room.
+    Boundary labels read best pushed straight out of the zone; the radial
+    direction from the wedge centre aims diagonally and drops the text on the
+    boundary line.  At a corner the two edge normals are averaged.  Returns
+    None for a point that is not on the boundary.
     """
     if bz_poly is None or len(bz_poly) < 3:
         return None
@@ -266,9 +244,9 @@ def _label_offset(points):
 def _steer_off_line(direction, line_dir, point, other_points, offset_scale):
     """Turn a label off a line drawn through it, e.g. the mirror/axis visual.
 
-    Only interior points need this: a label pushed along the operation line
-    lands on top of it. Both perpendiculars clear the line equally, so pick the
-    one that ends up farther from the other labelled points.
+    A label pushed along the operation line lands on top of it.  Both
+    perpendiculars clear the line equally, so pick the one that ends up
+    farther from the other labelled points.
     """
     line_dir = np.asarray(line_dir, dtype=float)[:2]
     norm = np.linalg.norm(line_dir)
@@ -342,7 +320,9 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
     if not points:
         return
     auto_center, auto_scale = _label_offset(points.values())
-    # A single-point set has no meaningful centroid or span, so only that case falls back to the caller's shared reference; a normal multi-point set keeps its own offset.
+    # A single-point set has no meaningful centroid or span, so only that case
+    # falls back to the caller's shared reference; a normal multi-point set
+    # keeps its own offset.
     if len(points) <= 1:
         if center is None:
             center = auto_center
@@ -463,7 +443,7 @@ def _draw_labeled_points(ax, points, color, edgecolor, labels=True,
             zorder=zorder + 1, annotation_clip=False)
 
 
-# In-plane operation classification
+# --- In-plane operation classification ---
 
 def _axis_name(axis):
     return ("kx", "ky", "kz")[axis]
@@ -534,6 +514,8 @@ def _dedupe_in_plane_ops_2d(b_matrix, unique_ops, spin_down_mask, axis=2,
     return kept_ops, np.array(kept_mask, dtype=bool)
 
 
+# --- Reciprocal-axis arrows and figure output ---
+
 def _polygon_ray_exit(poly, unit_vec, origin=None):
     """Distance from ``origin`` to where a ray along ``unit_vec`` exits the
     closed polygon ``poly``, or None if it never crosses an edge."""
@@ -556,20 +538,15 @@ def _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly,
                              zorder=219):
     """Draw the two in-plane reciprocal axis arrows (b_i, i != vacuum axis).
 
-    Same convention as ``draw_projected_reciprocal_axes`` in
-    ``compute_centroid_3d.py`` (Figure 4): a dotted lead-in inside the BZ,
-    a solid arrow outside, and a bold label at the tip. The vacuum-axis
-    reciprocal vector is always perpendicular to this plane and carries no
-    in-plane information, so it is skipped entirely (unlike the 3D top view,
-    where all three b_i are shown for orientation against the full 3D BZ).
+    Same convention as ``draw_projected_reciprocal_axes`` in ``plotting_3d.py``.
+    The vacuum-axis b_i is perpendicular to the plane and carries no in-plane
+    information, so it is skipped.
     """
     span = max(float(np.max(np.ptp(bz_poly, axis=0))), 1e-8)
     target = 0.60 * span
-    # With the fixed Cartesian frame a b_i can point straight up, where the
-    # unclipped arrow tip and its label would run into the figure title.  Cap
-    # each arrow per direction -- against the axes edge it actually approaches,
-    # not by a single shared length -- so a near-horizontal b_i keeps its full
-    # reach instead of being shortened by a vertical neighbour's limit.
+    # A b_i pointing straight up would run its tip and label into the title, so
+    # cap each arrow against the axes edge it actually approaches rather than by
+    # one shared length -- a near-horizontal b_i keeps its full reach.
     label_gap = 0.04 * span
     tip_budget = max(_ax_limit(bz_poly) * 0.94 - label_gap, 0.1 * span)
     origin = np.array([0.0, 0.0])
@@ -648,6 +625,8 @@ def _finish_2d_figure(fig, output_path, save_pdf, deferred_figures=None):
     return expected_paths
 
 
+# --- Operation visuals ---
+
 def _line_operation_label_position(p_pos, p_neg, avoid_pts):
     """Return the line endpoint farthest from the avoid points."""
     positions = [p_pos, p_neg]
@@ -678,30 +657,16 @@ def _operation_line_endpoints(bz_poly, line_dir, span, origin=None):
 def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
     """Draw the geometric visual for the selected 2D spin-flip operation.
 
-    Reuses the same op classification/labeling as the 3D Figure 2
-    (``_classify_spinflip_op``/``describe_spinflip_op`` in
-    ``compute_centroid_3d.py``) and keeps the same 3-index (b1,b2,b3)
-    reciprocal labeling convention, since the underlying operation is still
-    the full 3x3 matrix -- only the drawing is 2D-specific:
-
-      Cn/Sn rotation (det=+1, or det=-1 rotoreflection): the physical
-        rotation axis is always exactly perpendicular to this plane (the
-        vacuum direction), the same for every case, so there is nothing to
-        project -- just a small curved arrow glyph centered on Gamma (the
-        plot origin) with a Cn(+/-) label, instead of the 3D camera-aware
-        ring + long axis arrow.
-      Mirror (det=-1, order None): the mirror's fixed set is a LINE through
-        Gamma (not a plane), drawn straight across the BZ, labeled by the
-        plane normal's (b1,b2,b3) indices exactly as the 3D m_{hkl} label.
-
-    Trivial/degenerate ops (identity, inversion, or an axis with no in-plane
-    component) draw nothing, matching the 3D convention.
+    An order >= 3 rotation or rotoreflection becomes a curved arrow at Gamma
+    labeled with its International symbol and sense.  An in-plane C2 or a mirror
+    becomes a line across the BZ, labeled by the (b1,b2,b3) indices of its axis
+    or plane normal.  Identity, inversion, and axes with no in-plane component
+    draw nothing.  Classification is shared with the 3D figures
+    (``_classify_spinflip_op`` in ``symmetry.py``).
 
     Returns the unit direction of the line drawn through Gamma, so point labels
     can be kept off it, or None when the visual is an arc or nothing at all.
     """
-    if _classify_spinflip_op is None:
-        return
     b_matrix = np.array(b_matrix, dtype=float)
     R_frac = np.array(R_frac, dtype=float)
     b_T = b_matrix.T
@@ -717,7 +682,9 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
     COLOR = os.environ.get('ALTERSEEK_OP_AXIS_COLOR', '#00c853')
 
     if op_type in ('rotation', 'rotoreflection') and op['order'] and op['order'] >= 3:
-        # Use the screen basis's canonical out-of-page direction so the displayed +/- sense matches the visible counterclockwise or clockwise rotation.
+        # Use the screen basis's canonical out-of-page direction so the
+        # displayed +/- sense matches the visible counterclockwise or clockwise
+        # rotation.
         e1, e2, _ = basis if basis is not None else (
             np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), None)
         normal_dir = np.cross(e1, e2)
@@ -726,8 +693,11 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
             axis = -axis
         sense = _rotation_sense(R_cart, axis)
         order = op['order']
-        # Use International/Bilbao labels: a proper Cn is shown as n, while S3, S4, and S6 become 6-bar, 4-bar, and 3-bar.
-        # Retain the trivial vacuum-axis subscript because this glyph is used only for the perpendicular-axis case and should match the 3D label format.
+        # Use International/Bilbao labels: a proper Cn is shown as n, while S3,
+        # S4, and S6 become 6-bar, 4-bar, and 3-bar.
+        # Retain the trivial vacuum-axis subscript because this glyph is used
+        # only for the perpendicular-axis case and should match the 3D label
+        # format.
         if op_type == 'rotation':
             display_order = order
             improper = False
@@ -742,12 +712,14 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
                  else rf"$\mathbf{{{digit}_{{{axis_sub}}}}}$")
 
         r_arc = 0.14 * span
-        # Match the arc direction to the displayed rotation sense so n+ is counterclockwise and n- is clockwise.
+        # Match the arc direction to the displayed rotation sense so n+ is
+        # counterclockwise and n- is clockwise.
         dir_sign = -1 if sense < 0 else 1
         theta = np.radians(np.linspace(180.0 - dir_sign * 150.0,
                                         180.0 + dir_sign * 150.0, 100))  # 300 deg, gap at bottom
         arc = origin + r_arc * np.column_stack([np.cos(theta), np.sin(theta)])
-        # Stop the solid shaft at the arrow base and draw only the final segment as the arrowhead so the two strokes do not overlap.
+        # Stop the solid shaft at the arrow base and draw only the final segment
+        # as the arrowhead so the two strokes do not overlap.
         head_cut = 4
         shaft = arc[:-head_cut]
         ax.plot(shaft[:, 0], shaft[:, 1], color=COLOR, lw=2.4, alpha=0.95, zorder=210)
@@ -763,8 +735,11 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
                 color=COLOR, ha='center', va='center', zorder=212, clip_on=False)
 
     elif op_type == 'rotation' and op['order'] == 2:
-        # A C2 whose 3D axis lies in the plane restricts to a genuine mirror in the flat view: the axis is fixed while the in-plane perpendicular direction changes sign.
-        # A C2 along the vacuum direction would reduce to the excluded trivial -I action and is filtered upstream.
+        # A C2 whose 3D axis lies in the plane restricts to a genuine mirror in
+        # the flat view: the axis is fixed while the in-plane perpendicular
+        # direction changes sign.
+        # A C2 along the vacuum direction would reduce to the excluded trivial
+        # -I action and is filtered upstream.
         axis_full = np.array(op['axis'], dtype=float)
         axis_2d = _to_2d(axis_full, basis)
         axis_2d_len = float(np.linalg.norm(axis_2d))
@@ -827,6 +802,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
             zorder=212, annotation_clip=False)
         return line_dir
 
+
+# --- Spin-flip labels and the spin-pattern figure ---
 
 def _order_mixed_label_left_to_right(label, point, spin_up_center,
                                      spin_down_center, bz_span):
@@ -933,17 +910,16 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     ibz_cart = np.array([_cart_from_frac(p, b_matrix) for p in ibz_polygon_frac],
                         dtype=float)
 
-    # A project-doubled IBZ (e.g. 4/m tP1's X_A) covers each in-plane cell
-    # twice; painting the whole doubled polygon solid would hide that. Paint
-    # it pale and overlay the genuine (non-"_A") sub-polygon solid on top,
-    # mirroring plotting_3d.plot_spin_bz_top_view_figure. Vertex order is
-    # inherited from the hull-ordered ibz_polygon_frac, so the sub-polygon
-    # (a subsequence of a convex polygon's boundary) stays convex and needs
-    # no re-hulling, unlike the 3D version.
+    # A project-doubled IBZ (the square lattice's X_A at point group 4)
+    # carries an extra sector beyond the conventional wedge; one solid fill
+    # would hide it.  Fill the whole polygon in a lighter color and overlay
+    # the genuine (non-"_A") sub-polygon at full strength, mirroring
+    # plotting_3d.plot_spin_bz_top_view_figure.  ibz_polygon_frac's vertices
+    # are already in order around the boundary, so a subset can be filled
+    # directly, with no convex-hull step.
     ibz_polygon_labels = centroid_result.get("ibz_polygon_labels")
     extra_flags = None
-    if _doubled_ibz_extra_flags is not None and ibz_polygon_labels and \
-            len(ibz_polygon_labels) == len(ibz_polygon_frac):
+    if ibz_polygon_labels and len(ibz_polygon_labels) == len(ibz_polygon_frac):
         flags = _doubled_ibz_extra_flags(ibz_polygon_labels)
         if any(flags):
             extra_flags = flags
@@ -1012,7 +988,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     )
 
 
-# Main plotting entry point
+# --- Main plotting entry point ---
 
 def _physical_lattice_title(centroid_result):
     """Return a physical 2D lattice name without an HPKOT setting tag."""
@@ -1036,11 +1012,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     ``flip_ops_for_plot`` (standardized primitive basis) drives the Figure 3
     spin-up/down coloring.  Returns the list of saved file paths.
     """
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as exc:  # pragma: no cover
-        print(f"[Warning] Could not import matplotlib for 2D figures: {exc}")
-        return []
+    import matplotlib.pyplot as plt
 
     b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
     axis = int(centroid_result.get("vacuum_axis", 2))
@@ -1077,12 +1049,11 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     fig1, ax1 = _setup_2d_ax(
         f"2D BZ: {basename} ({lattice_title})", bz_poly
     )
-    # Shade the IBZ itself: without it the doubled wedge is invisible and the
-    # centroid star looks misplaced relative to the plain high-symmetry path.
-    # A project-doubled IBZ (e.g. 4/m tP1's X_A) covers each in-plane cell
-    # twice, so paint the doubled copy pale and the genuine sub-polygon at
-    # full strength, mirroring the up_main/up_extra split already used for
-    # the spin-BZ figure below and for the 3D IBZ figures.
+    # Shade the IBZ itself: without it the wedge is invisible and the centroid
+    # star looks misplaced relative to the plain high-symmetry path.  A
+    # project-doubled IBZ (the square lattice's X_A at point group 4) carries an
+    # extra sector beyond the conventional wedge, so fill it in a lighter color
+    # and the genuine sub-polygon at full strength, as the spin-BZ figure does.
     ibz_polygon_frac = centroid_result.get("ibz_polygon_frac")
     if ibz_polygon_frac is not None and len(ibz_polygon_frac) >= 3:
         ibz_xy = np.array(
@@ -1092,7 +1063,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         )
         ibz_polygon_labels_fig1 = centroid_result.get("ibz_polygon_labels")
         extra_flags_fig1 = None
-        if _doubled_ibz_extra_flags is not None and ibz_polygon_labels_fig1 and \
+        if ibz_polygon_labels_fig1 and \
                 len(ibz_polygon_labels_fig1) == len(ibz_polygon_frac):
             flags = _doubled_ibz_extra_flags(ibz_polygon_labels_fig1)
             if any(flags):
@@ -1122,7 +1093,8 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
                          avoid_dirs=reciprocal_axis_dirs)
     ax1.scatter(*centroid_xy, c="gold", marker="*", s=420, edgecolors="k",
                 zorder=112, label=r"$k$")
-    # Place the legend outside the axes so it cannot overlap plotted points or labels and the BZ itself needs no extra padding.
+    # Place the legend outside the axes so it cannot overlap plotted points or
+    # labels and the BZ itself needs no extra padding.
     ax1.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=18,
               borderaxespad=0, frameon=True)
     fig1.tight_layout()
@@ -1173,22 +1145,16 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     mapped_poly = np.array(list(mapped_cart_lines.values()), dtype=float)
 
     def _fill_doubled_aware(ax, poly, labels, main_color, extra_color):
-        # Same up_main/up_extra split as Figure 1: a project-doubled IBZ
-        # (e.g. 4/m tP1's X_A) must not be painted solid, or its doubled
-        # copy becomes indistinguishable from the genuine half. Primed
-        # labels (the spin-flip image) carry the doubling on the same
-        # vertices, just with a trailing "'" that the plain "_A" check
-        # would otherwise miss.
-        if len(poly) < 3 or ConvexHull is None:
+        # Same lighter-color split as Figure 1.  The spin-flip image carries the
+        # doubling on the same vertices but with primed names, which the "_A"
+        # check does not recognize, so remove the prime before checking.
+        if len(poly) < 3:
             return
         hull_idx = ConvexHull(poly).vertices
         hp = poly[hull_idx]
         hp_labels = [str(labels[i]).rstrip("'") for i in hull_idx]
-        flags = (
-            _doubled_ibz_extra_flags(hp_labels)
-            if _doubled_ibz_extra_flags is not None else None
-        )
-        if flags is not None and any(flags):
+        flags = _doubled_ibz_extra_flags(hp_labels)
+        if any(flags):
             original_idx = [j for j, is_extra in enumerate(flags) if not is_extra]
             ax.fill(hp[:, 0], hp[:, 1], color=extra_color, alpha=0.20, zorder=1)
             if len(original_idx) >= 3:
