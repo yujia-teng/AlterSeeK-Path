@@ -1002,7 +1002,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
     else:
         # Without separate spin-preserving operation data, classify the available operations directly.
         spin_down_mask = _classify_spin_down_ops(
-            b_matrix, unique_ops, centroid_cart, R, flip_ops_frac
+            b_matrix, unique_ops, flip_ops_frac
         )
 
     def _draw(ax):
@@ -1227,7 +1227,7 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
             return
     else:
         spin_down_mask = _classify_spin_down_ops(
-            b_matrix, unique_ops, centroid_cart, R, flip_ops_frac)
+            b_matrix, unique_ops, flip_ops_frac)
 
     # Move the spin-up and spin-down section slightly off the requested plane, toward the centroid when possible, so a sector-boundary cut has unambiguous colors.
     z_span = np.ptp(np.vstack(bz_loops)[:, cut_axis])

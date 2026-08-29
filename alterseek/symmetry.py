@@ -1,26 +1,9 @@
-"""Point-operation classification, 2D spin-flip filters, and Laue mapping."""
+"""Laue/point-group tables, 2D spin-flip filters, operation naming, and BZ geometry."""
 import numpy as np
 from scipy.spatial import ConvexHull
 
 
 NO_ALTERMAGNETISM_LAUE_GROUPS = {'-1', '-3', 'm-3'}
-
-
-def _is_doubled_ibz_extra_label(label):
-    label = str(label)
-    suffix = label.rsplit("_", 1)[-1] if "_" in label else ""
-    return suffix.endswith("A") or label.endswith("_2")
-
-
-def _doubled_ibz_extra_flags(hull_labels):
-    labels = [str(label) for label in hull_labels]
-    # Project-doubled sectors always include a copied _A label, while ordinary HPKOT _2 labels must not trigger sector coloring.
-    if not any(
-        "_" in label and label.rsplit("_", 1)[-1].endswith("A")
-        for label in labels
-    ):
-        return [False] * len(labels)
-    return [_is_doubled_ibz_extra_label(label) for label in labels]
 
 
 def laue_group_from_point_group(point_group):
@@ -76,25 +59,12 @@ def _by_spacegroup_range(spacegroup_number, table):
 
 
 def point_group_from_spacegroup_number(spacegroup_number):
-    """Return the crystallographic point group of a space-group number.
-
-    Companion to laue_group_from_spacegroup_number, used for symmetry known as
-    a group rather than as coordinates (notably the SSG's G0). Printing the
-    point group alongside the Laue group makes the reduction visible -- mm2
-    reduces to mmm -- instead of leaving the reader to supply it.
-    """
+    """Return the crystallographic point group of a space-group number."""
     return _by_spacegroup_range(spacegroup_number, _POINT_GROUP_BY_SPACEGROUP_RANGE)
 
 
 def laue_group_from_spacegroup_number(spacegroup_number):
-    """Return the Laue group of an international space-group number.
-
-    Used for symmetry already known as a space group rather than as a set of
-    coordinates -- notably the spatial part G0 of a spin space group, which
-    FindSpinGroup reports directly. Reading the Laue group off the group itself
-    avoids re-detecting symmetry from atomic positions, where the answer
-    depends on a tolerance.
-    """
+    """Return the Laue group of an international space-group number."""
     return _by_spacegroup_range(spacegroup_number, _LAUE_GROUP_BY_SPACEGROUP_RANGE)
 
 
@@ -118,11 +88,9 @@ def no_altermagnetism_reason(point_group=None, spacegroup=None):
 
 def seekpath_to_hpkot_type(sp_result):
     """Return the HPKOT extended key and parameters for lattice_kpoints.py."""
-    lattice_key = sp_result.get('bravais_lattice_extended',
-                                sp_result.get('bravais_lattice', 'cP'))
+    lattice_key = sp_result['bravais_lattice_extended']
 
-    conv_lattice = np.array(sp_result.get('conv_lattice',
-                            sp_result.get('primitive_lattice')), dtype=float)
+    conv_lattice = np.array(sp_result['conv_lattice'], dtype=float)
     va, vb, vc = conv_lattice[0], conv_lattice[1], conv_lattice[2]
     a = np.linalg.norm(va)
     b = np.linalg.norm(vb)
@@ -162,8 +130,8 @@ def keeps_2d_plane(R, vacuum_axis, tol=1e-6):
 def is_trivial_2d_spin_flip(R, vacuum_axis, tol=1e-6):
     """True if R's in-plane 2x2 block is +-I (Filter 2 -- a trivial 2D flip).
 
-    +I  (e.g. mz)            : k_par -> k_par, forces E_up = E_down everywhere.
-    -I  (e.g. C2z, inversion): k_par -> -k_par, PT-like for collinear spins.
+    +I  (e.g. mz)            : k_in_plane -> k_in_plane, forces E_up = E_down everywhere.
+    -I  (e.g. C2z, inversion): k_in_plane -> -k_in_plane, PT-like for collinear spins.
     Either way there is no in-plane altermagnetic splitting.
     """
     R = np.array(R, dtype=float)
@@ -208,6 +176,16 @@ def reciprocal_operation_cartesian(R, b_matrix):
         raise ValueError("operation and reciprocal basis must both be 3x3")
     b_transpose = b_matrix.T
     return b_transpose @ np.linalg.inv(R).T @ np.linalg.inv(b_transpose)
+
+
+def _perp_unit(v):
+    """Return a unit vector perpendicular to v (for any nonzero v)."""
+    v = np.asarray(v, dtype=float)
+    idx = int(np.argmin(np.abs(v)))
+    w = np.zeros(3)
+    w[idx] = 1.0
+    w = w - (w @ v) * v
+    return w / np.linalg.norm(w)
 
 
 def _cartesian_plane_basis(plane_normal):
@@ -256,21 +234,10 @@ def is_valid_2d_spin_flip_cartesian(R, b_matrix, plane_normal, tol=1e-6):
     )
 
 
-def _perp_unit(v):
-    """Return a unit vector perpendicular to v (for any nonzero v)."""
-    v = np.asarray(v, dtype=float)
-    idx = int(np.argmin(np.abs(v)))
-    w = np.zeros(3)
-    w[idx] = 1.0
-    w = w - (w @ v) * v
-    return w / np.linalg.norm(w)
-
-
 def _axis_bz_exit(axis, bz_loops):
-    """
-    Return the parameter t where the ray origin + t*axis first exits the BZ.
-    Uses the convex-hull half-space equations of the BZ vertices.
-    Falls back to bz_radius if the hull cannot be computed.
+    """Return the distance from Gamma to the BZ surface along ``axis``.
+
+    Falls back to the largest BZ vertex distance if the hull cannot be built.
     """
     all_pts = np.vstack([np.asarray(loop, dtype=float) for loop in bz_loops])
     fallback = float(np.max(np.linalg.norm(all_pts, axis=1)))
@@ -336,15 +303,10 @@ def _classify_spinflip_op(R_cart):
 
 
 def _mirror_plane_bz_polygon(normal, bz_loops):
-    """
-    Return a flat rectangle (4,3) representing the mirror plane n·k=0, centered
-    on Gamma (the plane always passes through the origin) and sized to the
-    axis-aligned bounding box (in-plane) of where the plane actually cuts the
-    BZ edges. This reads as a plain textbook mirror-plane rectangle rather than
-    tracing the BZ's own cross-section outline at that cut (which for e.g. a
-    horizontal mirror in a hexagonal BZ would itself be a hexagon), while
-    staying tightly sized to the true local cut extent instead of a uniform
-    whole-BZ radius. Returns None if fewer than 3 intersection points.
+    """Return the flat (4,3) rectangle drawn for the mirror plane n.k=0.
+
+    Centered on Gamma and sized to the in-plane bounding box of the plane's cut
+    through the BZ edges. Returns None if that cut has fewer than 3 points.
     """
     n = np.asarray(normal, dtype=float)
     n = n / np.linalg.norm(n)
@@ -474,41 +436,35 @@ def describe_spinflip_op(R_cart, b_matrix=None):
     return t
 
 
-def _classify_spin_down_ops(b_matrix, unique_ops, centroid_cart, R, flip_ops_frac=None):
+def _classify_spin_down_ops(b_matrix, unique_ops, flip_ops_frac):
     """Return a boolean mask selecting the spin-down symmetry images."""
+    if flip_ops_frac is None or len(flip_ops_frac) == 0:
+        raise ValueError(
+            "spin-down classification requires the detected spin-flip operations"
+        )
     b_T = b_matrix.T
     b_T_inv = np.linalg.inv(b_T)
-    centroid_cart = np.array(centroid_cart)
-
-    if flip_ops_frac is not None and len(flip_ops_frac):
-        flip_set = [np.array(f, dtype=float) for f in flip_ops_frac]
-        spin_down_mask = np.zeros(len(unique_ops), dtype=bool)
-        for i, g_cart in enumerate(unique_ops):
-            M = b_T_inv @ g_cart @ b_T
-            g_frac = np.linalg.inv(M.T)
-            spin_down_mask[i] = any(np.allclose(g_frac, f, atol=1e-6) for f in flip_set)
-        return spin_down_mask
-
-    R_inv_T = np.linalg.inv(np.array(R)).T
-    R_cart  = b_T @ R_inv_T @ b_T_inv
-    kp_cart = R_cart @ centroid_cart
-
-    def _proximity_mask(c_pt, kp_pt):
-        return np.array([
-            np.linalg.norm(g @ c_pt - kp_pt) < np.linalg.norm(g @ c_pt - c_pt)
-            for g in unique_ops
-        ])
-
-    spin_down_mask = _proximity_mask(centroid_cart, kp_cart)
-    n_expected = len(unique_ops) // 2
-    if spin_down_mask.sum() != n_expected:
-        eps_scale = np.linalg.norm(centroid_cart) * 3e-4
-        for trial in range(30):
-            rng = np.random.default_rng(trial)
-            c_pert  = centroid_cart + rng.standard_normal(3) * eps_scale
-            kp_pert = R_cart @ c_pert
-            mask_try = _proximity_mask(c_pert, kp_pert)
-            if mask_try.sum() == n_expected:
-                spin_down_mask = mask_try
-                break
+    flip_set = [np.array(f, dtype=float) for f in flip_ops_frac]
+    spin_down_mask = np.zeros(len(unique_ops), dtype=bool)
+    for i, g_cart in enumerate(unique_ops):
+        M = b_T_inv @ g_cart @ b_T
+        g_frac = np.linalg.inv(M.T)
+        spin_down_mask[i] = any(np.allclose(g_frac, f, atol=1e-6) for f in flip_set)
     return spin_down_mask
+
+
+def _is_doubled_ibz_extra_label(label):
+    label = str(label)
+    suffix = label.rsplit("_", 1)[-1] if "_" in label else ""
+    return suffix.endswith("A") or label.endswith("_2")
+
+
+def _doubled_ibz_extra_flags(hull_labels):
+    labels = [str(label) for label in hull_labels]
+    # Project-doubled sectors always include a copied _A label, while ordinary HPKOT _2 labels must not trigger sector coloring.
+    if not any(
+        "_" in label and label.rsplit("_", 1)[-1].endswith("A")
+        for label in labels
+    ):
+        return [False] * len(labels)
+    return [_is_doubled_ibz_extra_label(label) for label in labels]
