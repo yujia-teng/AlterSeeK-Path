@@ -42,7 +42,7 @@ def _synthetic_analysis_preparation():
             [[0.11, 0.12, 0.15], [0.31, 0.27, 0.19]],
             [119, 119],
         ),
-        "analysis_marker_type": 119,
+        "analysis_has_markers": True,
         "submitted_lattice": np.eye(3),
         "submitted_sites": 2,
         "magnetic_primitive_sites": 2,
@@ -581,9 +581,9 @@ def test_workflow_gates_on_findspingroup_g0(tmp_path, monkeypatch):
     pytest.importorskip("findspingroup")
     pytest.importorskip("ase")
     from alterseek import kpoints as kpoints_module
-    from alterseek import ssg_setting
+    from alterseek import submitted_cell_analysis
 
-    if ssg_setting.find_spin_group_acc_primitive_from_data is None:
+    if submitted_cell_analysis.find_spin_group_acc_primitive_from_data is None:
         pytest.skip("findspingroup acc-primitive setting unavailable")
 
     seen = []

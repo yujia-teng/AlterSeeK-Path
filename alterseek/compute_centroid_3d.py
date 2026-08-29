@@ -65,7 +65,7 @@ def run(
     figure_basename=None,
     save_pdf=False,
     analysis_cell=None,
-    analysis_marker_type=None,
+    analysis_has_markers=False,
 ):
     """Run the IBZ-centroid pipeline on one structure file.
 
@@ -92,7 +92,7 @@ def run(
             figure_basename=figure_basename,
             save_pdf=save_pdf,
             analysis_cell=analysis_cell,
-            analysis_marker_type=analysis_marker_type,
+            analysis_has_markers=analysis_has_markers,
         )
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(filename))
@@ -129,7 +129,7 @@ def run(
         output_dir=output_dir,
         basename=basename,
         verbose=verbose,
-        analysis_marker_type=analysis_marker_type,
+        analysis_has_markers=analysis_has_markers,
     )
 
     figure_result = _generate_figure1(
@@ -601,7 +601,7 @@ def _write_optional_diagnostics(
     output_dir,
     basename,
     verbose,
-    analysis_marker_type,
+    analysis_has_markers,
 ):
     """Write the optional standardized-cell and basis-mapping files."""
     standardized_structure_output = os.path.join(
@@ -614,7 +614,7 @@ def _write_optional_diagnostics(
     sp_result = analysis['sp_result']
 
     standardized_structure_path = None
-    if analysis_marker_type is None:
+    if not analysis_has_markers:
         try:
             os.makedirs(output_dir, exist_ok=True)
             _write_seekpath_standard_poscar(

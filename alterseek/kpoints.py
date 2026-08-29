@@ -31,7 +31,7 @@ from .plotting_common import (
     POINT_COINCIDENCE_ATOL,
     prime_point_label,
 )
-from .ssg_setting import (
+from .submitted_cell_analysis import (
     prepare_submitted_cell_analysis,
 )
 from .atomic_write import (
@@ -1524,8 +1524,8 @@ class KPointsModifier:
                         figure_basename=_figure_basename(struct_file),
                         save_pdf=save_pdf,
                         analysis_cell=analysis_preparation["analysis_cell"],
-                        analysis_marker_type=analysis_preparation[
-                            "analysis_marker_type"
+                        analysis_has_markers=analysis_preparation[
+                            "analysis_has_markers"
                         ],
                     )
                 except Exception as e:
@@ -1679,8 +1679,8 @@ class KPointsModifier:
                     figure_basename=_figure_basename(struct_file),
                     save_pdf=save_pdf,
                     analysis_cell=analysis_preparation["analysis_cell"],
-                    analysis_marker_type=analysis_preparation[
-                        "analysis_marker_type"
+                    analysis_has_markers=analysis_preparation[
+                        "analysis_has_markers"
                     ],
                 )
             except Exception as exc:

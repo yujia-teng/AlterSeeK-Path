@@ -1,4 +1,4 @@
-"""End-to-end submitted-cell regressions for magnetic structures."""
+"""Golden end-to-end submitted-cell regressions for magnetic structures."""
 
 import io
 from pathlib import Path
@@ -220,7 +220,7 @@ def test_211_converts_seekpath_points_to_submitted_basis_preserving_cartesian(
         assert np.allclose(row @ b_submitted, standardized_cart, atol=1e-8)
 
 
-def test_bifeo3_hP_proxy_preserves_figure_and_output_spin_relations(
+def test_bifeo3_hP_helper_preserves_figure_and_output_spin_relations(
     tmp_path, monkeypatch, capsys
 ):
     primitive = read(BIFEO3_PRIMITIVE)

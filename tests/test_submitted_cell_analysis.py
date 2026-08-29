@@ -10,10 +10,10 @@ from ase.build import bulk, make_supercell
 from ase.io import read, write
 from scipy.spatial import ConvexHull
 
-import alterseek.ssg_setting as ssg_setting
+import alterseek.submitted_cell_analysis as submitted_cell_analysis
 from alterseek.compute_centroid_3d import run as compute_centroid
-from alterseek.ssg_setting import prepare_submitted_cell_analysis
-from alterseek.ssg_setting import build_submitted_analysis_cell
+from alterseek.submitted_cell_analysis import prepare_submitted_cell_analysis
+from alterseek.submitted_cell_analysis import _build_nonprimitive_bz_marker_cell
 
 
 REFERENCES = Path(__file__).parent / "references"
@@ -57,9 +57,8 @@ def _change_operation_basis(rotation, source_lattice, target_lattice):
 
 def test_primitive_input_is_not_reduced():
     lattice = np.diag([4.0, 5.0, 6.0])
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         lattice,
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[26],
         space_operations=_orthorhombic_operations(),
     )
@@ -72,9 +71,8 @@ def test_primitive_input_is_not_reduced():
 
 def test_true_222_supercell_keeps_its_native_bz():
     lattice = np.diag([8.0, 8.0, 8.0])
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         lattice,
-        real_positions=list(itertools.product((0.0, 0.5), repeat=3)),
         real_type_numbers=[26] * 8,
         space_operations=_signed_permutation_operations(),
     )
@@ -87,10 +85,9 @@ def test_true_222_supercell_keeps_its_native_bz():
     assert np.isclose(result["submitted_bz_volume"], expected_bz_volume)
 
 
-def test_cubic_221_supercell_has_tetragonal_bz_proxy():
-    result = build_submitted_analysis_cell(
+def test_cubic_221_supercell_has_tetragonal_bz_helper():
+    result = _build_nonprimitive_bz_marker_cell(
         np.diag([8.0, 8.0, 4.0]),
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[26],
         space_operations=_signed_permutation_operations(),
     )
@@ -103,10 +100,9 @@ def test_cubic_221_supercell_has_tetragonal_bz_proxy():
     assert result["volume_original_wrt_prim"] == 1.0
 
 
-def test_cubic_321_supercell_has_orthorhombic_bz_proxy():
-    result = build_submitted_analysis_cell(
+def test_cubic_321_supercell_has_orthorhombic_bz_helper():
+    result = _build_nonprimitive_bz_marker_cell(
         np.diag([12.0, 8.0, 4.0]),
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[26],
         space_operations=_signed_permutation_operations(),
     )
@@ -117,7 +113,7 @@ def test_cubic_321_supercell_has_orthorhombic_bz_proxy():
     assert result["compatible_space_operation_count"] == 8
 
 
-def test_fd3m_uses_closed_pure_rotation_proxy_in_conventional_cube():
+def test_fd3m_uses_closed_pure_rotation_helper_in_conventional_cube():
     fd3m = spglib.get_symmetry_from_database(525)
     physical_operations = [
         {"real_rotation": rotation, "translation": translation}
@@ -125,9 +121,8 @@ def test_fd3m_uses_closed_pure_rotation_proxy_in_conventional_cube():
             fd3m["rotations"], fd3m["translations"]
         )
     ]
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         np.eye(3) * 8.0,
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[14],
         space_operations=physical_operations,
     )
@@ -152,7 +147,7 @@ def test_conventional_diamond_keeps_fd3m_but_uses_cP_bz(tmp_path):
         show_plot=False,
         verbose=False,
         analysis_cell=preparation["analysis_cell"],
-        analysis_marker_type=preparation["analysis_marker_type"],
+        analysis_has_markers=preparation["analysis_has_markers"],
         symprec=1e-5,
     )
 
@@ -181,9 +176,8 @@ def test_determinant_one_basis_change_keeps_submitted_lattice():
         for rotation in _orthorhombic_operations()
     ]
 
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         submitted,
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[64],
         space_operations=submitted_operations,
     )
@@ -195,18 +189,12 @@ def test_determinant_one_basis_change_keeps_submitted_lattice():
 
 
 def test_artificial_type_is_positive_and_distinct_from_real_types():
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         np.array([
             [4.0, 0.0, 0.0],
             [0.3, 5.0, 0.0],
             [0.2, 0.4, 6.0],
         ]),
-        real_positions=[
-            [0.0, 0.0, 0.0],
-            [0.13, 0.27, 0.39],
-            [0.31, 0.18, 0.44],
-            [0.42, 0.36, 0.21],
-        ],
         real_type_numbers=[1, 2, 3, 118],
         space_operations=[np.eye(3, dtype=int)],
     )
@@ -214,11 +202,10 @@ def test_artificial_type_is_positive_and_distinct_from_real_types():
     all_types = set(result["cell"][2])
     assert all_types == set(result["marker_types"])
     assert all_types.isdisjoint({1, 2, 3, 118})
-    assert result["marker_type"] > 0
-    assert result["marker_type"] not in {1, 2, 3, 118}
+    assert min(result["marker_types"]) > 0
 
 
-def test_nonsymmorphic_translation_is_removed_only_from_bz_proxy():
+def test_nonsymmorphic_translation_is_removed_only_from_bz_helper():
     fourfold = np.array([
         [0, -1, 0],
         [1, 0, 0],
@@ -232,14 +219,8 @@ def test_nonsymmorphic_translation_is_removed_only_from_bz_proxy():
         for power in range(4)
     ]
 
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         np.diag([4.0, 4.0, 7.0]),
-        real_positions=[
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.25],
-            [0.0, 0.0, 0.5],
-            [0.0, 0.0, 0.75],
-        ],
         real_type_numbers=[26] * 4,
         space_operations=screw_operations,
     )
@@ -259,9 +240,8 @@ def test_nonsymmorphic_translation_is_removed_only_from_bz_proxy():
 
 def test_anisotropic_supercell_keeps_its_full_submitted_volume():
     lattice = np.diag([8.0, 15.0, 6.0])
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         lattice,
-        real_positions=[[0.0, 0.0, 0.0]],
         real_type_numbers=[26],
         space_operations=_orthorhombic_operations(),
     )
@@ -276,13 +256,8 @@ def test_anisotropic_supercell_keeps_its_full_submitted_volume():
 
 def test_q_nonzero_enlarged_cell_is_not_returned_to_a_parent_period():
     lattice = np.diag([12.0, 4.0, 4.0])
-    result = build_submitted_analysis_cell(
+    result = _build_nonprimitive_bz_marker_cell(
         lattice,
-        real_positions=[
-            [0.0, 0.0, 0.0],
-            [1 / 3, 0.0, 0.0],
-            [2 / 3, 0.0, 0.0],
-        ],
         real_type_numbers=[25, 25, 25],
         space_operations=_orthorhombic_operations(),
     )
@@ -328,18 +303,16 @@ def test_rhombohedral_primitive_and_hexagonal_settings_use_own_lattices():
             )
         ]
 
-    primitive = build_submitted_analysis_cell(
+    primitive = _build_nonprimitive_bz_marker_cell(
         a_rhombohedral,
-        real_positions=np.zeros((1, 3)),
         real_type_numbers=[26],
         space_operations=structural_operations(
             a_rhombohedral, np.zeros((1, 3))
         ),
         symprec=1e-5,
     )
-    conventional = build_submitted_analysis_cell(
+    conventional = _build_nonprimitive_bz_marker_cell(
         a_hex,
-        real_positions=hex_positions,
         real_type_numbers=[26, 26, 26],
         space_operations=structural_operations(a_hex, hex_positions),
         symprec=1e-5,
@@ -373,7 +346,7 @@ def test_no_moments_supercell_uses_the_same_submitted_cell_helper(tmp_path):
         show_plot=False,
         verbose=False,
         analysis_cell=preparation["analysis_cell"],
-        analysis_marker_type=preparation["analysis_marker_type"],
+        analysis_has_markers=preparation["analysis_has_markers"],
     )
 
     assert result["sc_type"] == "cP2"
@@ -410,7 +383,7 @@ def test_no_moments_cubic_221_uses_tetragonal_submitted_cell_bz(tmp_path):
         show_plot=False,
         verbose=False,
         analysis_cell=preparation["analysis_cell"],
-        analysis_marker_type=preparation["analysis_marker_type"],
+        analysis_has_markers=preparation["analysis_has_markers"],
     )
 
     assert preparation["physical_symmetry"]["number"] == 221
@@ -462,7 +435,7 @@ def test_magnetic_cubic_221_uses_compatible_tetragonal_point_group(tmp_path):
     assert preparation["summary"]["volume_original_wrt_prim"] == 1.0
 
 
-def test_no_moments_221_uses_pure_rotation_hP_proxy():
+def test_no_moments_221_uses_pure_rotation_hP_helper():
     preparation = prepare_submitted_cell_analysis(
         str(REFERENCES / "SUPERCELL_221.vasp")
     )
@@ -511,7 +484,7 @@ def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
         show_plot=False,
         verbose=False,
         analysis_cell=preparation["analysis_cell"],
-        analysis_marker_type=preparation["analysis_marker_type"],
+        analysis_has_markers=preparation["analysis_has_markers"],
     )
     assert result["sc_type"] == "oC1"
     _assert_ibz_volume_matches_k_group(result)
@@ -535,8 +508,8 @@ def test_primitive_magnetic_input_keeps_native_ops_when_hall_is_ambiguous(
         )
 
     monkeypatch.setattr(
-        ssg_setting,
-        "_complete_magnetic_operations_in_submitted_basis",
+        submitted_cell_analysis,
+        "_complete_g0_operations_in_submitted_basis",
         ambiguous_hall,
     )
     preparation = prepare_submitted_cell_analysis(
@@ -549,9 +522,12 @@ def test_primitive_magnetic_input_keeps_native_ops_when_hall_is_ambiguous(
     assert preparation["summary"]["physical_operation_set_verified"] is True
     assert preparation["analysis_symmetry"]["number"] == 36
     assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oC1"
+    marker_types = preparation["summary"]["marker_types"]
+    assert len(marker_types) >= 2
+    assert len(marker_types) == len(set(marker_types))
 
 
-def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_proxies(
+def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_helpers(
     tmp_path,
 ):
     primitive_path = REFERENCES / "BiFeO3_R3c_primitive.vasp"

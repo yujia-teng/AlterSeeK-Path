@@ -31,12 +31,12 @@ def run(
     figure_basename=None,
     save_pdf=False,
     analysis_cell=None,
-    analysis_marker_type=None,
+    analysis_has_markers=False,
 ):
     """Analyze one two-periodic submitted calculation cell."""
     del (
         output_dir, show_plot, defer_show, view_elev, view_azim,
-        figure_basename, save_pdf, analysis_marker_type,
+        figure_basename, save_pdf, analysis_has_markers,
     )
     if not mode_2d:
         raise ValueError("mode2d.compute_centroid.run requires mode_2d=True")

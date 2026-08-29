@@ -244,7 +244,7 @@ def test_rg3_end_to_end_uses_submitted_rectangular_cell(tmp_path):
         mode_2d=True,
         input_vacuum_axis=2,
         analysis_cell=(lattice, positions, [1, 1, 1, 1]),
-        analysis_marker_type=2,
+        analysis_has_markers=True,
     )
 
     assert result["path_source_2d"] is True

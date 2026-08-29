@@ -1,4 +1,4 @@
-"""Build validated submitted-cell marker inputs for SeeK-path."""
+"""Prepare marker cells and symmetry data so SeeK-path analyzes the submitted cell."""
 
 import os
 import warnings
@@ -17,6 +17,7 @@ from .io import (
 )
 
 
+# Generic fractional seeds for the marker orbits; the trailing 1e-8 keeps a seed off special positions.
 _MARKER_SEEDS = [
     np.array([0.11000000, 0.12000000, 0.15000001]),
     np.array([0.13000000, 0.17000000, 0.23000001]),
@@ -24,6 +25,9 @@ _MARKER_SEEDS = [
     np.array([0.21100000, 0.13700000, 0.29300001]),
 ]
 
+# A lone orbit can gain unintended symmetry (one seed under {E, C2z} also
+# gains inversion), so each set uses two or three orbits of distinct types,
+# tried in order until spglib recovers exactly the operations passed in.
 _MARKER_SEED_SETS = (
     (_MARKER_SEEDS[0], _MARKER_SEEDS[1]),
     (_MARKER_SEEDS[0], _MARKER_SEEDS[2]),
@@ -48,7 +52,7 @@ def _space_operation_key(rotation, translation, tol=1e-7):
 
 
 def _validated_space_operations(space_operations, tol=1e-7):
-    """Return distinct integral Seitz operations in the submitted basis."""
+    """Return distinct ``(R, t)`` operations with integer unimodular rotations."""
     operations = []
     keys = set()
     for operation in space_operations:
@@ -107,11 +111,13 @@ def _cartesian_translation_offset(lattice, first, second):
 
 
 def _match_space_operations(lattice, intended, detected, symprec):
-    """Pair intended ``(R, t)`` operations with detected ones within symprec.
+    """Check the marker cell against the operations it was built from.
 
-    spglib fits translations to the coordinates it is given, so rounding noise
-    in a structure file puts them well outside an exact-key match.  Match
-    on Cartesian offset at the same symprec, and return what stayed unpaired.
+    ``intended`` is the operation set the markers encode, ``detected`` is what
+    spglib found in the finished cell. Returns the intended operations spglib
+    missed and the extra ones it found by accident; both empty means the cell
+    reproduces the intended set. Translations match within symprec because
+    spglib refits them to the coordinates it is given.
     """
     tolerance = max(float(symprec), 1e-8)
     remaining = [
@@ -174,33 +180,37 @@ def _space_operation_mismatch_report(missing, unexpected, intended_count):
     return "; ".join(parts)
 
 
-def _compatible_point_operations(lattice, space_operations, tol=1e-7):
-    """Return the closed point group compatible with the submitted lattice.
+def _point_operations_preserving_submitted_lattice(
+    lattice, space_operations, tol=1e-7
+):
+    """Return the point operations compatible with the submitted cell.
 
-    The submitted fractional basis represents a lattice automorphism only when
-    its rotation matrix is integral and unimodular.  ``_validated_space_operations``
-    performs that compatibility filter.  Translation columns are deliberately
-    discarded here: they remain part of the physical symmetry data, but the
-    conventional/supercell BZ proxy is the symmorphic group ``(R, 0)`` built on
-    the submitted edge-vector translation lattice.
+    Keep the distinct rotations that preserve the lengths and angles of the
+    submitted lattice vectors, and verify that they form a closed point group.
+    The caller uses these rotations as ``(R, 0)`` only for the conventional or
+    supercell BZ helper. Removing additional pure translations, such as centering
+    translations, prevents SeeK-path from reducing the submitted translation
+    lattice to the physical primitive lattice.
     """
     lattice = np.asarray(lattice, dtype=float)
-    metric = lattice @ lattice.T
+    lattice_dot_products = lattice @ lattice.T
     candidates = _validated_space_operations(space_operations, tol=tol)
     compatible = []
-    metric_atol = tol * max(1.0, float(np.max(np.abs(metric))))
+    dot_product_tolerance = tol * max(
+        1.0, float(np.max(np.abs(lattice_dot_products)))
+    )
     for operation in candidates:
         rotation = np.asarray(operation["real_rotation"], dtype=int)
         if np.allclose(
-            rotation.T @ metric @ rotation,
-            metric,
-            atol=metric_atol,
+            rotation.T @ lattice_dot_products @ rotation,
+            lattice_dot_products,
+            atol=dot_product_tolerance,
             rtol=0.0,
         ):
             compatible.append(operation)
     if not compatible:
         raise RuntimeError(
-            "No point operation preserves the submitted cell metric."
+            "No point operation preserves the submitted lattice-vector lengths and angles."
         )
     rotations = {}
     for operation in compatible:
@@ -210,8 +220,7 @@ def _compatible_point_operations(lattice, space_operations, tol=1e-7):
     identity_key = tuple(np.eye(3, dtype=int).ravel())
     if identity_key not in rotations:
         raise RuntimeError(
-            "Submitted-cell compatible point operations do not contain the "
-            "identity."
+            "Submitted-cell compatible point operations do not contain the identity."
         )
 
     keys = set(rotations)
@@ -220,8 +229,7 @@ def _compatible_point_operations(lattice, space_operations, tol=1e-7):
             product_key = tuple((left @ right).ravel())
             if product_key not in keys:
                 raise RuntimeError(
-                    "Submitted-cell compatible rotations do not form a "
-                    "closed point group."
+                    "Submitted-cell compatible rotations do not form a closed point group."
                 )
     return list(rotations.values()), compatible, candidates
 
@@ -233,7 +241,7 @@ def _database_operations_in_input_basis(
     *,
     tol=1e-6,
 ):
-    """Transform one complete standard Hall operation set to the input."""
+    """Express one complete standard Hall operation set in the submitted basis."""
     input_to_standard = np.asarray(input_to_standard, dtype=float)
     origin_shift = np.asarray(origin_shift, dtype=float)
     if (
@@ -281,6 +289,7 @@ def _database_operations_in_input_basis(
 
 
 def _magnetic_primitive_nssg_operations(result):
+    """Return FindSpinGroup's nontrivial SSG operations in the magnetic-primitive setting."""
     views = (
         result.get("operation_views", {})
         .get("magnetic_primitive_cartesian", {})
@@ -295,20 +304,18 @@ def _magnetic_primitive_nssg_operations(result):
     return operations
 
 
-def _magnetic_operations_in_submitted_basis(result):
-    """Transform FindSpinGroup's primitive Seitz representatives to input."""
+def _g0_representatives_in_submitted_basis(result):
+    """Express FindSpinGroup's G0 representatives in the submitted basis."""
     transform = result.get("T_input_to_acc_primitive")
     if not transform or len(transform) != 2:
         raise RuntimeError(
-            "FindSpinGroup did not return the input-to-magnetic-primitive "
-            "setting transformation."
+            "FindSpinGroup did not return the input-to-magnetic-primitive setting transformation."
         )
     input_to_primitive = np.asarray(transform[0], dtype=float)
     origin_shift = np.asarray(transform[1], dtype=float)
     if input_to_primitive.shape != (3, 3) or origin_shift.shape != (3,):
         raise RuntimeError(
-            "FindSpinGroup returned an invalid magnetic-primitive setting "
-            "transformation."
+            "FindSpinGroup returned an invalid magnetic-primitive setting transformation."
         )
     primitive_to_input = np.linalg.inv(input_to_primitive)
     operations = []
@@ -353,7 +360,7 @@ def _g0_spacegroup_number(result):
 
 
 def _input_to_g0_standard_transform(result):
-    """Compose input -> magnetic primitive -> G0 standard coordinates."""
+    """Return the transformation from submitted to G0 standard coordinates."""
     transforms = []
     for key in ("T_input_to_acc_primitive", "T_acc_primitive_to_G0std"):
         transform = result.get(key)
@@ -385,17 +392,16 @@ def _input_to_g0_standard_transform(result):
     )
 
 
-def _complete_magnetic_operations_in_submitted_basis(result, tol=1e-6):
-    """Return the complete G0 Seitz set in the submitted setting.
+def _complete_g0_operations_in_submitted_basis(result, tol=1e-6):
+    """Return all G0 space-group operations in the submitted basis.
 
-    FindSpinGroup's magnetic-primitive view contains one operation per
-    primitive-cell representative.  Transforming that list alone cannot
-    recover a centered conventional target.  Use those representatives only
-    to identify the matching standard Hall setting, then transform the full
-    crystallographic database operation set into the submitted basis.
+    FindSpinGroup reports the operations for its magnetic primitive cell, so
+    the list may lack centering translations needed for a submitted conventional
+    cell. Use that list to identify the matching Hall setting, retrieve the
+    complete operation set from spglib, and transform it to the submitted basis.
     """
     g0_number = _g0_spacegroup_number(result)
-    representatives = _magnetic_operations_in_submitted_basis(result)
+    representatives = _g0_representatives_in_submitted_basis(result)
     representative_keys = _space_operation_keys(
         [operation["real_rotation"] for operation in representatives],
         [operation["translation"] for operation in representatives],
@@ -455,8 +461,8 @@ def _complete_magnetic_operations_in_submitted_basis(result, tol=1e-6):
 
 
 def _seekpath_lattice_tag(lattice, symprec):
-    """Return the HPKOT tag of a primitive lattice from its metric alone."""
-    metric_cell = (
+    """Return the HPKOT tag from the primitive lattice vectors alone."""
+    lattice_only_cell = (
         np.asarray(lattice, dtype=float).tolist(),
         [[0.11000000, 0.12000000, 0.15000001]],
         [1],
@@ -471,7 +477,7 @@ def _seekpath_lattice_tag(lattice, symprec):
             module=r"seekpath\.hpkot(\..*)?",
         )
         result = seekpath.get_path(
-            metric_cell,
+            lattice_only_cell,
             with_time_reversal=True,
             symprec=symprec,
         )
@@ -484,7 +490,7 @@ def _physical_symmetry_from_operations(
     expected_number,
     symprec,
 ):
-    """Identify the unchanged physical Seitz set separately from the BZ proxy."""
+    """Identify and validate the complete physical G0 operation set."""
     spacegroup_type = spglib.get_spacegroup_type_from_symmetry(
         [operation["real_rotation"] for operation in operations],
         [operation["translation"] for operation in operations],
@@ -511,7 +517,7 @@ def _physical_symmetry_from_operations(
 
 
 def _standard_physical_symmetry(spacegroup_number):
-    """Return a conventional database label when a supercell hides the setting."""
+    """Return a standard G0 label when the submitted supercell setting cannot be identified."""
     fallback = None
     for hall_number in range(1, 531):
         spacegroup_type = spglib.get_spacegroup_type(hall_number)
@@ -537,20 +543,47 @@ def _standard_physical_symmetry(spacegroup_number):
     return fallback
 
 
-def build_submitted_analysis_cell(
+def _marker_orbits_with_distinct_types(
+    seeds,
+    rotations,
+    translations,
+    reserved_type_numbers,
+):
+    """Generate each marker orbit with a distinct unused type number."""
+    positions = []
+    types = []
+    marker_types = []
+    used_types = {int(value) for value in reserved_type_numbers}
+    next_marker_type = max(used_types, default=0) + 1
+    for seed in seeds:
+        orbit = _dedupe_frac_positions([
+            seed @ rotation.T + translation
+            for rotation, translation in zip(rotations, translations)
+        ])
+        while next_marker_type in used_types or next_marker_type <= 0:
+            next_marker_type += 1
+        orbit_type = next_marker_type
+        used_types.add(orbit_type)
+        next_marker_type += 1
+        marker_types.append(orbit_type)
+        positions.extend(orbit)
+        types.extend([orbit_type] * len(orbit))
+    return positions, types, marker_types
+
+
+def _build_nonprimitive_bz_marker_cell(
     lattice,
-    real_positions,
     real_type_numbers,
     space_operations,
     *,
     symprec=1e-3,
 ):
-    """Build the conventional/supercell-BZ proxy in the submitted lattice.
+    """Build a marker-only BZ helper for a nonprimitive submitted cell.
 
-    The proxy is marker-only.  Real sites generally obey nonsymmorphic
-    ``(R, t)`` operations and therefore cannot be mixed into an artificial
-    symmorphic ``(R, 0)`` orbit.  The physical sites and complete Seitz set are
-    retained by the caller for magnetic and diagnostic uses.
+    Generate marker orbits with compatible G0 ``(R, 0)`` point operations so
+    SeeK-path preserves the submitted conventional-cell or supercell translation
+    lattice and its folded BZ. Real atoms are excluded because they obey the
+    complete G0 ``(R, t)`` operations rather than this artificial ``(R, 0)`` set.
     """
     lattice = np.asarray(lattice, dtype=float)
     if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
@@ -558,21 +591,10 @@ def build_submitted_analysis_cell(
     if abs(np.linalg.det(lattice)) < 1e-12:
         raise ValueError("Submitted lattice is singular.")
 
-    real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
     real_type_numbers = [int(value) for value in real_type_numbers]
-    if real_positions.shape != (len(real_type_numbers), 3):
-        raise ValueError(
-            "Real positions and type numbers must describe the same sites."
-        )
-    if not np.all(np.isfinite(real_positions)):
-        raise ValueError("Real positions must be finite fractional coordinates.")
-    real_types = set(real_type_numbers)
-    marker_type = max(real_types, default=0) + 1
-    while marker_type in real_types or marker_type <= 0:
-        marker_type += 1
 
     rotations, compatible_space_operations, source_space_operations = (
-        _compatible_point_operations(
+        _point_operations_preserving_submitted_lattice(
             lattice, space_operations
         )
     )
@@ -585,23 +607,14 @@ def build_submitted_analysis_cell(
     intended_space_keys = _space_operation_keys(rotations, translations)
     failures = []
     for seeds in _MARKER_SEED_SETS:
-        helper_positions = []
-        helper_types = []
-        marker_types = []
-        used_types = set(real_types)
-        next_marker_type = marker_type
-        for seed in seeds:
-            orbit = _dedupe_frac_positions([
-                seed @ rotation.T for rotation in rotations
-            ])
-            while next_marker_type in used_types or next_marker_type <= 0:
-                next_marker_type += 1
-            orbit_type = next_marker_type
-            used_types.add(orbit_type)
-            next_marker_type += 1
-            marker_types.append(orbit_type)
-            helper_positions.extend(orbit)
-            helper_types.extend([orbit_type] * len(orbit))
+        helper_positions, helper_types, marker_types = (
+            _marker_orbits_with_distinct_types(
+                seeds,
+                rotations,
+                translations,
+                real_type_numbers,
+            )
+        )
         cell = (
             lattice.tolist(),
             [np.asarray(position, dtype=float).tolist()
@@ -664,7 +677,6 @@ def build_submitted_analysis_cell(
         reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
         return {
             "cell": cell,
-            "marker_type": marker_type,
             "marker_types": marker_types,
             "marker_seeds": [seed.copy() for seed in seeds],
             "marker_count": len(helper_positions),
@@ -697,7 +709,7 @@ def build_submitted_analysis_cell(
     )
 
 
-def _build_physical_analysis_cell(
+def _build_g0_marker_cell(
     lattice,
     real_positions,
     real_type_numbers,
@@ -706,14 +718,17 @@ def _build_physical_analysis_cell(
     symprec=1e-3,
     expected_spacegroup_number=None,
 ):
-    """Build the ordinary full-Seitz helper for a primitive submitted cell."""
+    """Add marker orbits that help spglib and SeeK-path recognize G0.
+
+    Generate the marker orbits with the complete G0 ``(R, t)`` operations and
+    add them to the submitted structure. The markers remove structural symmetries
+    absent from G0 and verify its complete operation set. When the submitted
+    translation lattice is primitive, the same augmented structure is passed to
+    SeeK-path because its BZ already matches the requested one.
+    """
     lattice = np.asarray(lattice, dtype=float)
     real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
     real_type_numbers = [int(value) for value in real_type_numbers]
-    real_types = set(real_type_numbers)
-    marker_type = max(real_types, default=0) + 1
-    while marker_type in real_types or marker_type <= 0:
-        marker_type += 1
 
     operations = _validated_space_operations(space_operations)
     rotations = [operation["real_rotation"] for operation in operations]
@@ -722,11 +737,14 @@ def _build_physical_analysis_cell(
     intended_space_keys = _space_operation_keys(rotations, translations)
     failures = []
     for seeds in _MARKER_SEED_SETS:
-        markers = _dedupe_frac_positions([
-            seed @ rotation.T + translation
-            for seed in seeds
-            for rotation, translation in zip(rotations, translations)
-        ])
+        markers, marker_type_numbers, marker_types = (
+            _marker_orbits_with_distinct_types(
+                seeds,
+                rotations,
+                translations,
+                real_type_numbers,
+            )
+        )
         helper_positions = [*real_positions.tolist(), *markers]
         cell = (
             lattice.tolist(),
@@ -734,7 +752,7 @@ def _build_physical_analysis_cell(
                 np.asarray(position, dtype=float).tolist()
                 for position in helper_positions
             ],
-            [*real_type_numbers, *([marker_type] * len(markers))],
+            [*real_type_numbers, *marker_type_numbers],
         )
         dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
         seed_label = [seed.tolist() for seed in seeds]
@@ -795,8 +813,7 @@ def _build_physical_analysis_cell(
         reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
         return {
             "cell": cell,
-            "marker_type": marker_type,
-            "marker_types": [marker_type],
+            "marker_types": marker_types,
             "marker_seeds": [seed.copy() for seed in seeds],
             "marker_count": len(markers),
             "marker_min_distance": _min_periodic_cart_distance(
@@ -832,7 +849,7 @@ def _submitted_to_primitive_volume_index(
     *,
     tol=1e-5,
 ):
-    """Return the integer submitted/primitive translation-volume index."""
+    """Return the integer index and volume ratio of the submitted to primitive cell."""
     submitted_volume = abs(float(np.linalg.det(submitted_lattice)))
     primitive_volume = abs(float(np.linalg.det(primitive_lattice)))
     if (
@@ -861,7 +878,11 @@ def prepare_submitted_cell_analysis(
     symprec=1e-3,
     write_magnetic_diagnostic=False,
 ):
-    """Prepare the validated in-memory analysis cell in the submitted lattice."""
+    """Prepare the marker cell and symmetry data for submitted-cell BZ analysis.
+
+    Use the G0 marker cell for a primitive input and the marker-only ``(R, 0)``
+    helper for a conventional-cell or supercell input.
+    """
     from ase.data import atomic_numbers
 
     lattice, positions, elements, moments, spin_setting = (
@@ -893,14 +914,13 @@ def prepare_submitted_cell_analysis(
                 lattice, magnetic_primitive_lattice
             )
         )
-        # Magnetic-primitive representatives contain every G0 point part.
-        # Transform them directly and keep only rotations compatible with the
-        # submitted lattice; arbitrary supercells need not admit all parent
-        # rotations as integral lattice automorphisms.
-        space_operations = _magnetic_operations_in_submitted_basis(fsg_result)
+        # FindSpinGroup's magnetic-primitive list contains one operation for each G0 rotation.
+        # Express these operations in the submitted basis; the nonprimitive BZ helper later keeps
+        # only rotations that preserve the submitted lattice.
+        space_operations = _g0_representatives_in_submitted_basis(fsg_result)
         try:
             physical_operations = (
-                _complete_magnetic_operations_in_submitted_basis(fsg_result)
+                _complete_g0_operations_in_submitted_basis(fsg_result)
             )
             physical_symmetry = _physical_symmetry_from_operations(
                 lattice,
@@ -911,18 +931,18 @@ def prepare_submitted_cell_analysis(
             physical_operation_set_verified = True
         except RuntimeError as exc:
             if translation_index == 1:
-                # Several conventional Hall settings can reduce to the same
-                # primitive operation set. The validated primitive operations
-                # still provide the point representatives required by the
-                # marker helper when a unique Hall reconstruction is impossible.
                 if not str(exc).startswith(
                     "Multiple inequivalent standard Hall settings"
                 ):
                     raise RuntimeError(
                         "Could not construct the complete physical G0 Seitz "
                         "set for a primitive submitted cell. The pure-rotation "
-                        "conventional/supercell proxy is not applicable."
+                        "conventional/supercell helper is not applicable."
                     ) from exc
+                # Several conventional Hall settings may reduce to the same operations
+                # in a primitive cell, so the setting cannot always be identified uniquely.
+                # A primitive cell needs no additional centering operations, so the validated
+                # magnetic-primitive G0 set can be used directly.
                 physical_operations = space_operations
                 physical_symmetry = _physical_symmetry_from_operations(
                     lattice,
@@ -932,9 +952,10 @@ def prepare_submitted_cell_analysis(
                 )
                 physical_operation_set_verified = True
             else:
-                # The complete conventional Hall set need not embed integrally in
-                # an anisotropic or non-diagonal supercell.  This does not affect
-                # the BZ helper, which needs only compatible point representatives.
+                # An anisotropic or non-diagonal supercell may not represent every G0
+                # operation with an integer rotation matrix. The nonprimitive BZ helper
+                # needs only rotations that preserve the submitted lattice, so use the
+                # standard G0 label when the full operation set cannot be verified.
                 physical_operations = space_operations
                 physical_symmetry = _standard_physical_symmetry(
                     expected_spacegroup_number
@@ -1006,7 +1027,7 @@ def prepare_submitted_cell_analysis(
     physical_helper = None
     if physical_operation_set_verified:
         try:
-            physical_helper = _build_physical_analysis_cell(
+            physical_helper = _build_g0_marker_cell(
                 lattice,
                 positions,
                 real_types,
@@ -1020,9 +1041,8 @@ def prepare_submitted_cell_analysis(
 
     uses_conventional_supercell_bz = translation_index > 1
     if uses_conventional_supercell_bz:
-        helper = build_submitted_analysis_cell(
+        helper = _build_nonprimitive_bz_marker_cell(
             lattice,
-            positions,
             real_types,
             space_operations,
             symprec=symprec,
@@ -1052,7 +1072,7 @@ def prepare_submitted_cell_analysis(
     basename = os.path.splitext(os.path.basename(structure_file))[0]
     result = {
         "analysis_cell": helper["cell"],
-        "analysis_marker_type": helper["marker_type"],
+        "analysis_has_markers": bool(helper["marker_types"]),
         "submitted_lattice": np.array(lattice, dtype=float),
         "submitted_sites": len(elements),
         "operation_basis_label": (
@@ -1063,14 +1083,13 @@ def prepare_submitted_cell_analysis(
         "nonmagnetic_primitive_symmetry": nonmagnetic_primitive_symmetry,
         "bz_helper_symmetry": bz_helper_symmetry,
         "uses_conventional_supercell_bz": uses_conventional_supercell_bz,
-        # Stable result key used by internal consumers.
+        # Internal consumers use this alias for the BZ helper symmetry.
         "analysis_symmetry": bz_helper_symmetry,
         "summary": {
             "marker_seeds": [
                 seed.tolist() for seed in helper["marker_seeds"]
             ],
             "marker_count": helper["marker_count"],
-            "marker_type": helper["marker_type"],
             "marker_types": helper["marker_types"],
             "marker_min_distance": helper["marker_min_distance"],
             "intended_point_operations": helper[

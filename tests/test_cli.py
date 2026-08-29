@@ -1,4 +1,4 @@
-"""The submitted-cell workflow has no alternate cell-setting CLI mode."""
+"""CLI routing and failure handling."""
 import sys
 
 import pytest
@@ -38,16 +38,6 @@ def _run(monkeypatch, recorded, argv):
     assert alterseek_path.main() == 0
     assert len(recorded) == 1
     return recorded[0].kwargs
-
-
-def test_ssg_setting_flag_no_longer_exists(monkeypatch, recorded):
-    """It named the behavior that is now the default, so it was removed
-    outright rather than kept as a silent alias."""
-    monkeypatch.setattr(sys, "argv", ["alterseek-path", "--ssg-setting"])
-    with pytest.raises(SystemExit) as excinfo:
-        alterseek_path.main()
-    assert excinfo.value.code == 2
-    assert not recorded
 
 
 def test_other_flags_still_route_through(monkeypatch, recorded):
