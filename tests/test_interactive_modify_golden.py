@@ -67,9 +67,14 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         "fractional basis (a1, a2, a3)."
     )
     assert (
-        "General k-point (IBZ centroid, standardized primitive basis)"
+        "General k-point (IBZ centroid, standardized basis)"
         in full_text
     )
+    assert "General k-point (IBZ centroid, input-cell basis)" in full_text
+    assert "KPOINTS output basis" not in full_text
+    assert "IBZ centroid (standardized basis)" in stdout
+    assert "IBZ centroid (input-cell basis)" in stdout
+    assert "IBZ centroid (KPOINTS output basis)" not in stdout
     assert flip_headers == [
         "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3).",

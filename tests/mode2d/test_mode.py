@@ -18,7 +18,12 @@ from alterseek import compute_centroid_3d as cc
 from alterseek import symmetry
 from alterseek.mode2d.geometry import analyze_lattice
 from alterseek.mode2d.lattice_kpoints import build_path
-from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
+from alterseek.kpoints import (
+    KPointsModifier,
+    OUTPUT_DIR,
+    _print_2d_structure_summary,
+)
+from alterseek.submitted_cell_analysis import _layer_cell_summary
 from alterseek.plotting_common import (
     GAMMA_LABEL, _figure_output_paths, _math_label,
     generated_plain_path_segments,
@@ -34,6 +39,45 @@ from alterseek.mode2d.plotting import (
 
 def _diag(vals):
     return np.diag(np.asarray(vals, dtype=float))
+
+
+def test_2d_cell_summary_reports_parent_and_magnetic_layer_groups(capsys):
+    lattice = np.diag([4.0, 4.0, 20.0])
+    positions = np.array([
+        [0.25, 0.0, 0.0],
+        [0.75, 0.0, 0.0],
+        [0.0, 0.25, 0.0],
+        [0.0, 0.75, 0.0],
+    ])
+    moments = np.array([
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, -1.0],
+    ])
+    summary = _layer_cell_summary(
+        lattice,
+        positions,
+        ["Fe"] * 4,
+        moments,
+        vacuum_axis=2,
+        symprec=1e-3,
+    )
+
+    assert summary["input_cell"]["label"] == "pmmm (37)"
+    assert summary["nonmagnetic_primitive_cell"]["label"] == "p4/mmm (61)"
+    assert summary["magnetic_primitive_cell"]["label"] == "pmmm (37)"
+
+    _print_2d_structure_summary(
+        {"layer_cell_summary": summary},
+        {"sc_type": "square"},
+    )
+    assert capsys.readouterr().out.splitlines() == [
+        "Input cell:                   LG pmmm (37)    PG mmm    Laue mmm    [4 atoms]",
+        "Nonmagnetic primitive cell:   LG p4/mmm (61)  PG 4/mmm  Laue 4/mmm  [4 atoms]",
+        "Magnetic primitive cell:      LG pmmm (37)    PG mmm    Laue mmm    [4 atoms]",
+        "2D lattice: square",
+    ]
 
 
 @pytest.mark.parametrize("hpkot_setting", ["oC1", "oC2", "oA2", "mC2"])
@@ -443,7 +487,7 @@ def test_2d_figures_use_physical_plane_when_fractional_c_is_cartesian_x(tmp_path
 
 @pytest.mark.parametrize("stale_spin_log", [None, "old structure sentinel\n"])
 def test_interactive_2d_output_stays_in_physical_plane(
-    tmp_path, monkeypatch, stale_spin_log
+    tmp_path, monkeypatch, capsys, stale_spin_log
 ):
     poscar = tmp_path / "POSCAR"
     _write_tetragonal_slab(poscar)
@@ -461,6 +505,23 @@ def test_interactive_2d_output_stays_in_physical_plane(
     monkeypatch.chdir(tmp_path)
 
     assert KPointsModifier(mode_2d=True, input_vacuum_axis=2).interactive_modify()
+    stdout = capsys.readouterr().out
+    assert (
+        "Input cell:                   LG p4/mmm (61)  PG 4/mmm  "
+        "Laue 4/mmm  [1 atoms]"
+        in stdout
+    )
+    assert (
+        "Nonmagnetic primitive cell:   LG p4/mmm (61)  PG 4/mmm  "
+        "Laue 4/mmm  [1 atoms]"
+        in stdout
+    )
+    assert "Magnetic primitive cell:" not in stdout
+    assert "2D lattice: square" in stdout
+    assert "Layer group:" not in stdout
+    assert "IBZ centroid (input-cell basis):" in stdout
+    assert "IBZ centroid (standardized basis):" not in stdout
+    assert "IBZ centroid (KPOINTS output basis):" not in stdout
     lines = (tmp_path / "KPOINTS_alter").read_text(encoding="utf-8").splitlines()
     coordinate_rows = [
         line.split()

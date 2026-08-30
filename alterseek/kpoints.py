@@ -150,36 +150,53 @@ def _cell_suffix(sites, lattice_tag):
     return f"[{', '.join(parts)}]" if parts else ""
 
 
-def _print_cell_rows(rows, note=None, note_after_index=0):
+def _print_cell_rows(rows, note=None, note_after_index=0, group_kind="SG"):
     """Print cell-summary fields in columns sized to the supplied rows."""
-    sg_w = max(len(row[1]) for row in rows)
+    group_w = max(len(row[1]) for row in rows)
     pg_w = max(len(row[2]) for row in rows)
-    laue_w = max(len(row[3]) for row in rows)
-    for index, (label, sg, pg, laue, suffix) in enumerate(rows):
+    laue_w = max((len(row[3]) for row in rows if row[3]), default=0)
+    for index, (label, group, pg, laue, suffix) in enumerate(rows):
+        laue_field = f"  Laue {laue:<{laue_w}}" if laue else ""
         line = (f"{label:<{_CELL_LABEL_WIDTH}}"
-                f"SG {sg:<{sg_w}}  PG {pg:<{pg_w}}  Laue {laue:<{laue_w}}  {suffix}")
+                f"{group_kind} {group:<{group_w}}  PG {pg:<{pg_w}}"
+                f"{laue_field}  {suffix}")
         print(line.rstrip())
         if index == note_after_index and note:
             print(f"{'':<{_CELL_LABEL_WIDTH}}{note}")
 
 
-def _print_2d_structure_summary(centroid_result):
-    """Print the two physical structural labels used by 2D mode."""
-    layer_symbol = centroid_result.get("layer_group_symbol", "Unknown")
-    layer_number = centroid_result.get("layer_group_number")
-    layer_point_group = centroid_result.get("layer_point_group", "Unknown")
+def _print_2d_structure_summary(analysis_preparation, centroid_result):
+    """Print the layer-group analogue of the 3D cell summary."""
+    summary = analysis_preparation["layer_cell_summary"]
+    rows = [
+        ("Input cell:", summary["input_cell"]),
+        (
+            "Nonmagnetic primitive cell:",
+            summary["nonmagnetic_primitive_cell"],
+        ),
+    ]
+    if summary["magnetic_primitive_cell"] is not None:
+        rows.append((
+            "Magnetic primitive cell:",
+            summary["magnetic_primitive_cell"],
+        ))
+    _print_cell_rows(
+        [
+            (
+                label,
+                symmetry["label"],
+                symmetry["point_group"],
+                symmetry["laue_group"],
+                _cell_suffix(symmetry["sites"], None),
+            )
+            for label, symmetry in rows
+        ],
+        group_kind="LG",
+    )
     lattice_type = str(centroid_result.get("sc_type", "Unknown")).replace(
         "_", " "
     )
-    number_text = f" (No. {layer_number})" if layer_number is not None else ""
-    print(
-        f"{'Layer group:':<{_CELL_LABEL_WIDTH}}"
-        f"{layer_symbol}{number_text}  PG {layer_point_group}"
-    )
-    print(
-        f"{'2D lattice:':<{_CELL_LABEL_WIDTH}}"
-        f"{lattice_type}"
-    )
+    print(f"2D lattice: {lattice_type}")
 
 
 def _g0_symmetry(sf_result, sites=None):
@@ -1527,6 +1544,9 @@ class KPointsModifier:
                     output_dir=OUTPUT_DIR,
                     symprec=(1e-3 if symprec is None else symprec),
                     write_magnetic_diagnostic=sf_result is not None,
+                    input_vacuum_axis=(
+                        self.input_vacuum_axis if self.mode_2d else None
+                    ),
                 )
                 submitted_lattice_for_2d = analysis_preparation[
                     "submitted_lattice"
@@ -1645,7 +1665,9 @@ class KPointsModifier:
                         "recovered from the input cell at symprec="
                         f"{parent_recovery['symprec']:g} (index {parent_recovery['index']})")
                 if self.mode_2d:
-                    _print_2d_structure_summary(centroid_result)
+                    _print_2d_structure_summary(
+                        analysis_preparation, centroid_result
+                    )
                 else:
                     _print_cell_rows(
                         cell_rows,
@@ -1776,7 +1798,9 @@ class KPointsModifier:
                 ),
             )]
             if self.mode_2d:
-                _print_2d_structure_summary(centroid_result)
+                _print_2d_structure_summary(
+                    analysis_preparation, centroid_result
+                )
             else:
                 _print_cell_rows(structural_rows)
             if not self.mode_2d and analysis_preparation.get(
@@ -1948,36 +1972,40 @@ class KPointsModifier:
             return False
         c = centroid_result['centroid_frac']
         general_kpoint = [c[0], c[1], c[2]]
-        centroid_basis = (
-            "submitted calculation-cell basis"
-            if centroid_result.get('path_source_2d')
-            else "standardized basis"
-        )
-        print(
-            f"IBZ centroid ({centroid_basis}): "
-            f"[{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]"
-        )
         # Append the centroid only to a log owned by this run to avoid creating a centroid-only file or modifying a stale log.
         out_k = self._general_kpoint_output_basis(general_kpoint)
-        if out_k is not None:
+        path_source_2d = bool(centroid_result.get('path_source_2d'))
+        if not path_source_2d:
             print(
-                "IBZ centroid (KPOINTS output basis): "
-                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]"
+                "IBZ centroid (standardized basis): "
+                f"[{c[0]:.6f}, {c[1]:.6f}, {c[2]:.6f}]"
+            )
+        input_cell_k = general_kpoint if path_source_2d else out_k
+        if input_cell_k is not None:
+            print(
+                "IBZ centroid (input-cell basis): "
+                f"[{input_cell_k[0]:.6f}, {input_cell_k[1]:.6f}, "
+                f"{input_cell_k[2]:.6f}]"
             )
         if _step0_wrote_operation_log:
             try:
                 with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
                           "a", encoding="utf-8", newline="\n") as f:
-                    centroid_basis_label = (
-                        "submitted calculation-cell basis"
-                        if centroid_result.get('path_source_2d')
-                        else "standardized primitive basis"
-                    )
-                    f.write(f"\nGeneral k-point (IBZ centroid, {centroid_basis_label}): "
-                            f"[{general_kpoint[0]:.6f}, {general_kpoint[1]:.6f}, {general_kpoint[2]:.6f}]\n")
-                    if out_k is not None:
-                        f.write(f"General k-point (IBZ centroid, KPOINTS output basis): "
-                                f"[{out_k[0]:.6f}, {out_k[1]:.6f}, {out_k[2]:.6f}]\n")
+                    if not path_source_2d:
+                        f.write(
+                            "\nGeneral k-point (IBZ centroid, standardized basis): "
+                            f"[{general_kpoint[0]:.6f}, "
+                            f"{general_kpoint[1]:.6f}, "
+                            f"{general_kpoint[2]:.6f}]\n"
+                        )
+                    else:
+                        f.write("\n")
+                    if input_cell_k is not None:
+                        f.write(
+                            "General k-point (IBZ centroid, input-cell basis): "
+                            f"[{input_cell_k[0]:.6f}, {input_cell_k[1]:.6f}, "
+                            f"{input_cell_k[2]:.6f}]\n"
+                        )
             except OSError as exc:
                 print("[Warning] Could not append the general k-point to "
                       f"spin_operations.txt: {exc}")

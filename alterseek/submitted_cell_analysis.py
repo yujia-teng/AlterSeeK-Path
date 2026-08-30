@@ -15,6 +15,7 @@ from .io import (
     _min_periodic_cart_distance,
     _write_magnetic_mcif,
 )
+from .symmetry import laue_group_from_point_group
 
 
 # Generic fractional seeds for the marker orbits; the trailing 1e-8 keeps a seed off special positions.
@@ -484,6 +485,70 @@ def _seekpath_lattice_tag(lattice, symprec):
     return result["bravais_lattice_extended"]
 
 
+def _moment_colored_types(elements, moments, tol=0.02):
+    """Assign one spglib type to each distinct element-and-moment color."""
+    colors = []
+    types = []
+    for element, moment in zip(elements, np.asarray(moments, dtype=float)):
+        for index, (other_element, other_moment) in enumerate(colors):
+            if element == other_element and np.allclose(
+                moment, other_moment, atol=tol, rtol=0.0
+            ):
+                types.append(index + 1)
+                break
+        else:
+            colors.append((element, np.asarray(moment, dtype=float).copy()))
+            types.append(len(colors))
+    return types
+
+
+def _layer_group_record(cell, vacuum_axis, symprec):
+    """Return layer-group labels and the layer-primitive site count."""
+    dataset = spglib.get_symmetry_layerdataset(
+        cell,
+        aperiodic_dir=int(vacuum_axis),
+        symprec=float(symprec),
+    )
+    if dataset is None:
+        raise RuntimeError("Could not determine the physical layer group.")
+    point_group = str(dataset.pointgroup)
+    laue_group = laue_group_from_point_group(point_group)
+    if laue_group is None:
+        raise RuntimeError(
+            f"Could not determine the Laue group for layer point group {point_group}."
+        )
+    return {
+        "label": f"{dataset.international} ({int(dataset.number)})",
+        "point_group": point_group,
+        "laue_group": laue_group,
+        "sites": len(set(
+            int(value) for value in dataset.mapping_to_primitive
+        )),
+    }
+
+
+def _layer_cell_summary(lattice, positions, elements, moments, vacuum_axis, symprec):
+    """Build the 2D input/nonmagnetic/magnetic cell-summary records."""
+    from ase.data import atomic_numbers
+
+    nonmagnetic = _layer_group_record(
+        (lattice, positions, [atomic_numbers[str(value)] for value in elements]),
+        vacuum_axis, symprec,
+    )
+    magnetic = None
+    if np.any(np.linalg.norm(np.asarray(moments, dtype=float), axis=1) > 1e-10):
+        magnetic = _layer_group_record(
+            (lattice, positions, _moment_colored_types(elements, moments)),
+            vacuum_axis, symprec,
+        )
+
+    return {
+        "input_cell": {**(magnetic or nonmagnetic), "sites": len(elements)},
+        "nonmagnetic_primitive_cell": nonmagnetic,
+        "magnetic_primitive_cell": magnetic,
+    }
+
+
 def _physical_symmetry_from_operations(
     lattice,
     operations,
@@ -877,6 +942,7 @@ def prepare_submitted_cell_analysis(
     output_dir=".",
     symprec=1e-3,
     write_magnetic_diagnostic=False,
+    input_vacuum_axis=None,
 ):
     """Prepare the marker cell and symmetry data for submitted-cell BZ analysis.
 
@@ -1128,6 +1194,15 @@ def prepare_submitted_cell_analysis(
     result["summary"]["physical_operation_set_verified"] = (
         physical_operation_set_verified
     )
+    if input_vacuum_axis is not None:
+        result["layer_cell_summary"] = _layer_cell_summary(
+            lattice,
+            positions,
+            elements,
+            moments,
+            input_vacuum_axis,
+            symprec,
+        )
 
     if write_magnetic_diagnostic:
         if fsg_result is None:

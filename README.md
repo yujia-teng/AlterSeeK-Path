@@ -102,7 +102,7 @@ Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
 IBZ centroid (standardized basis): [0.277778, 0.111111, 0.250000]
-IBZ centroid (KPOINTS output basis): [0.277778, 0.111111, 0.250000]
+IBZ centroid (input-cell basis): [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Spin-flip operation
 Found 12 spin-flip operations R.
