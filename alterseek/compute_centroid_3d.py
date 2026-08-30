@@ -839,7 +839,9 @@ def _generate_figure1(
                             dpi=300,
                             bbox_inches='tight',
                         )
-                        _print_saved_paths(saved_paths)
+                        view = (ax.elev, ax.azim)
+                        fig._alterseek_camera_angle = (saved_paths[0],) + view
+                        _print_saved_paths(saved_paths, view=view)
                     finally:
                         if save_figure is not None:
                             plt.close(save_figure)
@@ -878,7 +880,8 @@ def _generate_figure1(
                 dpi=300,
                 bbox_inches='tight',
             )
-            _print_saved_paths(saved_paths, verbose=verbose)
+            _print_saved_paths(saved_paths, verbose=verbose,
+                               view=(elev1, azim1))
             plt.close(fig1s)
     except Exception as exc:
         display_figures.clear()

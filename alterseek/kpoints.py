@@ -30,7 +30,9 @@ from .plotting_common import (
     label_aliases,
     POINT_COINCIDENCE_ATOL,
     prime_point_label,
+    write_camera_angle_file,
 )
+from .run_log import read_answer
 from .submitted_cell_analysis import (
     prepare_submitted_cell_analysis,
 )
@@ -119,6 +121,23 @@ def _display_and_save_figures(display_figures):
                 plt.close(fig)
             except Exception as exc:
                 print(f"[Warning] Could not close generated figure: {exc}")
+
+    # Each window captures its own angle, so the record is written only once
+    # every figure has been closed and saved.
+    camera_angles = [
+        angle for angle in (
+            getattr(fig, '_alterseek_camera_angle', None)
+            for fig in display_figures
+        )
+        if angle is not None
+    ]
+    try:
+        camera_angle_path = write_camera_angle_file(camera_angles)
+    except Exception as exc:
+        print(f"[Warning] Could not write the camera-angle record: {exc}")
+    else:
+        if camera_angle_path is not None:
+            print(f"Saved: {camera_angle_path}")
 
 
 def _cell_suffix(sites, lattice_tag):
@@ -1215,7 +1234,7 @@ class KPointsModifier:
                     _preset_pending = False
                     print(choice)
                 else:
-                    choice = input().strip().lower()
+                    choice = read_answer().strip().lower()
 
                 if not choice:
                     R = flip_ops[0]
@@ -1384,7 +1403,7 @@ class KPointsModifier:
                 val = str(input_config[key]).strip()
                 print(val)
                 return val
-            return input().strip()
+            return read_answer().strip()
 
         def _choose_output_code():
             while True:

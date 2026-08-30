@@ -955,7 +955,9 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
                     dpi=300,
                     bbox_inches='tight',
                 )
-                _print_saved_paths(saved_paths)
+                view = (ax.elev, ax.azim)
+                fig._alterseek_camera_angle = (saved_paths[0],) + view
+                _print_saved_paths(saved_paths, view=view)
             finally:
                 if save_figure is not None:
                     plt.close(save_figure)
@@ -988,7 +990,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
         bbox_inches='tight',
     )
     plt.close(fig_save)
-    _print_saved_paths(saved_paths)
+    _print_saved_paths(saved_paths, view=(elev, azim))
     return display_fig
 
 
@@ -1090,7 +1092,9 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
                     dpi=300,
                     bbox_inches='tight',
                 )
-                _print_saved_paths(saved_paths)
+                view = (ax.elev, ax.azim)
+                fig._alterseek_camera_angle = (saved_paths[0],) + view
+                _print_saved_paths(saved_paths, view=view)
             finally:
                 if save_figure is not None:
                     plt.close(save_figure)
@@ -1119,7 +1123,7 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
         bbox_inches='tight',
     )
     plt.close(fig)
-    _print_saved_paths(saved_paths)
+    _print_saved_paths(saved_paths, view=(elev, azim))
     return display_fig
 
 

@@ -5,6 +5,7 @@ import os
 import matplotlib as mpl
 import numpy as np
 
+from .atomic_write import _atomic_open_text
 from .lattice_kpoints import canonical_lattice_type
 
 
@@ -165,11 +166,39 @@ def _save_figure(fig, output_path, extra_formats=None, **kwargs):
     return saved_paths
 
 
-def _print_saved_paths(saved_paths, verbose=True):
+def _print_saved_paths(saved_paths, verbose=True, view=None):
     if not verbose:
         return
+    suffix = ""
+    if view is not None:
+        suffix = f"  (view_elev = {view[0]:.2f}, view_azim = {view[1]:.2f})"
     for path in saved_paths:
-        print(f"Saved: {path}")
+        print(f"Saved: {path}{suffix}")
+
+
+CAMERA_ANGLE_FILENAME = "figure_camera_angle.txt"
+
+
+def write_camera_angle_file(entries):
+    """Record the closing camera angle of each 3D figure beside the figures."""
+    if not entries:
+        return None
+    output_path = os.path.join(
+        os.path.dirname(entries[0][0]), CAMERA_ANGLE_FILENAME
+    )
+    lines = [
+        "# Camera angle captured when each interactive 3D window was closed.",
+        "# Paste one pair into alterseek_input.toml to reopen at that angle.",
+        "",
+    ]
+    for figure_path, elev, azim in entries:
+        lines.append(os.path.basename(figure_path))
+        lines.append(f"view_elev = {elev:.2f}")
+        lines.append(f"view_azim = {azim:.2f}")
+        lines.append("")
+    with _atomic_open_text(output_path) as handle:
+        handle.write("\n".join(lines))
+    return output_path
 
 
 _GREEK_MATH = {

@@ -24,7 +24,9 @@ class _Recorder:
 
 
 @pytest.fixture
-def recorded(monkeypatch):
+def recorded(monkeypatch, tmp_path):
+    # main() writes its run log into the working directory.
+    monkeypatch.chdir(tmp_path)
     _Recorder.instances = []
     _Recorder.result = True
     _Recorder.error = None

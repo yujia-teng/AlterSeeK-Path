@@ -124,10 +124,12 @@ Band plot config updated: alterseek_plot_vasp.toml (lattice_type = "hP2")
 
 Done.
 Displaying generated figure(s)...
-Saved: alterseek_output\POSCAR_ibz_hP2.png
-Saved: alterseek_output\POSCAR_spinflip_hP2.png
-Saved: alterseek_output\POSCAR_spinbz_hP2.png
+Saved: alterseek_output\POSCAR_ibz_hP2.png  (view_elev = 14.00, view_azim = 20.00)
+Saved: alterseek_output\POSCAR_spinflip_hP2.png  (view_elev = 14.00, view_azim = 20.00)
+Saved: alterseek_output\POSCAR_spinbz_hP2.png  (view_elev = 14.00, view_azim = 20.00)
 Saved: alterseek_output\POSCAR_spinbz_top_hP2.png
+Saved: alterseek_output\figure_camera_angle.txt
+Run log: alterseek_output\alterseek_run.log
 ```
 
 ---

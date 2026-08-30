@@ -81,6 +81,8 @@ figures and diagnostic records go into `alterseek_output/`.
 | `spin*_operations.txt` | Full, spin-flip, and spin-preserving operation logs; written only when spin analysis runs |
 | `*_magnetic_primitive.mcif` | Direct FindSpinGroup magnetic primitive reference with vector moments; it is not the calculation cell |
 | `*_seekpath_basis_mapping.txt` | Submitted analysis/output lattice, internal primitive path lattice, standardized conventional lattice, and rotation mapping |
+| `figure_camera_angle.txt` | `view_elev`/`view_azim` each 3D figure was saved at, ready to paste into `alterseek_input.toml` |
+| `alterseek_run.log` | Everything a successful run printed; overwritten by the next successful run |
 
 ## Cell Handling
 
