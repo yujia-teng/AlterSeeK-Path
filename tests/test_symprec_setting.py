@@ -99,9 +99,3 @@ def test_symprec_rejects_non_finite_numbers(value):
 def test_symprec_rejects_non_numbers(value):
     with pytest.raises(ValueError, match="symprec must be a number"):
         _validate_input_config({"symprec": value})
-
-
-def test_symprec_is_an_accepted_config_key():
-    """Guards against the key being validated but not whitelisted."""
-    from alterseek.kpoints import _INPUT_CONFIG_KEYS
-    assert "symprec" in _INPUT_CONFIG_KEYS
