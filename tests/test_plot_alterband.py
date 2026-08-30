@@ -177,9 +177,9 @@ def test_qe_build_tick_data_merges_gap_pairs_in_either_order(first, second, merg
     from plotting.plot_alterband_qe import _build_tick_data
 
     kpath = np.array([0.0, 1.0, 3.0, 4.0])
-    waypoints = [("GAMMA", 30, 0), (first, 30, 1), (second, 1, 2), ("M", 30, 3)]
+    path_points = [("GAMMA", 30, 0), (first, 30, 1), (second, 1, 2), ("M", 30, 3)]
 
-    labels, positions = _build_tick_data(waypoints, kpath)
+    labels, positions = _build_tick_data(path_points, kpath)
 
     assert labels == ["GAMMA", merged, "M"]
     assert positions == [0.0, 2.0, 4.0]
@@ -189,9 +189,9 @@ def test_qe_build_tick_data_keeps_unpaired_helper_labels():
     from plotting.plot_alterband_qe import _build_tick_data
 
     kpath = np.array([0.0, 1.0, 2.0])
-    waypoints = [("k", 1, 0), ("M", 30, 1), ("k'", 30, 2)]
+    path_points = [("k", 1, 0), ("M", 30, 1), ("k'", 30, 2)]
 
-    labels, positions = _build_tick_data(waypoints, kpath)
+    labels, positions = _build_tick_data(path_points, kpath)
 
     assert labels == ["k", "M", "k'"]
     assert positions == [0.0, 1.0, 2.0]
@@ -200,10 +200,10 @@ def test_qe_build_tick_data_keeps_unpaired_helper_labels():
 def test_qe_build_tick_data_rejects_out_of_range_gap_partner():
     from plotting.plot_alterband_qe import _build_tick_data
 
-    waypoints = [("k", 30, 0), ("k'", 1, 2)]
+    path_points = [("k", 30, 0), ("k'", 1, 2)]
 
     with pytest.raises(ValueError, match="k-index 2"):
-        _build_tick_data(waypoints, np.array([0.0]))
+        _build_tick_data(path_points, np.array([0.0]))
 
 
 def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
@@ -215,7 +215,7 @@ def test_qe_parse_kpoints_truncated_after_card_raises_value_error(tmp_path):
         _parse_kpoints_qe(bad)
 
 
-def test_qe_parse_kpoints_rejects_missing_waypoint_rows(tmp_path):
+def test_qe_parse_kpoints_rejects_missing_path_point_rows(tmp_path):
     from plotting.plot_alterband_qe import _parse_kpoints_qe
 
     bad = tmp_path / "KPOINTS_alter_qe"
@@ -227,12 +227,12 @@ def test_qe_parse_kpoints_rejects_missing_waypoint_rows(tmp_path):
     )
     with pytest.raises(
         ValueError,
-        match="declares 2 waypoints but contains only 1",
+        match="declares 2 path points but contains only 1",
     ):
         _parse_kpoints_qe(bad)
 
 
-def test_qe_parse_kpoints_malformed_waypoint_raises_value_error(tmp_path):
+def test_qe_parse_kpoints_malformed_path_point_raises_value_error(tmp_path):
     from plotting.plot_alterband_qe import _parse_kpoints_qe
 
     bad = tmp_path / "KPOINTS_alter_qe"
@@ -240,5 +240,5 @@ def test_qe_parse_kpoints_malformed_waypoint_raises_value_error(tmp_path):
         "K_POINTS crystal_b\n2\n0.0 0.0 0.0 30 !GAMMA\n0.5 0.5 !X\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="Malformed waypoint line"):
+    with pytest.raises(ValueError, match="Malformed path-point line"):
         _parse_kpoints_qe(bad)

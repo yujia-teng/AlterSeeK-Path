@@ -1,25 +1,34 @@
 # Plotting
 
-AlterSeeK-Path includes a band plotter for spin-resolved VASP band structures.
+AlterSeeK-Path includes spin-resolved band plotters for VASP, Quantum
+ESPRESSO, and ABINIT.
 
 ## Basic Workflow
 
-1. Generate `KPOINTS_alter` with `alterseek-path`.
-2. Run the VASP band calculation.
-3. Run VASPKIT task `211` to generate the reformatted band files.
-4. Run:
+1. Generate the k-path and plotting configuration with `alterseek-path`.
+2. Run the band calculation and the code-specific post-processing described
+   below.
+3. Run:
 
 ```bash
-alterseek-path bandplot
+alterseek-plot
 ```
 
-The optional shortcut command is equivalent:
+`alterseek-plot` detects the code from the generated
+`alterseek_plot_<code>.toml` file. To choose the code explicitly, run:
 
 ```bash
-alterseek-bandplot
+alterseek-plot vasp
+alterseek-plot qe
+alterseek-plot abinit
 ```
 
-## Required Files
+## VASP Band Plotting
+
+Run VASPKIT task `211` after the VASP calculation to generate the reformatted
+band files, then use `alterseek-plot` or `alterseek-plot vasp`.
+
+### Required Files
 
 By default, the plotter reads the standard VASPKIT output filenames:
 
@@ -39,21 +48,21 @@ alterband.png
 To write PDF output:
 
 ```bash
-alterseek-path bandplot -o alterband.pdf
+alterseek-plot vasp -o alterband.pdf
 ```
 
-## Plot Settings
+### Plot Settings
 
-The plot config was called `alterband.toml` before 2026-08-27; that name is
-still read when the new one is absent.
-
-If `alterseek_plot_vasp.toml` exists in the same directory, the band plotter uses it
-automatically. The main `alterseek-path` workflow writes this file after
-KPOINTS generation, recording the detected lattice type. A typical
-configuration:
+`alterseek-path` creates `alterseek_plot_vasp.toml` and sets or updates
+`lattice_type`. The remaining settings are included as commented defaults;
+uncomment and change them as needed. Only `--config` and `-o` are available as
+command-line overrides.
 
 ```toml
-lattice_type = "hP2"
+lattice_type = "hP2"  # written by alterseek-path
+klabels = "KLABELS"
+up = "REFORMATTED_BAND_UP.dat"
+down = "REFORMATTED_BAND_DW.dat"
 emin = -2
 emax = 2
 fig_width = 12
@@ -64,51 +73,36 @@ output = "alterband.png"
 save_pdf = false
 ```
 
-| Setting | Meaning | Equivalent CLI flag |
-|---------|---------|----------------------|
-| `lattice_type` | Enables lattice-aware label handling (e.g. repairing VASPKIT-truncated `oI2`/`oI3` labels) | `--lattice-type` |
-| `emin`, `emax` | Energy window in eV | `--emin`, `--emax` |
-| `fig_width`, `fig_height` | Figure size in inches | -- |
-| `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths | `--gap-width-inches` |
-| `split_panels` | `1` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) | `--split-panels` |
-| `output` | Output image filename (`.png` or `.pdf`) | `-o` |
-| `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` | `--save-pdf` |
-
-The plotter repairs known VASPKIT boundary-label and truncation errors in
-memory and reports any correction it uses. It does not rewrite `KLABELS`.
-VASP, QE, and ABINIT plotting configurations are all validated; malformed
-TOML, unknown settings, and invalid value types stop with an error.
-
-Command-line flags override the TOML file, e.g.:
-
-```bash
-alterseek-path bandplot --emin -3 --emax 3 --lattice-type mC2 --split-panels 2 -o alterband.pdf
-```
-
-Use explicit filenames if your VASPKIT outputs have different names:
-
-```bash
-alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
-```
+| Setting | Meaning |
+|---------|---------|
+| `klabels` | VASPKIT label file |
+| `up`, `down` | Spin-up/down VASPKIT band files |
+| `lattice_type` | Enables lattice-aware label handling (e.g. repairing VASPKIT-truncated `oI2`/`oI3` labels) |
+| `emin`, `emax` | Energy window in eV |
+| `fig_width`, `fig_height` | Figure size in inches |
+| `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths |
+| `split_panels` | `1` for one panel, `2`/`3` for stacked panels (rendering only, doesn't change KPOINTS/band data) |
+| `output` | Output image filename (`.png` or `.pdf`) |
+| `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` |
 
 ## Quantum ESPRESSO Band Plotting
 
-For QE workflows, use the separate `plotting/plot_alterband_qe.py` script
-(or `alterseek-bandplot-qe`) instead. It reads `bands.x` `.gnu` output and
-the `KPOINTS_alter_qe` waypoint file written by `alterseek-path`:
+The QE plotter reads user-named spin-up and spin-down `bands.x` `.gnu` files
+and the generated `KPOINTS_alter_qe` k-path file:
 
 ```bash
-alterseek-bandplot-qe
+alterseek-plot qe
 ```
 
-Settings are config-file only (there is no CLI-flag equivalent besides
-`--config`/`-o`). If `alterseek_plot_qe.toml` exists in the working directory, it
-is used automatically:
+`alterseek-path` creates `alterseek_plot_qe.toml` with commented defaults.
+Uncomment the QE filenames and other settings as needed; only `--config` and
+`-o` are available as command-line overrides.
 
 ```toml
-band_up = "band_up.gnu"
-band_down = "band_down.gnu"
-fermi_ev = 0.0
+band_up = "band_up.gnu"  # replace with your spin-up bands.x .gnu file
+band_down = "band_down.gnu"  # replace with your spin-down bands.x .gnu file
+kpoints_qe = "KPOINTS_alter_qe"
+fermi_ev = 0.0  # replace with the Fermi energy from the QE output file
 emin = -2
 emax = 2
 fig_width = 12
@@ -122,53 +116,38 @@ save_pdf = false
 | Setting | Meaning |
 |---------|---------|
 | `band_up`, `band_down` | Spin-up/down `bands.x` `.gnu` files |
-| `kpoints_qe` | The `K_POINTS crystal_b` waypoint file written by `alterseek-path` |
-| `fermi_ev` | Energy shift applied before plotting (QE `.gnu` output is not pre-shifted to E_F, unlike VASPKIT's reformatted files) |
+| `kpoints_qe` | The `K_POINTS crystal_b` k-path file written by `alterseek-path` |
+| `fermi_ev` | Fermi energy in eV subtracted from the `.gnu` energies |
 | `emin`, `emax` | Energy window in eV |
 | `fig_width`, `fig_height` | Figure size in inches |
-| `gap_width_inches` | Same meaning as the VASP plotter's setting |
+| `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths |
 | `split_panels` | `1` for one panel, `2`/`3` for stacked panels |
 | `output` | Output image filename (`.png` or `.pdf`) |
 | `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` |
 
-There is no `lattice_type` setting for QE plotting — it exists on the VASP
-side only to repair VASPKIT's truncated labels, which doesn't apply here
-since QE labels come from AlterSeeK-Path's own `KPOINTS_alter_qe` writer.
-
 ## ABINIT Band Plotting
 
-For ABINIT workflows, use `plotting/plot_alterband_abinit.py` (or
-`alterseek-bandplot-abinit`). It reads ABINIT's plain-text `_EIG` output
-and the `KPOINTS_alter_abinit` waypoint file written by `alterseek-path`:
+The ABINIT plotter reads the plain-text `_EIG` output and generated
+`KPOINTS_alter_abinit` k-path file:
 
 ```bash
-alterseek-bandplot-abinit
+alterseek-plot abinit
 ```
 
-**Units: ABINIT's `_EIG` file reports eigenvalues in hartree, not eV.**
-The plotter converts hartree to eV internally (multiplying by
-27.211386245988) before applying the Fermi shift and plotting — this is
-handled automatically, not something the user needs to do.
+The plotter converts `_EIG` energies from Hartree to eV, obtains the Fermi
+level from `abo`, and computes path distance from the submitted structure's
+reciprocal lattice. Set `fermi_ev` only when the `.abo` file is unavailable.
 
-Unlike VASPKIT's reformatted output or QE's `bands.x` `.gnu` files, ABINIT
-never writes a physical k-space path distance anywhere (not in `_EIG`, not
-in `GSR.nc`, and not even in ABINIT's own auto-generated `_EBANDS.agr`
-plot file, which uses plain k-point index for its x-axis instead). The
-plotter computes it directly: it reads the real-space lattice from
-`POSCAR`, builds the reciprocal lattice, and accumulates the Cartesian
-distance between consecutive `_EIG` k-points — the same approach ABINIT's
-own official `abinit_eignc_to_bandstructure.py` post-processing script
-uses.
-
-Settings are config-file only (there is no CLI-flag equivalent besides
-`--config`/`-o`). If `alterseek_plot_abinit.toml` exists in the working
-directory, it is used automatically:
+`alterseek-path` creates `alterseek_plot_abinit.toml` and records the submitted
+`structure`. The remaining settings are included as commented defaults;
+uncomment and change them as needed. Only `--config` and `-o` are available as
+command-line overrides.
 
 ```toml
-eig = "EIG"
+structure = "POSCAR"  # written by alterseek-path
+eig = "EIG"  # replace with your ABINIT _EIG file
 kpoints_abinit = "KPOINTS_alter_abinit"
-poscar = "POSCAR"
-abo = "abo"
+abo = "abo"  # replace with your ABINIT .abo output file
 emin = -2
 emax = 2
 fig_width = 12
@@ -181,17 +160,14 @@ save_pdf = false
 
 | Setting | Meaning |
 |---------|---------|
-| `eig` | ABINIT `_EIG` file (plain text, hartree, both spin channels) |
-| `kpoints_abinit` | The `kptopt`/`ndivk`/`kptbounds` waypoint file written by `alterseek-path` |
-| `poscar` | Structure file used to build the reciprocal lattice for the k-path distance |
-| `abo` | ABINIT `.abo` output file, used to read and convert the Fermi level ("Fermi (or HOMO) energy") automatically |
-| `fermi_ev` | Manual Fermi-level override in eV, if set. Takes priority over `abo` — only needed when the `.abo` file isn't available |
+| `eig` | ABINIT `_EIG` file (plain text, Hartree, both spin channels) |
+| `kpoints_abinit` | The `kptopt`/`ndivk`/`kptbounds` k-path file written by `alterseek-path` |
+| `structure` | Submitted POSCAR/`.vasp`, `.cif`, or `.mcif` structure used to build the reciprocal lattice for the k-path distance |
+| `abo` | ABINIT output used to read the Fermi level |
+| `fermi_ev` | Manual Fermi-level override in eV; takes priority over `abo` |
 | `emin`, `emax` | Energy window in eV |
 | `fig_width`, `fig_height` | Figure size in inches |
-| `gap_width_inches` | Same meaning as the VASP/QE plotters' setting |
+| `gap_width_inches` | Visual width of each `k\|k'` separator gap, kept consistent across path lengths |
 | `split_panels` | `1` for one panel, `2`/`3` for stacked panels |
 | `output` | Output image filename (`.png` or `.pdf`) |
 | `save_pdf` | Also save a `.pdf` copy alongside `output`, if `output` isn't already a `.pdf` |
-
-As with QE, there is no `lattice_type` setting — ABINIT labels come from
-AlterSeeK-Path's own `KPOINTS_alter_abinit` writer, not VASPKIT.

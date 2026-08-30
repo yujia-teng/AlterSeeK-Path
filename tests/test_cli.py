@@ -75,3 +75,15 @@ def test_cli_does_not_catch_keyboard_interrupt(monkeypatch, recorded):
 
     with pytest.raises(KeyboardInterrupt):
         alterseek_path.main()
+
+
+def test_path_command_no_longer_accepts_plotting_subcommands(
+    monkeypatch, recorded
+):
+    monkeypatch.setattr(sys, "argv", ["alterseek-path", "bandplot"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        alterseek_path.main()
+
+    assert exc_info.value.code == 2
+    assert recorded == []

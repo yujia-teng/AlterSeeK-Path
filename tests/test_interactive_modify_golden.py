@@ -75,7 +75,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
         "fractional basis (a1, a2, a3).",
         "# k mapping: k' = R^(-T) k (mod G) in the corresponding reciprocal "
         "basis (b1, b2, b3).",
-        "# Found 8 inversion-extended spin-flipping point operations",
+        "# Found 8 spin-flipping point operations",
     ]
 
     standard_vasp = output_dir / "case12_POSCAR_seekpath_standard.vasp"

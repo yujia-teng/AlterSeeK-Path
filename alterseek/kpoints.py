@@ -1250,6 +1250,8 @@ class KPointsModifier:
         preserve_ops,
         centroid_result,
         operation_basis_label,
+        output_flip_ops=None,
+        output_preserve_ops=None,
     ):
         """Express spin operations in SeeK-path's standardized primitive basis.
 
@@ -1261,6 +1263,10 @@ class KPointsModifier:
         R_cart_for_plot = None
         flip_ops_for_plot = flip_ops
         preserve_ops_for_plot = preserve_ops
+        output_flip_ops = flip_ops if output_flip_ops is None else output_flip_ops
+        output_preserve_ops = (
+            preserve_ops if output_preserve_ops is None else output_preserve_ops
+        )
         if centroid_result is not None and 'b_matrix' in centroid_result:
             _b_input = np.array(centroid_result.get('b_matrix_input',
                                                     centroid_result['b_matrix_conv']), dtype=float)
@@ -1285,6 +1291,12 @@ class KPointsModifier:
                 preserve_ops_for_plot = [
                     _convert_input_frac_R_to_prim(op)[0] for op in preserve_ops
                 ]
+            output_flip_ops_standardized = [
+                _convert_input_frac_R_to_prim(op)[0] for op in output_flip_ops
+            ]
+            output_preserve_ops_standardized = [
+                _convert_input_frac_R_to_prim(op)[0] for op in output_preserve_ops
+            ]
             def _annotate_ops_with_standardized_basis(filename, input_ops, standardized_ops, label):
                 try:
                     with _atomic_open_text(filename) as f:
@@ -1300,7 +1312,7 @@ class KPointsModifier:
                             "# k mapping: k' = R^(-T) k (mod G) in each "
                             "corresponding reciprocal basis (b1, b2, b3).\n"
                         )
-                        f.write(f"# Found {len(input_ops)} inversion-extended {label} point operations\n")
+                        f.write(f"# Found {len(input_ops)} {label} point operations\n")
                         for i, (input_op, std_op) in enumerate(zip(input_ops, standardized_ops), 1):
                             f.write(f"Operation_{i}\n")
                             input_int = np.rint(np.array(input_op, dtype=float)).astype(int)
@@ -1331,14 +1343,14 @@ class KPointsModifier:
             if operation_basis_changed:
                 _annotate_ops_with_standardized_basis(
                     os.path.join(OUTPUT_DIR, "spin_flip_operations.txt"),
-                    flip_ops,
-                    flip_ops_for_plot,
+                    output_flip_ops,
+                    output_flip_ops_standardized,
                     "spin-flipping",
                 )
                 _annotate_ops_with_standardized_basis(
                     os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt"),
-                    preserve_ops,
-                    preserve_ops_for_plot,
+                    output_preserve_ops,
+                    output_preserve_ops_standardized,
                     "spin-preserving",
                 )
         else:
@@ -1429,7 +1441,7 @@ class KPointsModifier:
                     operation_basis_label=operation_basis_label,
                 )
                 if write_ok:
-                    write_abinit_bandplot_config()
+                    write_abinit_bandplot_config(struct_file)
             else:
                 write_ok = self.write_kpoints_file_vasp(
                     path_points, "KPOINTS_alter", R_matrix, R_label,
@@ -1975,6 +1987,8 @@ class KPointsModifier:
         else:
             flip_ops = self.load_flip_operations()
         preserve_ops = self.load_preserve_operations()
+        output_flip_ops = list(flip_ops)
+        output_preserve_ops = list(preserve_ops)
 
         # Add inversion partners because inversion changes only the spatial operation, not whether the spin operation flips or preserves spin.
         def _inversion_extended(ops):
@@ -2073,6 +2087,8 @@ class KPointsModifier:
             preserve_ops,
             centroid_result,
             operation_basis_label,
+            output_flip_ops,
+            output_preserve_ops,
         )
         R_for_output = R_for_kpts
 

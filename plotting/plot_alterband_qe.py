@@ -43,7 +43,6 @@ _PLOT_STYLE = {
 }
 
 DEFAULT_PLOT_CONFIG = "alterseek_plot_qe.toml"
-LEGACY_PLOT_CONFIG = "alterband_qe.toml"   # pre-2026-08 name, still read
 
 def _plot_style(func):
     @wraps(func)
@@ -143,7 +142,7 @@ def _read_gnu_bands(path: Path, fermi_ev: float) -> tuple[np.ndarray, np.ndarray
 def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
     """Parse KPOINTS_alter_qe written by write_kpoints_file_qe.
 
-    Returns list of (label, ninterp, k_index) for each waypoint.
+    Returns list of (label, ninterp, k_index) for each path point.
     k_index is the 0-based index into the .gnu k-point array.
     """
     with path.open(encoding="utf-8-sig") as f:
@@ -159,13 +158,13 @@ def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
     if start + 1 >= len(all_lines):
         raise ValueError(f"{path} is truncated right after the K_POINTS card")
     if not all_lines[start + 1].split():
-        raise ValueError(f"{path}: missing waypoint-count line after the K_POINTS card")
+        raise ValueError(f"{path}: missing path-point count line after the K_POINTS card")
 
-    n_waypoints = int(all_lines[start + 1].strip().split()[0])
+    n_path_points = int(all_lines[start + 1].strip().split()[0])
 
-    waypoints_raw: list[tuple[str, int]] = []
+    path_points_raw: list[tuple[str, int]] = []
     for line in all_lines[start + 2:]:
-        if len(waypoints_raw) >= n_waypoints:
+        if len(path_points_raw) >= n_path_points:
             break
         stripped = line.strip()
         if not stripped or stripped.startswith("!"):
@@ -175,23 +174,23 @@ def _parse_kpoints_qe(path: Path) -> list[tuple[str, int, int]]:
         fields = parts[0].split()
         if len(fields) < 4:
             raise ValueError(
-                f"Malformed waypoint line in {path}: '{stripped}' "
+                f"Malformed path-point line in {path}: '{stripped}' "
                 "(expected 'x y z ni  ! LABEL')"
             )
         ni = int(fields[3])
         label = parts[1].strip() if len(parts) > 1 else ""
-        waypoints_raw.append((label, ni))
+        path_points_raw.append((label, ni))
 
-    if len(waypoints_raw) != n_waypoints:
+    if len(path_points_raw) != n_path_points:
         raise ValueError(
-            f"{path} declares {n_waypoints} waypoints but contains only "
-            f"{len(waypoints_raw)}"
+            f"{path} declares {n_path_points} path points but contains only "
+            f"{len(path_points_raw)}"
         )
 
-    # cumulative k-indices: waypoint i starts at sum of preceding ninterps
+    # Cumulative k-indices: path point i starts at the sum of preceding ninterps.
     result: list[tuple[str, int, int]] = []
     cum = 0
-    for label, ni in waypoints_raw:
+    for label, ni in path_points_raw:
         result.append((label, ni, cum))
         cum += ni
     return result
@@ -226,12 +225,12 @@ _COINCIDENT_POSITION_TOL = 1e-4
 
 
 def _build_tick_data(
-    waypoints: list[tuple[str, int, int]], kpath: np.ndarray
+    path_points: list[tuple[str, int, int]], kpath: np.ndarray
 ) -> tuple[list[str], list[float]]:
-    """Convert waypoints to tick labels and x-positions.
+    """Convert path points to tick labels and x-positions.
 
     Adjacent k / k' pairs (in either order) are merged into a single k|k' or
-    k'|k gap tick at their midpoint. Any other pair of adjacent waypoints
+    k'|k gap tick at their midpoint. Any other pair of adjacent path points
     that land at the same k-path position (the segment revisits a point
     that is physically identical up to a reciprocal lattice vector, e.g.
     a path landing back on a zone-boundary point under a different label)
@@ -240,33 +239,34 @@ def _build_tick_data(
     _fix_klabels_missing_merge in plot_alterband.py, which handles the
     same coincident-point case for VASP/VASPKIT-derived KLABELS).
     """
-    for label, _ni, k_idx in waypoints:
+    for label, _ni, k_idx in path_points:
         if k_idx >= len(kpath):
             raise ValueError(
-                f"Waypoint '{label}' has k-index {k_idx} but .gnu file has only "
+                f"Path point '{label}' has k-index {k_idx} but .gnu file has only "
                 f"{len(kpath)} k-points — KPOINTS_alter_qe and .gnu file mismatch"
             )
 
     labels: list[str] = []
     positions: list[float] = []
     i = 0
-    while i < len(waypoints):
-        label, _ni, k_idx = waypoints[i]
+    while i < len(path_points):
+        label, _ni, k_idx = path_points[i]
         if (
             label in ("k", "k'")
-            and i + 1 < len(waypoints)
-            and waypoints[i + 1][0] in ("k", "k'")
-            and waypoints[i + 1][0] != label
+            and i + 1 < len(path_points)
+            and path_points[i + 1][0] in ("k", "k'")
+            and path_points[i + 1][0] != label
         ):
-            x_first = kpath[waypoints[i][2]]
-            x_second = kpath[waypoints[i + 1][2]]
-            labels.append(f"{label}|{waypoints[i + 1][0]}")
+            x_first = kpath[path_points[i][2]]
+            x_second = kpath[path_points[i + 1][2]]
+            labels.append(f"{label}|{path_points[i + 1][0]}")
             positions.append((x_first + x_second) / 2.0)
             i += 2
             continue
         x_pos = float(kpath[k_idx])
         next_label, _next_ni, next_k_idx = (
-            waypoints[i + 1] if i + 1 < len(waypoints) else (None, None, None)
+            path_points[i + 1]
+            if i + 1 < len(path_points) else (None, None, None)
         )
         if (
             next_label is not None
@@ -425,8 +425,8 @@ def plot_alterband_qe(
         )
     kpath = kpath_up
 
-    waypoints = _parse_kpoints_qe(kpoints_path)
-    labels, positions = _build_tick_data(waypoints, kpath)
+    path_points = _parse_kpoints_qe(kpoints_path)
+    labels, positions = _build_tick_data(path_points, kpath)
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KPOINTS_alter_qe positions must increase from first to last entry")
@@ -493,14 +493,15 @@ def plot_alterband_qe(
     return output_path
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, *, prog: str | None = None) -> None:
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="Plot spin-resolved AlterSeeK band output from QE bands.x files."
     )
     parser.add_argument(
         "--config",
         default=None,
-        help="TOML config file. Defaults to alterseek_plot_qe.toml if present (alterband_qe.toml is still read when it is the only one there).",
+        help="TOML config file. Uses alterseek_plot_qe.toml by default when present.",
     )
     parser.add_argument("-o", "--output", default=None, help="Override output file path.")
     args = parser.parse_args(argv)
@@ -509,8 +510,6 @@ def main(argv: list[str] | None = None) -> None:
         config_path = Path(args.config)
     else:
         config_path = Path(DEFAULT_PLOT_CONFIG)
-        if not config_path.exists() and Path(LEGACY_PLOT_CONFIG).exists():
-            config_path = Path(LEGACY_PLOT_CONFIG)
     try:
         config = (
             _validate_plot_config(_read_plot_config(config_path), config_path)

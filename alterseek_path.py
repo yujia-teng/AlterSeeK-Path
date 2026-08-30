@@ -8,20 +8,9 @@ from alterseek.mode2d.kpoints import KPointsModifier2D
 def main():
     import argparse
 
-    argv = sys.argv[1:]
-    # Forward the bandplot subcommand untouched so plot_alterband parses its own options, including --help.
-    if argv and argv[0].lower() in {"bandplot", "plot-band", "plot"}:
-        from plotting.plot_alterband import main as plot_alterband_main
-        plot_alterband_main(argv[1:])
-        return 0
-
     parser = argparse.ArgumentParser(
         prog="alterseek-path",
-        description=(
-            "Generate an altermagnetic KPOINTS path interactively. "
-            "Subcommand: 'bandplot' plots spin-resolved bands from KLABELS "
-            "and reformatted band data (run: alterseek-path bandplot --help)."
-        ),
+        description="Generate an altermagnetic k-point path.",
     )
     parser.add_argument(
         "--2d",
@@ -38,7 +27,7 @@ def main():
              "or vacuum_axis in alterseek_input.toml). The slicing axis is "
              "auto-detected in the standardized frame regardless of this flag.",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(sys.argv[1:])
 
     vacuum_axis = (
         None if args.vacuum_axis is None

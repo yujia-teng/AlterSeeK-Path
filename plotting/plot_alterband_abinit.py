@@ -45,7 +45,6 @@ _PLOT_STYLE = {
 }
 
 DEFAULT_PLOT_CONFIG = "alterseek_plot_abinit.toml"
-LEGACY_PLOT_CONFIG = "alterband_abinit.toml"   # pre-2026-08 name, still read
 
 def _plot_style(func):
     @wraps(func)
@@ -55,13 +54,13 @@ def _plot_style(func):
     return wrapped
 
 _PLOT_CONFIG_KEYS = {
-    "eig", "kpoints_abinit", "poscar", "abo", "output", "fermi_ev",
+    "eig", "kpoints_abinit", "structure", "abo", "output", "fermi_ev",
     "emin", "emax", "fig_width", "fig_height",
     "gap_width_inches", "split_panels", "rotate_xtick_labels",
     "xtick_rotation", "save_pdf",
 }
 _STRING_CONFIG_KEYS = {
-    "eig", "kpoints_abinit", "poscar", "abo", "output",
+    "eig", "kpoints_abinit", "structure", "abo", "output",
 }
 _NUMBER_CONFIG_KEYS = {
     "fermi_ev", "emin", "emax", "fig_width", "fig_height",
@@ -116,18 +115,17 @@ def _validate_plot_config(config: dict[str, Any], path: Path) -> dict[str, Any]:
     return config
 
 
-def _read_poscar_lattice(path: Path) -> np.ndarray:
-    """Read the 3x3 real-space lattice (Angstrom) from a VASP POSCAR."""
-    with path.open(encoding="utf-8-sig") as f:
-        lines = f.readlines()
-    if len(lines) < 5:
-        raise ValueError(f"{path} is too short to contain a lattice")
-    scale = float(lines[1].split()[0])
-    lattice = np.array(
-        [[float(x) for x in lines[i].split()[:3]] for i in (2, 3, 4)],
-        dtype=float,
-    )
-    return scale * lattice
+def _read_structure_lattice(path: Path) -> np.ndarray:
+    """Read the real-space lattice (Angstrom) from an ASE-supported structure."""
+    from ase.io import read
+
+    structure = read(path, format="cif" if path.suffix.lower() == ".mcif" else None)
+    lattice = np.asarray(structure.cell, dtype=float)
+    if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
+        raise ValueError(f"{path} does not contain a finite 3x3 lattice")
+    if abs(float(np.linalg.det(lattice))) < 1e-12:
+        raise ValueError(f"{path} has a singular lattice")
+    return lattice
 
 
 def _reciprocal_lattice(real_lattice: np.ndarray) -> np.ndarray:
@@ -234,7 +232,7 @@ def _read_eig_bands(
 def _parse_kpoints_abinit(path: Path) -> list[tuple[str, int, int]]:
     """Parse KPOINTS_alter_abinit written by write_kpoints_file_abinit.
 
-    Returns list of (label, ndivk, k_index) for each waypoint, mirroring
+    Returns list of (label, ndivk, k_index) for each path point, mirroring
     _parse_kpoints_qe's (label, ninterp, k_index) shape. k_index is the
     0-based index into the _EIG file's k-point array.
     """
@@ -265,9 +263,9 @@ def _parse_kpoints_abinit(path: Path) -> list[tuple[str, int, int]]:
             f"{len(ndivk_values)} values"
         )
 
-    waypoints_raw: list[str] = []
+    path_points_raw: list[str] = []
     for line in lines[kptbounds_start:]:
-        if len(waypoints_raw) >= n_segments + 1:
+        if len(path_points_raw) >= n_segments + 1:
             break
         stripped = line.strip()
         if not stripped:
@@ -276,17 +274,17 @@ def _parse_kpoints_abinit(path: Path) -> list[tuple[str, int, int]]:
         fields = parts[0].split()
         if len(fields) < 3:
             break  # end of the kptbounds block
-        waypoints_raw.append(parts[1].strip() if len(parts) > 1 else "")
+        path_points_raw.append(parts[1].strip() if len(parts) > 1 else "")
 
-    if len(waypoints_raw) != n_segments + 1:
+    if len(path_points_raw) != n_segments + 1:
         raise ValueError(
-            f"{path} declares {n_segments} segments ({n_segments + 1} waypoints) "
-            f"but contains only {len(waypoints_raw)}"
+            f"{path} declares {n_segments} segments ({n_segments + 1} path points) "
+            f"but contains only {len(path_points_raw)}"
         )
 
     result: list[tuple[str, int, int]] = []
     cum = 0
-    for idx, label in enumerate(waypoints_raw):
+    for idx, label in enumerate(path_points_raw):
         ni = ndivk_values[idx] if idx < len(ndivk_values) else 0
         result.append((label, ni, cum))
         cum += ni
@@ -332,43 +330,44 @@ _COINCIDENT_POSITION_TOL = 1e-4
 
 
 def _build_tick_data(
-    waypoints: list[tuple[str, int, int]], kpath: np.ndarray
+    path_points: list[tuple[str, int, int]], kpath: np.ndarray
 ) -> tuple[list[str], list[float]]:
-    """Convert waypoints to tick labels and x-positions.
+    """Convert path points to tick labels and x-positions.
 
     Adjacent k / k' pairs (in either order) are merged into a single k|k' or
-    k'|k gap tick at their midpoint. Any other pair of adjacent waypoints
+    k'|k gap tick at their midpoint. Any other pair of adjacent path points
     that land at the same k-path position is merged into a single "A|B"
     tick -- otherwise matplotlib silently drops one of the two same-position
     labels (mirrors plot_alterband.py/plot_alterband_qe.py).
     """
-    for label, _ni, k_idx in waypoints:
+    for label, _ni, k_idx in path_points:
         if k_idx >= len(kpath):
             raise ValueError(
-                f"Waypoint '{label}' has k-index {k_idx} but the _EIG file has only "
+                f"Path point '{label}' has k-index {k_idx} but the _EIG file has only "
                 f"{len(kpath)} k-points — KPOINTS_alter_abinit and _EIG file mismatch"
             )
 
     labels: list[str] = []
     positions: list[float] = []
     i = 0
-    while i < len(waypoints):
-        label, _ni, k_idx = waypoints[i]
+    while i < len(path_points):
+        label, _ni, k_idx = path_points[i]
         if (
             label in ("k", "k'")
-            and i + 1 < len(waypoints)
-            and waypoints[i + 1][0] in ("k", "k'")
-            and waypoints[i + 1][0] != label
+            and i + 1 < len(path_points)
+            and path_points[i + 1][0] in ("k", "k'")
+            and path_points[i + 1][0] != label
         ):
-            x_first = kpath[waypoints[i][2]]
-            x_second = kpath[waypoints[i + 1][2]]
-            labels.append(f"{label}|{waypoints[i + 1][0]}")
+            x_first = kpath[path_points[i][2]]
+            x_second = kpath[path_points[i + 1][2]]
+            labels.append(f"{label}|{path_points[i + 1][0]}")
             positions.append((x_first + x_second) / 2.0)
             i += 2
             continue
         x_pos = float(kpath[k_idx])
         next_label, _next_ni, next_k_idx = (
-            waypoints[i + 1] if i + 1 < len(waypoints) else (None, None, None)
+            path_points[i + 1]
+            if i + 1 < len(path_points) else (None, None, None)
         )
         if (
             next_label is not None
@@ -502,7 +501,7 @@ def plot_alterband_abinit(
     *,
     eig: str | Path = "EIG",
     kpoints_abinit: str | Path = "KPOINTS_alter_abinit",
-    poscar: str | Path = "POSCAR",
+    structure: str | Path = "POSCAR",
     abo: str | Path | None = "abo",
     output: str | Path = "alterband_abinit.png",
     fermi_ev: float | None = None,
@@ -521,7 +520,7 @@ def plot_alterband_abinit(
     have that file present, not compute or type the shift by hand."""
     eig_path = Path(eig)
     kpoints_path = Path(kpoints_abinit)
-    poscar_path = Path(poscar)
+    structure_path = Path(structure)
     output_path = Path(output)
 
     if fermi_ev is None:
@@ -538,11 +537,13 @@ def plot_alterband_abinit(
         fermi_ev = _read_fermi_ev(abo_path)
 
     kpoints_frac, bands_up, bands_dw = _read_eig_bands(eig_path, fermi_ev)
-    reciprocal_lattice = _reciprocal_lattice(_read_poscar_lattice(poscar_path))
+    reciprocal_lattice = _reciprocal_lattice(
+        _read_structure_lattice(structure_path)
+    )
     kpath = _kpath_distance(kpoints_frac, reciprocal_lattice)
 
-    waypoints = _parse_kpoints_abinit(kpoints_path)
-    labels, positions = _build_tick_data(waypoints, kpath)
+    path_points = _parse_kpoints_abinit(kpoints_path)
+    labels, positions = _build_tick_data(path_points, kpath)
     x_total = positions[-1] - positions[0]
     if x_total <= 0:
         raise ValueError("KPOINTS_alter_abinit positions must increase from first to last entry")
@@ -609,14 +610,15 @@ def plot_alterband_abinit(
     return output_path
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, *, prog: str | None = None) -> None:
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="Plot spin-resolved AlterSeeK band output from an ABINIT _EIG file."
     )
     parser.add_argument(
         "--config",
         default=None,
-        help="TOML config file. Defaults to alterseek_plot_abinit.toml if present (alterband_abinit.toml is still read when it is the only one there).",
+        help="TOML config file. Uses alterseek_plot_abinit.toml by default when present.",
     )
     parser.add_argument("-o", "--output", default=None, help="Override output file path.")
     args = parser.parse_args(argv)
@@ -625,8 +627,6 @@ def main(argv: list[str] | None = None) -> None:
         config_path = Path(args.config)
     else:
         config_path = Path(DEFAULT_PLOT_CONFIG)
-        if not config_path.exists() and Path(LEGACY_PLOT_CONFIG).exists():
-            config_path = Path(LEGACY_PLOT_CONFIG)
     try:
         config = (
             _validate_plot_config(_read_plot_config(config_path), config_path)
@@ -640,7 +640,7 @@ def main(argv: list[str] | None = None) -> None:
         output = plot_alterband_abinit(
             eig=config.get("eig", "EIG"),
             kpoints_abinit=config.get("kpoints_abinit", "KPOINTS_alter_abinit"),
-            poscar=config.get("poscar", "POSCAR"),
+            structure=config.get("structure", "POSCAR"),
             abo=config.get("abo", "abo"),
             output=out_path,
             fermi_ev=(float(config["fermi_ev"]) if "fermi_ev" in config else None),

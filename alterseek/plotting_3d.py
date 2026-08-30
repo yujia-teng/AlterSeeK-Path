@@ -208,6 +208,36 @@ def setup_3d_ax(title, bz_loops, b_matrix, bz_center,
     return fig, ax
 
 
+def attach_camera_angle_display(fig, ax):
+    """Show TOML-ready camera angles on an interactive 3D figure."""
+    def _view_text():
+        return (
+            f"view_elev = {ax.elev:.2f}\n"
+            f"view_azim = {ax.azim:.2f}"
+        )
+
+    label = ax.text2D(
+        0.02,
+        0.02,
+        _view_text(),
+        transform=ax.transAxes,
+        fontsize=10,
+        family="monospace",
+        va="bottom",
+        ha="left",
+        zorder=1000,
+        bbox={"facecolor": "white", "edgecolor": "0.7", "alpha": 0.85},
+    )
+
+    def _update_view_text(event):
+        if event.canvas is fig.canvas:
+            label.set_text(_view_text())
+            fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("button_release_event", _update_view_text)
+    return label
+
+
 def plot_ibz(ax, kpoints_cart, kpath, hull, centroid_cart,
              hull_pts=None, lattice_type=None, hull_labels=None):
     """Draw Figure 1's IBZ, path, high-symmetry points, and centroid."""
@@ -896,6 +926,8 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
     fig, ax = setup_3d_ax("Spin-flip path connections",
                           bz_loops, b_matrix, bz_center,
                           elev=elev, azim=azim, dashed_back=False)
+    if show_plot:
+        attach_camera_angle_display(fig, ax)
     _draw(ax)
     # Keep the operation visual aligned with the camera in the interactive window.
     if show_plot:
@@ -1033,6 +1065,8 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
     fig, ax = setup_3d_ax("Spin-up (red) / Spin-down (blue) BZ",
                           bz_loops, b_matrix, bz_center,
                           elev=elev, azim=azim, dashed_back=False)
+    if show_plot:
+        attach_camera_angle_display(fig, ax)
     _draw(ax)
     plt.tight_layout()
 

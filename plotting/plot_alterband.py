@@ -19,7 +19,6 @@ from matplotlib.ticker import MaxNLocator
 
 
 DEFAULT_PLOT_CONFIG = "alterseek_plot_vasp.toml"
-LEGACY_PLOT_CONFIG = "alterband.toml"   # pre-2026-08 name, still read
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_FIG_SIZE = (12.0, 5.0)
@@ -460,83 +459,48 @@ def plot_alterband(
     return output_path
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="Plot spin-resolved AlterSeeK band output from VASPKIT files."
     )
     parser.add_argument(
         "--config",
         default=None,
-        help="Optional TOML config file. Defaults to alterseek_plot_vasp.toml if present (alterband.toml is still read when it is the only one there).",
+        help="TOML config file. Uses alterseek_plot_vasp.toml by default when present.",
     )
-    parser.add_argument("--klabels", default=None, help="KLABELS file path.")
-    parser.add_argument("--up", default=None, help="Spin-up band data file.")
-    parser.add_argument("--down", default=None, help="Spin-down band data file.")
     parser.add_argument("-o", "--output", default=None, help="Output file.")
-    parser.add_argument("--emin", type=float, default=None, help="Minimum plotted energy.")
-    parser.add_argument("--emax", type=float, default=None, help="Maximum plotted energy.")
-    parser.add_argument("--fig-width", type=float, default=None, help="Figure width in inches.")
-    parser.add_argument("--fig-height", type=float, default=None, help="Figure height in inches.")
-    parser.add_argument("--lattice-type", default=None, help="HPKOT lattice type such as tI1 or mC2.")
-    parser.add_argument("--split-panels", type=int, default=None, help="Use 1, 2, or 3 stacked panels.")
-    parser.add_argument(
-        "--gap-width-inches",
-        type=float,
-        default=None,
-        help="Full visual width of each k|k' gap in inches.",
-    )
-    parser.add_argument(
-        "--rotate-xtick-labels",
-        action="store_true",
-        default=None,
-        help="Rotate x-axis tick labels.",
-    )
-    parser.add_argument("--xtick-rotation", type=float, default=None, help="X tick rotation angle.")
-    parser.add_argument(
-        "--save-pdf",
-        action="store_true",
-        default=None,
-        help="Also save a PDF copy alongside the primary output.",
-    )
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
-    args = build_parser().parse_args(argv)
+def main(argv: list[str] | None = None, *, prog: str | None = None) -> None:
+    args = build_parser(prog=prog).parse_args(argv)
     if args.config:
         config_path = Path(args.config)
     else:
         config_path = Path(DEFAULT_PLOT_CONFIG)
-        if not config_path.exists() and Path(LEGACY_PLOT_CONFIG).exists():
-            config_path = Path(LEGACY_PLOT_CONFIG)
-    def option(name: str, default: Any) -> Any:
-        arg_value = getattr(args, name)
-        if arg_value is not None:
-            return arg_value
-        return config.get(name, default)
-
     try:
         config = (
             _validate_plot_config(_read_plot_config(config_path), config_path)
             if args.config or config_path.exists() else {}
         )
-        emin = float(option("emin", DEFAULT_ELIM[0]))
-        emax = float(option("emax", DEFAULT_ELIM[1]))
-        fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
-        fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
+        emin = float(config.get("emin", DEFAULT_ELIM[0]))
+        emax = float(config.get("emax", DEFAULT_ELIM[1]))
+        fig_width = float(config.get("fig_width", DEFAULT_FIG_SIZE[0]))
+        fig_height = float(config.get("fig_height", DEFAULT_FIG_SIZE[1]))
         output = plot_alterband(
-            klabels=option("klabels", "KLABELS"),
-            band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
-            band_down=option("down", config.get("band_down", "REFORMATTED_BAND_DW.dat")),
-            output=option("output", "alterband.png"),
+            klabels=config.get("klabels", "KLABELS"),
+            band_up=config.get("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
+            band_down=config.get("down", config.get("band_down", "REFORMATTED_BAND_DW.dat")),
+            output=args.output or config.get("output", "alterband.png"),
             elim=(emin, emax),
             fig_size=(fig_width, fig_height),
-            gap_width_inches=float(option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)),
-            lattice_type=option("lattice_type", None),
-            split_panels=int(option("split_panels", 1)),
-            rotate_xtick_labels=bool(option("rotate_xtick_labels", False)),
-            xtick_rotation=float(option("xtick_rotation", 45.0)),
-            save_pdf=bool(option("save_pdf", False)),
+            gap_width_inches=float(config.get("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)),
+            lattice_type=config.get("lattice_type"),
+            split_panels=int(config.get("split_panels", 1)),
+            rotate_xtick_labels=bool(config.get("rotate_xtick_labels", False)),
+            xtick_rotation=float(config.get("xtick_rotation", 45.0)),
+            save_pdf=bool(config.get("save_pdf", False)),
         )
     except (ValueError, OSError) as exc:
         raise SystemExit(f"[Error] {exc}") from exc

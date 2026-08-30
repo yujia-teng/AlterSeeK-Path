@@ -22,13 +22,12 @@ dependencies = [
 
 [project.scripts]
 alterseek-path = "alterseek_path:main"
-alterseek-bandplot = "plotting.plot_alterband:main"
-alterseek-bandplot-qe = "plotting.plot_alterband_qe:main"
-alterseek-bandplot-abinit = "plotting.plot_alterband_abinit:main"
+alterseek-plot = "alterseek_plot:main"
 
 [tool.setuptools]
 py-modules = [
     "alterseek_path",
+    "alterseek_plot",
 ]
 
 [tool.setuptools.packages.find]

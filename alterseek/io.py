@@ -5,6 +5,7 @@ lattice geometry utilities, atomic text writes, and band-plot config writing.
 pymatgen/ASE imports are function-local to keep module import lightweight.
 """
 import os
+import json
 import warnings
 import numpy as np
 
@@ -233,10 +234,21 @@ def write_bandplot_lattice_config(lattice_type, filename=DEFAULT_PLOT_CONFIG):
         else:
             _atomic_write_text(
                 filename,
-                "# AlterSeeK band-plot settings\n"
-                "# Reads: KLABELS, REFORMATTED_BAND_UP.dat, "
-                "REFORMATTED_BAND_DW.dat\n"
-                + line,
+                "# AlterSeeK VASP band-plot settings\n"
+                "# Commented values are defaults; uncomment them to override.\n\n"
+                + line
+                + "\n"
+                "# klabels = \"KLABELS\"\n"
+                "# up = \"REFORMATTED_BAND_UP.dat\"\n"
+                "# down = \"REFORMATTED_BAND_DW.dat\"\n"
+                "# emin = -2\n"
+                "# emax = 2\n"
+                "# fig_width = 12\n"
+                "# fig_height = 5\n"
+                "# gap_width_inches = 0.05\n"
+                "# split_panels = 1\n"
+                "# output = \"alterband.png\"\n"
+                "# save_pdf = false\n",
             )
         print(f"Band plot config updated: {filename} ({line.strip()})")
     except Exception as exc:
@@ -251,23 +263,76 @@ def write_qe_bandplot_config(filename=DEFAULT_PLOT_CONFIG_QE):
         _atomic_write_text(
             filename,
             "# AlterSeeK QE band-plot settings\n"
-            "# Reads: band_up.gnu, band_down.gnu, KPOINTS_alter_qe\n",
+            "# Commented values are defaults; uncomment them to override.\n\n"
+            "# band_up = \"band_up.gnu\"  # replace with the spin-up bands.x .gnu file\n"
+            "# band_down = \"band_down.gnu\"  # replace with the spin-down bands.x .gnu file\n"
+            "# kpoints_qe = \"KPOINTS_alter_qe\"\n"
+            "# fermi_ev = 0.0  # replace with the Fermi energy from the QE output\n"
+            "# emin = -2\n"
+            "# emax = 2\n"
+            "# fig_width = 12\n"
+            "# fig_height = 5\n"
+            "# gap_width_inches = 0.05\n"
+            "# split_panels = 1\n"
+            "# output = \"alterband_qe.png\"\n"
+            "# save_pdf = false\n",
         )
         print(f"Band plot config created: {filename}")
     except Exception as exc:
         print(f"[Warning] Could not create band plot config '{filename}': {exc}")
 
 
-def write_abinit_bandplot_config(filename=DEFAULT_PLOT_CONFIG_ABINIT):
-    """Create the ABINIT band-plot config file with a header comment, if missing."""
-    if os.path.exists(filename):
-        return
+def write_abinit_bandplot_config(
+    structure_file=None, filename=DEFAULT_PLOT_CONFIG_ABINIT
+):
+    """Create or update the ABINIT band-plot config with the structure file."""
+    structure_line = (
+        f"structure = {json.dumps(os.fspath(structure_file), ensure_ascii=False)}\n"
+        if structure_file is not None else None
+    )
     try:
-        _atomic_write_text(
-            filename,
-            "# AlterSeeK ABINIT band-plot settings\n"
-            "# Reads: EIG, KPOINTS_alter_abinit, POSCAR, and abo (the ABINIT .abo output file, used to read and convert the Fermi level automatically -- set fermi_ev directly instead only if abo isn't available)\n",
-        )
-        print(f"Band plot config created: {filename}")
+        if os.path.exists(filename):
+            if structure_line is None:
+                return
+            with open(filename, "r", encoding="utf-8-sig") as f:
+                lines = f.readlines()
+            updated = False
+            new_lines = []
+            for existing in lines:
+                stripped = existing.split("#", 1)[0].strip()
+                if stripped.startswith("structure") and "=" in stripped:
+                    new_lines.append(structure_line)
+                    updated = True
+                else:
+                    new_lines.append(existing)
+            if not updated:
+                new_lines.append(structure_line)
+            _atomic_write_text(filename, "".join(new_lines))
+            action = "updated"
+        else:
+            _atomic_write_text(
+                filename,
+                "# AlterSeeK ABINIT band-plot settings\n"
+                "# Commented values are defaults; uncomment them to override.\n\n"
+                + (structure_line or "")
+                + "\n"
+                "# eig = \"EIG\"  # replace with the ABINIT _EIG file\n"
+                "# kpoints_abinit = \"KPOINTS_alter_abinit\"\n"
+                "# abo = \"abo\"  # replace with the ABINIT .abo output\n"
+                "# fermi_ev = 0.0  # use only when the .abo file is unavailable\n"
+                "# emin = -2\n"
+                "# emax = 2\n"
+                "# fig_width = 12\n"
+                "# fig_height = 5\n"
+                "# gap_width_inches = 0.05\n"
+                "# split_panels = 1\n"
+                "# output = \"alterband_abinit.png\"\n"
+                "# save_pdf = false\n",
+            )
+            action = "created"
+        print(f"Band plot config {action}: {filename}")
     except Exception as exc:
-        print(f"[Warning] Could not create band plot config '{filename}': {exc}")
+        print(
+            f"[Warning] Could not create or update band plot config "
+            f"'{filename}': {exc}"
+        )

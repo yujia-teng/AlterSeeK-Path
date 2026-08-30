@@ -1,6 +1,6 @@
 # AlterSeeK-Path
 
-AlterSeeK-Path generates k-point paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
+AlterSeeK-Path generates general-k paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
 
 ![AlterSeeK-Path example](./example/VASP/HEX.png)
 
@@ -13,8 +13,7 @@ Requires Python >= 3.11.
 ```bash
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git
 cd AlterSeeK-Path
-pip install -r requirements.txt
-pip install -e .
+pip install .
 ```
 
 ---
@@ -46,12 +45,17 @@ To skip the prompts (e.g. for repeated runs on the same structure), put an
 structure = "POSCAR"
 spin_axis = "0 0 1"
 moments = "5 -5"
+symprec = 1e-3
 flip_option = 1
 output_code = "vasp"
+save_pdf = false
+view_elev = 14
+view_azim = 20
+# vacuum_axis = "c"  # 2D only
 ```
 
 `alterseek-path` reads any keys it finds and only prompts for the ones that
-are missing. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#skipping-repeated-prompts-with-alterseek_inputtoml)
+are missing. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#input-configuration)
 for the full field reference.
 
 ---
@@ -139,40 +143,38 @@ alterseek-path --2d
 2D mode restricts the k-path and IBZ centroid to the physical in-plane
 (vacuum k = 0) reciprocal plane, and reports whether any spin-flip operation
 produces in-plane spin splitting. See [Workflow](https://yujia-teng.github.io/AlterSeeK-Path/workflow/#2d-slab-mode)
-for the vacuum-axis detection details and output figures.
+for more details.
 
 ---
 
 ## Cell Setting and Brillouin Zone
 
-The submitted structure remains the calculation and output cell. A
-determinant-one basis change keeps the ordinary physical BZ, while a larger
-conventional or supercell uses its submitted lattice vectors to define the
-smaller, folded BZ. Magnetic inputs are compared with the magnetic primitive
-cell; no-moments inputs use the nonmagnetic structural primitive.
+AlterSeeK-Path performs the analysis in the input cell without converting it
+to a primitive cell. For a conventional cell or supercell, its lattice vectors
+define the folded BZ, and the IBZ, centroid, path, and figures are constructed
+in that cell setting. For example, a conventional cubic fcc input uses the
+simple-cubic calculation-cell BZ rather than the primitive fcc BZ.
 
-SeeK-path still generates the HPKOT BZ, IBZ, centroid, labels, and path, and
-the resulting k-points are converted into the submitted reciprocal basis.
-Complete physical `(R|t)` operations remain available for symmetry and spin
-analysis. The console identifies the input and primitive cells and, when
-applicable, reports the `Conventional/supercell BZ`. The input structure is
-never replaced.
+Magnetic symmetry is also included. For example, if magnetic order lowers a
+hexagonal parent structure to an orthorhombic G0, AlterSeeK-Path uses the
+orthorhombic symmetry to determine the IBZ and path while retaining the
+input-cell basis.
 
 ---
 
 ## Band Plotting
 
-After the VASP band calculation and VASPKIT task `211`, run:
+After the band calculation and code-specific post-processing, run:
 
 ```bash
-alterseek-path bandplot
+alterseek-plot
 ```
 
-This reads `KLABELS`/`REFORMATTED_BAND_UP.dat`/`REFORMATTED_BAND_DW.dat` and
-writes `alterband.png`, using settings from `alterseek_plot_vasp.toml` (written
-automatically by the main workflow) if present. See
+The command detects `vasp`, `qe`, or `abinit` when exactly one generated
+`alterseek_plot_*.toml` file is present. To select explicitly, run
+`alterseek-plot vasp`, `alterseek-plot qe`, or `alterseek-plot abinit`. See
 [Plotting](https://yujia-teng.github.io/AlterSeeK-Path/plotting/) for the
-full settings reference (energy window, split panels, gap width, etc.).
+required band files and settings.
 
 ---
 

@@ -43,7 +43,7 @@ from .plotting_common import (
     _print_saved_paths,
     alterseek_plot_style,
 )
-from .plotting_3d import setup_3d_ax, plot_ibz
+from .plotting_3d import attach_camera_angle_display, setup_3d_ax, plot_ibz
 
 # See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
 # Override it per run with `symprec` in alterseek_input.toml.
@@ -796,6 +796,7 @@ def _generate_figure1(
                 elev=default_elev,
                 azim=default_azim,
             )
+            attach_camera_angle_display(fig1, ax1)
             plot_ibz(
                 ax1,
                 kpoints_cart_plot,

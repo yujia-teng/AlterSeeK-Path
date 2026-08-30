@@ -348,14 +348,11 @@ def write_flip_ops_to_file(
 ):
     """
     Filters operations whose spin rotation reverses the collinear spin axis.
-    For each spin-flip spatial operation R, also include the inversion-extended
-    partner -R, then deduplicate. Translations do not affect reciprocal-space
-    k-point mapping.
+    Translations do not affect reciprocal-space k-point mapping, so write each
+    distinct spatial point operation once.
     """
     flip_indices = _operation_class_indices(spin_rotations, spin_axis, flip=True)
-    flip_ops, source_indices = _collect_point_ops(
-        rotations, flip_indices, include_inversion=True
-    )
+    flip_ops, source_indices = _collect_point_ops(rotations, flip_indices)
 
     if not flip_ops:
         if verbose:
@@ -371,7 +368,7 @@ def write_flip_ops_to_file(
             "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
             "reciprocal basis (b1, b2, b3).\n"
         )
-        f.write(f"# Found {len(flip_ops)} inversion-extended spin-flipping point operations\n")
+        f.write(f"# Found {len(flip_ops)} spin-flipping point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(flip_ops):
             f.write(f"Operation_{i+1}\n")
@@ -392,11 +389,9 @@ def write_preserve_ops_to_file(
     verbose=True,
     basis_label="input structure",
 ):
-    """Write inversion-extended spin-preserving point operations."""
+    """Write distinct spin-preserving point operations."""
     preserve_indices = _operation_class_indices(spin_rotations, spin_axis, flip=False)
-    preserve_ops, source_indices = _collect_point_ops(
-        rotations, preserve_indices, include_inversion=True
-    )
+    preserve_ops, source_indices = _collect_point_ops(rotations, preserve_indices)
 
     if not preserve_ops:
         return 0
@@ -410,7 +405,7 @@ def write_preserve_ops_to_file(
             "# k mapping: k' = R^(-T) k (mod G) in the corresponding "
             "reciprocal basis (b1, b2, b3).\n"
         )
-        f.write(f"# Found {len(preserve_ops)} inversion-extended spin-preserving point operations\n")
+        f.write(f"# Found {len(preserve_ops)} spin-preserving point operations\n")
         f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(preserve_ops):
             f.write(f"Operation_{i+1}\n")

@@ -89,7 +89,7 @@ def test_reciprocal_basis_roundtrip():
     assert np.allclose(converted, k, atol=1e-12)
 
 
-def _qe_waypoints(path):
+def _qe_path_points(path):
     lines = path.read_text(encoding="utf-8").splitlines()[2:]
     return [(line.split("!", 1)[1].strip(), int(line.split("!", 1)[0].split()[3]))
             for line in lines]
@@ -103,7 +103,7 @@ def test_qe_writer_preserves_disconnected_chains(tmp_path):
     ]
     output = tmp_path / "KPOINTS_alter_qe"
     assert modifier.write_kpoints_file_qe(points, str(output))
-    assert _qe_waypoints(output) == [("A", 30), ("B", 1), ("C", 30), ("D", 1)]
+    assert _qe_path_points(output) == [("A", 30), ("B", 1), ("C", 30), ("D", 1)]
 
 
 def test_qe_writer_deduplicates_continuous_chain_boundary(tmp_path):
@@ -114,7 +114,7 @@ def test_qe_writer_deduplicates_continuous_chain_boundary(tmp_path):
     ]
     output = tmp_path / "KPOINTS_alter_qe"
     assert modifier.write_kpoints_file_qe(points, str(output))
-    assert _qe_waypoints(output) == [("A", 30), ("B", 30), ("C", 1)]
+    assert _qe_path_points(output) == [("A", 30), ("B", 30), ("C", 1)]
 
 
 def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
@@ -136,7 +136,7 @@ def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
         if line.split()
     ]
     assert vasp_labels == ["A/H", "X"]
-    assert _qe_waypoints(qe_output) == [("A/H", 30), ("X", 1)]
+    assert _qe_path_points(qe_output) == [("A/H", 30), ("X", 1)]
 
 
 def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
@@ -169,7 +169,7 @@ def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
     assert modifier.write_kpoints_file_qe(path, str(qe_output))
 
     vasp_text = vasp_output.read_text(encoding="utf-8")
-    qe_labels = [label for label, _count in _qe_waypoints(qe_output)]
+    qe_labels = [label for label, _count in _qe_path_points(qe_output)]
     assert "M/Z_0" in vasp_text
     assert "M'/Z_0'" in vasp_text
     assert "M/Z_0" in qe_labels
@@ -246,7 +246,7 @@ def test_qe_writer_keeps_k_to_k_prime_gap_disconnected(tmp_path):
     ]
     output = tmp_path / "KPOINTS_alter_qe"
     assert modifier.write_kpoints_file_qe(points, str(output))
-    assert _qe_waypoints(output) == [("A", 30), ("k", 1), ("k'", 30), ("B", 1)]
+    assert _qe_path_points(output) == [("A", 30), ("k", 1), ("k'", 30), ("B", 1)]
 
 
 def test_writers_record_the_operation_source_basis(tmp_path):
