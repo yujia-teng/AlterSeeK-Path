@@ -1,0 +1,6 @@
+&bands
+   prefix='case12',
+   outdir='./tmp/',
+   spin_component = 1,
+   filband = 'band-up.dat'
+/

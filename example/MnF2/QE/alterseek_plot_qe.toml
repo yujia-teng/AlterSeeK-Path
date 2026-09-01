@@ -1,0 +1,8 @@
+# AlterSeeK QE band-plot settings
+# Reads: band_up.gnu, band_down.gnu, KPOINTS_alter_qe
+band_up = "band-up.dat.gnu"
+band_down = "band-down.dat.gnu"
+kpoints_qe = "KPOINTS_alter_qe"
+fermi_ev = 7.4684
+emin = -5
+emax = 5

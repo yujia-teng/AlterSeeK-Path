@@ -1,0 +1,43 @@
+&CONTROL
+  prefix='case12',
+  calculation='scf', pseudo_dir='./', outdir='./tmp', verbosity='high',
+  tprnfor=.true., tstress=.true.,
+/
+&SYSTEM
+  ibrav=0, nat=6, ntyp=3,
+  occupations='smearing', smearing='gauss', degauss=1.0d-2,
+  ecutwfc=50, ecutrho=250, nbnd=48,
+  nspin=2,
+  starting_magnetization(1)=0.5,
+  starting_magnetization(2)=-0.5,
+  starting_magnetization(3)=0.0,
+/
+&ELECTRONS
+  conv_thr=1.0d-8
+  mixing_beta=0.3
+/
+&IONS
+/
+&CELL
+  press_conv_thr=0.1
+/
+CELL_PARAMETERS (angstrom)
+   4.8735999999999997    0.0000000000000000    0.0000000000000003
+   0.0000000000000008    4.8735999999999997    0.0000000000000003
+   0.0000000000000000    0.0000000000000000    3.2999999999999998
+ATOMIC_SPECIES
+  Mn1 54.938 mn_pbe_v1.5.uspp.F.UPF
+  Mn2 54.938 mn_pbe_v1.5.uspp.F.UPF
+  F   18.998 f_pbe_v1.4.uspp.F.UPF
+ATOMIC_POSITIONS (crystal)
+  Mn1  0.0000000000  0.0000000000  0.0000000000
+  Mn2  0.5000000000  0.5000000000  0.5000000000
+  F    0.3046400000  0.3046400000  0.0000000000
+  F    0.8046400000  0.1953600000  0.5000000000
+  F    0.1953600000  0.8046400000  0.5000000000
+  F    0.6953600000  0.6953600000  0.0000000000
+K_POINTS {automatic}
+  7 7 10 0 0 0
+HUBBARD (ortho-atomic)
+U Mn1-3d 3.0
+U Mn2-3d 3.0
