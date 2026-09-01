@@ -1,10 +1,10 @@
-"""Golden regression test for KPointsModifier.interactive_modify.
+"""Golden regression test for KPathBuilder.interactive_build.
 
 The interactive Step 0-5 driver has no other coverage (the rest of the suite
 tests the engine methods).  This drives the full altermagnetic flow on case 12
 (MnF2, tetragonal P4_2/mnm, d-wave) with canned keyboard input and asserts the
 produced KPOINTS matches a stored reference byte-for-byte.  It guards the phase-5
-extraction of interactive_modify into helper methods (and any future edits).
+extraction of interactive_build into helper methods (and any future edits).
 """
 import io
 import sys
@@ -25,9 +25,9 @@ def _case12_answers():
     return "\n".join([str(POSCAR), "0 0 1", "5 -5", "", "", ""]) + "\n"
 
 
-def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
+def test_interactive_build_case12_golden(tmp_path, monkeypatch, capsys):
     try:
-        from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
+        from alterseek.kpoints import KPathBuilder, OUTPUT_DIR
     except Exception as exc:  # pragma: no cover - deps missing
         pytest.skip(f"kpoints/deps unavailable: {exc}")
 
@@ -38,7 +38,7 @@ def test_interactive_modify_case12_golden(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)               # side-effect files land in tmp
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    KPointsModifier().interactive_modify()
+    KPathBuilder().interactive_build()
 
     stdout = capsys.readouterr().out
     assert "Nonmagnetic primitive cell:   SG P4_2/mnm (136)" in stdout
@@ -98,13 +98,13 @@ def test_step4_path_construction_error_reaches_workflow_boundary(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
     monkeypatch.setattr(
-        kpoints_module.KPointsModifier,
+        kpoints_module.KPathBuilder,
         "insert_general_kpoints",
         fail_path_construction,
     )
 
     with pytest.raises(RuntimeError, match="synthetic butterfly construction failure"):
-        kpoints_module.KPointsModifier().interactive_modify()
+        kpoints_module.KPathBuilder().interactive_build()
 
     output = capsys.readouterr().out
     assert "Error processing k-points" not in output
@@ -122,13 +122,13 @@ def test_optional_spin_figure_failure_does_not_block_kpoints(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
     monkeypatch.setattr(
-        kpoints_module.KPointsModifier,
+        kpoints_module.KPathBuilder,
         "_generate_spin_figures",
         fail_spin_figures,
     )
     monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    assert kpoints_module.KPathBuilder().interactive_build() is True
     output = capsys.readouterr().out
     assert "[Warning] Could not generate spin figures" in output
     assert "synthetic spin-figure failure" in output
@@ -149,7 +149,7 @@ def test_optional_figure1_failure_does_not_block_kpoints(
     monkeypatch.setattr(centroid_module, "setup_3d_ax", fail_figure1)
     monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    assert kpoints_module.KPathBuilder().interactive_build() is True
     output = capsys.readouterr().out
     assert "[Warning] Could not generate Figure 1" in output
     assert "synthetic Figure 1 failure" in output
@@ -171,7 +171,7 @@ def test_optional_bz_geometry_failure_does_not_block_kpoints(
     monkeypatch.setattr(centroid_module, "get_bz_loops", fail_bz_geometry)
     monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    assert kpoints_module.KPathBuilder().interactive_build() is True
     output = capsys.readouterr().out
     assert "[Warning] Could not generate Figure 1" in output
     assert "synthetic BZ geometry failure" in output
@@ -198,7 +198,7 @@ def test_optional_basis_mapping_failure_does_not_publish_marker_structure(
     )
     monkeypatch.setattr(kpoints_module.plt, "show", lambda: None)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    assert kpoints_module.KPathBuilder().interactive_build() is True
     output = capsys.readouterr().out
     assert "Could not write SeeK-path basis mapping" in output
     assert "synthetic basis-mapping diagnostic failure" in output
@@ -251,7 +251,7 @@ def test_display_failure_after_kpoints_write_remains_successful(
     monkeypatch.setattr(sys, "stdin", io.StringIO(_case12_answers()))
     monkeypatch.setattr(kpoints_module.plt, "show", fail_display)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is True
+    assert kpoints_module.KPathBuilder().interactive_build() is True
     output = capsys.readouterr().out
     assert "[Warning] Could not display/save generated figures" in output
     assert "synthetic display failure" in output

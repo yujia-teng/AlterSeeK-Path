@@ -2,8 +2,8 @@
 import os
 import sys
 
-from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
-from alterseek.mode2d.kpoints import KPointsModifier2D
+from alterseek.kpoints import KPathBuilder, OUTPUT_DIR
+from alterseek.mode2d.kpoints import KPathBuilder2D
 from alterseek.run_log import RUN_LOG_FILENAME, run_log
 
 
@@ -36,12 +36,12 @@ def main():
         else {"a": 0, "b": 1, "c": 2}[args.vacuum_axis]
     )
     if args.mode_2d:
-        modifier = KPointsModifier2D(input_vacuum_axis=vacuum_axis)
+        builder = KPathBuilder2D(input_vacuum_axis=vacuum_axis)
     else:
-        modifier = KPointsModifier()
+        builder = KPathBuilder()
     with run_log(os.path.join(OUTPUT_DIR, RUN_LOG_FILENAME)) as log:
         try:
-            success = modifier.interactive_modify()
+            success = builder.interactive_build()
         except Exception as exc:
             # This is the command-line workflow's final failure boundary.
             # Required calculations raise here, while expected input failures and optional-output warnings remain with their own subsystems.

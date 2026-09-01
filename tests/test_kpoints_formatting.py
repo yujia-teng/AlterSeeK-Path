@@ -4,16 +4,16 @@ import numpy as np
 import pytest
 
 from alterseek import kpoints as kpoints_module
-from alterseek.kpoints import KPointsModifier, _fmt_coord
+from alterseek.kpoints import KPathBuilder, _fmt_coord
 
 
 def test_manual_spin_flip_matrix_is_rejected(monkeypatch, capsys):
-    modifier = KPointsModifier()
+    builder = KPathBuilder()
     detected_ops = [np.eye(3), np.diag([-1.0, -1.0, 1.0])]
     answers = iter(["manual", "2"])
     monkeypatch.setattr("builtins.input", lambda: next(answers))
 
-    selected, label = modifier._select_spin_flip_operation(
+    selected, label = builder._select_spin_flip_operation(
         detected_ops, centroid_result=None
     )
 
@@ -46,27 +46,27 @@ def test_nonzero_coordinates_keep_their_sign_and_precision():
 
 
 def test_gamma_label_is_vasp_safe():
-    assert KPointsModifier._kpoints_label("\u0393") == "GAMMA"
-    assert KPointsModifier._kpoints_label("gamma") == "GAMMA"
-    assert KPointsModifier._kpoints_label("GAMMA") == "GAMMA"
-    assert KPointsModifier._kpoints_label("M_A'") == "M_A'"
-    assert KPointsModifier._kpoints_label("X_1") == "X_1"
+    assert KPathBuilder._kpoints_label("\u0393") == "GAMMA"
+    assert KPathBuilder._kpoints_label("gamma") == "GAMMA"
+    assert KPathBuilder._kpoints_label("GAMMA") == "GAMMA"
+    assert KPathBuilder._kpoints_label("M_A'") == "M_A'"
+    assert KPathBuilder._kpoints_label("X_1") == "X_1"
 
 
 def test_display_label_matches_kpoints_label():
     # The console form and the VASP-file form must never drift apart.
     for label in ["\u0393", "GAMMA", "K", "H_2", "M_A'", "k", "k'"]:
-        assert (KPointsModifier._display_label(label)
-                == KPointsModifier._kpoints_label(label))
+        assert (KPathBuilder._display_label(label)
+                == KPathBuilder._kpoints_label(label))
 
 
 def test_combined_gamma_label_is_vasp_safe():
-    assert KPointsModifier._kpoints_label("\u0393/H_2") == "GAMMA/H_2"
+    assert KPathBuilder._kpoints_label("\u0393/H_2") == "GAMMA/H_2"
 
 
 def test_format_path_joins_continuous_and_breaks_discontinuous():
     segments = [("\u0393", "X"), ("X", "M"), ("R", "Z")]
-    assert KPointsModifier._format_path(segments) == "GAMMA-X-M | R-Z"
+    assert KPathBuilder._format_path(segments) == "GAMMA-X-M | R-Z"
 
 
 def test_dedupe_frac_positions_wraps_periodic_images():
@@ -96,30 +96,30 @@ def _qe_path_points(path):
 
 
 def test_qe_writer_preserves_disconnected_chains(tmp_path):
-    modifier = KPointsModifier()
+    builder = KPathBuilder()
     points = [
         [0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"], None,
         [0.0, 0.5, 0.0, "C"], [0.5, 0.5, 0.0, "D"],
     ]
     output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_qe(points, str(output))
+    assert builder.write_kpoints_file_qe(points, str(output))
     assert _qe_path_points(output) == [("A", 30), ("B", 1), ("C", 30), ("D", 1)]
 
 
 def test_qe_writer_deduplicates_continuous_chain_boundary(tmp_path):
-    modifier = KPointsModifier()
+    builder = KPathBuilder()
     points = [
         [0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"], None,
         [0.5, 0.0, 0.0, "B"], [0.5, 0.5, 0.0, "C"],
     ]
     output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_qe(points, str(output))
+    assert builder.write_kpoints_file_qe(points, str(output))
     assert _qe_path_points(output) == [("A", 30), ("B", 30), ("C", 1)]
 
 
 def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
+    builder = KPathBuilder()
+    builder.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
     points = [
         [0.0, 0.0, 0.0, "A"], [0.0, 0.0, 0.0, "H"],
         [0.0, 0.0, 0.0, "H"], [0.5, 0.0, 0.0, "X"],
@@ -127,8 +127,8 @@ def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
 
     vasp_output = tmp_path / "KPOINTS_alter"
     qe_output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_vasp(points, str(vasp_output))
-    assert modifier.write_kpoints_file_qe(points, str(qe_output))
+    assert builder.write_kpoints_file_vasp(points, str(vasp_output))
+    assert builder.write_kpoints_file_qe(points, str(qe_output))
 
     vasp_labels = [
         line.split()[-1]
@@ -140,9 +140,9 @@ def test_writers_combine_consecutive_coincident_path_labels(tmp_path):
 
 
 def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
-    modifier.kpoints_data = [
+    builder = KPathBuilder()
+    builder.header_lines = ["Path", "30", "Line-Mode", "Reciprocal"]
+    builder.kpoints_data = [
         [0.0, 0.0, 0.0, "GAMMA"], [0.0, 0.0, 0.5, "X"],
         [0.0, 0.0, 0.5, "X"], [-0.5, 0.5, 0.5, "M"],
         [-0.5, 0.5, 0.5, "M"], [0.0, 0.0, 0.0, "GAMMA"],
@@ -153,7 +153,7 @@ def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
         [0.0, 0.5, 0.0, "N"], [0.0, 0.0, 0.0, "GAMMA"],
     ]
 
-    path = modifier.insert_general_kpoints(
+    path = builder.insert_general_kpoints(
         [0.2, 0.3, 0.4],
         np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
     )
@@ -165,8 +165,8 @@ def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
 
     vasp_output = tmp_path / "KPOINTS_alter"
     qe_output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_vasp(path, str(vasp_output))
-    assert modifier.write_kpoints_file_qe(path, str(qe_output))
+    assert builder.write_kpoints_file_vasp(path, str(vasp_output))
+    assert builder.write_kpoints_file_qe(path, str(qe_output))
 
     vasp_text = vasp_output.read_text(encoding="utf-8")
     qe_labels = [label for label, _count in _qe_path_points(qe_output)]
@@ -177,13 +177,13 @@ def test_ti1_boundary_propagates_alias_from_removed_zero_length_part(tmp_path):
 
 
 def test_butterfly_path_retains_primed_coincident_aliases():
-    modifier = KPointsModifier()
-    modifier.kpoints_data = [
+    builder = KPathBuilder()
+    builder.kpoints_data = [
         [0.5, 0.0, 0.0, "X"], [0.0, 0.0, 0.0, "A"],
         [0.0, 0.0, 0.0, "A"], [0.0, 0.0, 0.0, "H"],
     ]
 
-    path = modifier.insert_general_kpoints(
+    path = builder.insert_general_kpoints(
         [0.2, 0.2, 0.2], np.diag([-1.0, 1.0, 1.0])
     )
     labels = [point[3] for point in path if point is not None]
@@ -193,9 +193,9 @@ def test_butterfly_path_retains_primed_coincident_aliases():
 
 
 def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
-    modifier = KPointsModifier()
-    modifier.kpoints_basis_matrix = np.eye(3)
-    modifier.output_basis_matrix = np.eye(3)
+    builder = KPathBuilder()
+    builder.kpoints_basis_matrix = np.eye(3)
+    builder.output_basis_matrix = np.eye(3)
     butterfly = [
         [0.0, 0.0, 0.0, "GAMMA"], [0.0, 0.5, 0.0, "X"],
         [0.0, 0.5, 0.0, "X"], [0.5, 0.5, 0.0, "M"],
@@ -210,7 +210,7 @@ def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
         [0.0, 0.0, 1.0],
     ])
 
-    path = modifier.insert_general_kpoints(
+    path = builder.insert_general_kpoints(
         [0.25, 0.25, 0.0],
         c4,
         connections,
@@ -220,7 +220,7 @@ def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
     segments = [
         (start[3], end[3], break_before)
         for start, end, break_before, _index, _raw_label
-        in modifier._prepare_output_segments(path)
+        in builder._prepare_output_segments(path)
     ]
 
     assert segments == [
@@ -239,13 +239,13 @@ def test_2d_4m_butterfly_uses_open_path_and_gamma_xa_connections():
 
 
 def test_qe_writer_keeps_k_to_k_prime_gap_disconnected(tmp_path):
-    modifier = KPointsModifier()
+    builder = KPathBuilder()
     points = [
         [0.0, 0.0, 0.0, "A"], [0.2, 0.2, 0.0, "k"],
         [0.2, 0.2, 0.0, "k'"], [0.5, 0.5, 0.0, "B"],
     ]
     output = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_qe(points, str(output))
+    assert builder.write_kpoints_file_qe(points, str(output))
     assert _qe_path_points(output) == [("A", 30), ("k", 1), ("k'", 30), ("B", 1)]
 
 
@@ -253,14 +253,14 @@ def test_writers_record_the_operation_source_basis(tmp_path):
     """The recorded R is the raw Step-3 selection, so the header must name
     the operation-source basis (magnetic primitive cell in the magnetic
     route) instead of claiming a generic input cell."""
-    modifier = KPointsModifier()
-    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
+    builder = KPathBuilder()
+    builder.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
     points = [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]]
     matrix = np.eye(3)
     label = "magnetic primitive cell 'CASE_magnetic_primitive.mcif'"
 
     vasp_out = tmp_path / "KPOINTS_alter"
-    assert modifier.write_kpoints_file_vasp(
+    assert builder.write_kpoints_file_vasp(
         points, str(vasp_out), matrix, "Option 2", operation_basis_label=label
     )
     assert vasp_out.read_text(encoding="utf-8").splitlines()[0].startswith(
@@ -269,7 +269,7 @@ def test_writers_record_the_operation_source_basis(tmp_path):
     )
 
     qe_out = tmp_path / "KPOINTS_alter_qe"
-    assert modifier.write_kpoints_file_qe(
+    assert builder.write_kpoints_file_qe(
         points, str(qe_out), matrix, "Option 2", operation_basis_label=label
     )
     assert qe_out.read_text(encoding="utf-8").splitlines()[-1].startswith(
@@ -281,8 +281,8 @@ def test_writers_record_the_operation_source_basis(tmp_path):
 
 def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
         tmp_path, monkeypatch):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
+    builder = KPathBuilder()
+    builder.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
     output = tmp_path / "KPOINTS_alter"
     output.write_text("keep me\n", encoding="utf-8")
     calls = 0
@@ -294,9 +294,9 @@ def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
             raise RuntimeError("synthetic conversion failure")
         return point
 
-    monkeypatch.setattr(modifier, "_kpoint_for_output_basis", fail_on_second_point)
+    monkeypatch.setattr(builder, "_kpoint_for_output_basis", fail_on_second_point)
     with pytest.raises(RuntimeError, match="synthetic conversion failure"):
-        modifier.write_kpoints_file_vasp(
+        builder.write_kpoints_file_vasp(
             [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
         )
     assert output.read_text(encoding="utf-8") == "keep me\n"
@@ -304,16 +304,16 @@ def test_vasp_writer_does_not_damage_existing_file_on_conversion_failure(
 
 def test_qe_writer_does_not_damage_existing_file_on_conversion_failure(
         tmp_path, monkeypatch):
-    modifier = KPointsModifier()
+    builder = KPathBuilder()
     output = tmp_path / "KPOINTS_alter_qe"
     output.write_text("keep me\n", encoding="utf-8")
 
     def fail_conversion(point):
         raise RuntimeError("synthetic conversion failure")
 
-    monkeypatch.setattr(modifier, "_kpoint_for_output_basis", fail_conversion)
+    monkeypatch.setattr(builder, "_kpoint_for_output_basis", fail_conversion)
     with pytest.raises(RuntimeError, match="synthetic conversion failure"):
-        modifier.write_kpoints_file_qe(
+        builder.write_kpoints_file_qe(
             [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
         )
     assert output.read_text(encoding="utf-8") == "keep me\n"
@@ -329,8 +329,8 @@ def test_qe_writer_does_not_damage_existing_file_on_conversion_failure(
 def test_writers_report_persistence_failure_without_damaging_existing_file(
     tmp_path, monkeypatch, capsys, writer_name, filename
 ):
-    modifier = KPointsModifier()
-    modifier.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
+    builder = KPathBuilder()
+    builder.header_lines = ["title", "20", "Line-Mode", "Reciprocal"]
     output = tmp_path / filename
     output.write_text("keep me\n", encoding="utf-8")
 
@@ -338,7 +338,7 @@ def test_writers_report_persistence_failure_without_damaging_existing_file(
         raise PermissionError("synthetic permission failure")
 
     monkeypatch.setattr(kpoints_module, "_atomic_write_text", fail_persistence)
-    writer = getattr(modifier, writer_name)
+    writer = getattr(builder, writer_name)
     assert not writer(
         [[0.0, 0.0, 0.0, "A"], [0.5, 0.0, 0.0, "B"]], str(output)
     )

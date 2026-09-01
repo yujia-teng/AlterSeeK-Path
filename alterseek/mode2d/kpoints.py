@@ -1,9 +1,9 @@
 """KPOINTS workflow entry for two-dimensional mode."""
 
-from ..kpoints import KPointsModifier
+from ..kpoints import KPathBuilder
 
 
-class KPointsModifier2D(KPointsModifier):
+class KPathBuilder2D(KPathBuilder):
     """Run the shared interaction and writers with 2D analysis enabled."""
 
     def __init__(self, input_vacuum_axis=None):

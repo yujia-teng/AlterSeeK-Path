@@ -7,7 +7,7 @@ import alterseek_path
 
 
 class _Recorder:
-    """Stands in for KPointsModifier so no workflow actually runs."""
+    """Stands in for KPathBuilder so no workflow actually runs."""
 
     instances = []
     result = True
@@ -17,7 +17,7 @@ class _Recorder:
         self.kwargs = kwargs
         _Recorder.instances.append(self)
 
-    def interactive_modify(self):
+    def interactive_build(self):
         if self.error is not None:
             raise self.error
         return self.result
@@ -30,8 +30,8 @@ def recorded(monkeypatch, tmp_path):
     _Recorder.instances = []
     _Recorder.result = True
     _Recorder.error = None
-    monkeypatch.setattr(alterseek_path, "KPointsModifier", _Recorder)
-    monkeypatch.setattr(alterseek_path, "KPointsModifier2D", _Recorder)
+    monkeypatch.setattr(alterseek_path, "KPathBuilder", _Recorder)
+    monkeypatch.setattr(alterseek_path, "KPathBuilder2D", _Recorder)
     return _Recorder.instances
 
 

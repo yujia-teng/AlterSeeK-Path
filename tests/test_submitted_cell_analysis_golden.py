@@ -10,7 +10,7 @@ from ase.build import make_supercell
 from ase.io import read
 from ase.io import write
 
-from alterseek.kpoints import KPointsModifier, OUTPUT_DIR
+from alterseek.kpoints import KPathBuilder, OUTPUT_DIR
 
 
 REFERENCES = Path(__file__).parent / "references"
@@ -49,7 +49,7 @@ def _run(monkeypatch, tmp_path, structure, moments, *, operation=None):
     answers.append("")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(answers) + "\n"))
-    assert KPointsModifier().interactive_modify() is True
+    assert KPathBuilder().interactive_build() is True
     return tmp_path / OUTPUT_DIR
 
 
@@ -271,7 +271,7 @@ def test_bifeo3_hP_helper_preserves_figure_and_output_spin_relations(
         )
 
     monkeypatch.setattr(
-        KPointsModifier,
+        KPathBuilder,
         "_generate_spin_figures",
         capture_spin_figures,
     )
@@ -307,7 +307,7 @@ def test_bifeo3_hP_helper_preserves_figure_and_output_spin_relations(
         rtol=1e-7,
         atol=1e-10,
     )
-    KPointsModifier._validate_standardized_spin_map(
+    KPathBuilder._validate_standardized_spin_map(
         captured["centroid_result"], standardized_operation
     )
 

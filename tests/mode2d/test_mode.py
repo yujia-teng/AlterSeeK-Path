@@ -19,7 +19,7 @@ from alterseek import symmetry
 from alterseek.mode2d.geometry import analyze_lattice
 from alterseek.mode2d.lattice_kpoints import build_path
 from alterseek.kpoints import (
-    KPointsModifier,
+    KPathBuilder,
     OUTPUT_DIR,
     _print_2d_structure_summary,
 )
@@ -363,16 +363,16 @@ def test_cartesian_plane_filter_survives_magnetic_axis_permutation():
         mixes_physical_vacuum, b_magnetic, plane_normal
     )
 
-    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
+    builder = KPathBuilder(mode_2d=True, input_vacuum_axis=2)
     centroid_result = {"b_matrix_input": b_magnetic}
-    modifier._configure_2d_plane(
+    builder._configure_2d_plane(
         centroid_result,
         submitted_lattice=submitted_lattice,
     )
-    assert modifier._is_valid_2d_operation(
+    assert builder._is_valid_2d_operation(
         valid_physical_flip, centroid_result
     )
-    assert not modifier._is_valid_2d_operation(
+    assert not builder._is_valid_2d_operation(
         mixes_physical_vacuum, centroid_result
     )
 
@@ -384,12 +384,12 @@ def test_2d_output_projection_uses_physical_plane_not_input_axis_index():
         [0.0, 3.0, 0.0],
     ])
     b_magnetic = 2 * np.pi * np.linalg.inv(magnetic_lattice).T
-    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
-    modifier.kpoints_basis_matrix = b_magnetic
-    modifier.output_basis_matrix = b_magnetic
-    modifier.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
+    builder = KPathBuilder(mode_2d=True, input_vacuum_axis=2)
+    builder.kpoints_basis_matrix = b_magnetic
+    builder.output_basis_matrix = b_magnetic
+    builder.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
 
-    output = modifier._kpoint_for_output_basis(
+    output = builder._kpoint_for_output_basis(
         [1e-10, 0.2, 0.3, "k"]
     )
     assert output[:3] == pytest.approx([0.0, 0.2, 0.3], abs=1e-12)
@@ -398,13 +398,13 @@ def test_2d_output_projection_uses_physical_plane_not_input_axis_index():
 def test_2d_output_rejects_a_genuinely_out_of_plane_point():
     lattice = _diag([3.0, 3.0, 20.0])
     reciprocal = 2 * np.pi * np.linalg.inv(lattice).T
-    modifier = KPointsModifier(mode_2d=True, input_vacuum_axis=2)
-    modifier.kpoints_basis_matrix = reciprocal
-    modifier.output_basis_matrix = reciprocal
-    modifier.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
+    builder = KPathBuilder(mode_2d=True, input_vacuum_axis=2)
+    builder.kpoints_basis_matrix = reciprocal
+    builder.output_basis_matrix = reciprocal
+    builder.plane_normal_cartesian = np.array([0.0, 0.0, 1.0])
 
     with pytest.raises(RuntimeError, match="outside the physical slab plane"):
-        modifier._kpoint_for_output_basis([0.2, 0.3, 0.1, "bad"])
+        builder._kpoint_for_output_basis([0.2, 0.3, 0.1, "bad"])
 
 
 # ---------------------------------------------------------------------------
@@ -504,7 +504,7 @@ def test_interactive_2d_output_stays_in_physical_plane(
     )
     monkeypatch.chdir(tmp_path)
 
-    assert KPointsModifier(mode_2d=True, input_vacuum_axis=2).interactive_modify()
+    assert KPathBuilder(mode_2d=True, input_vacuum_axis=2).interactive_build()
     stdout = capsys.readouterr().out
     assert (
         "Input cell:                   LG p4/mmm (61)  PG 4/mmm  "

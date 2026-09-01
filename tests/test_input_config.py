@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from alterseek.kpoints import KPointsModifier, _read_input_config
+from alterseek.kpoints import KPathBuilder, _read_input_config
 from alterseek.find_sf_operations import SpinSymmetryError
 
 
@@ -47,7 +47,7 @@ def test_spin_symmetry_failure_aborts_workflow(tmp_path, monkeypatch, capsys):
         raise SpinSymmetryError("synthetic spin-symmetry failure")
 
     monkeypatch.setattr("alterseek.kpoints.find_sf_run", fail_spin_symmetry)
-    assert KPointsModifier().interactive_modify() is False
+    assert KPathBuilder().interactive_build() is False
     output = capsys.readouterr().out
     assert "Spin-symmetry analysis failed" in output
     assert "synthetic spin-symmetry failure" in output
@@ -71,5 +71,5 @@ def test_save_pdf_does_not_mutate_process_environment(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    assert KPointsModifier().interactive_modify() is False
+    assert KPathBuilder().interactive_build() is False
     assert "ALTERSEEK_BZ_EXTRA_FORMATS" not in os.environ

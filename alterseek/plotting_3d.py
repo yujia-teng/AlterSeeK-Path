@@ -739,7 +739,7 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
       - Blue circle      : k' (spin-flip partner) with dashed lines to mapped high-sym points
       - Operation visual : mirror plane or rotation/rotoinversion axis and arrow
 
-    path_sequence : list returned by KPointsModifier.insert_general_kpoints().
+    path_sequence : list returned by KPathBuilder.insert_general_kpoints().
         Each entry is [kx, ky, kz, label] (fractional coords) or None (segment break).
         It controls the generated high-symmetry segments and k/k' connections.
     """

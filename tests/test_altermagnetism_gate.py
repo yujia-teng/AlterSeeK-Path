@@ -276,7 +276,7 @@ def test_submitted_helper_failure_aborts_before_centroid(
     )
     monkeypatch.setattr(kpoints_module, "compute_centroid", forbid_centroid)
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is False
+    assert kpoints_module.KPathBuilder().interactive_build() is False
     output = capsys.readouterr().out
     assert "Submitted-cell analysis helper construction failed" in output
     assert "synthetic marker validation failure" in output
@@ -336,7 +336,7 @@ def test_centroid_failure_is_reported_once_under_its_own_headline(
     )
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
-    result = kpoints_module.KPointsModifier().interactive_modify()
+    result = kpoints_module.KPathBuilder().interactive_build()
     output = capsys.readouterr().out
 
     assert result is False
@@ -412,7 +412,7 @@ def test_altermagnet_with_no_available_spin_flip_operation_aborts(
     )
 
     assert (
-        kpoints_module.KPointsModifier().interactive_modify()
+        kpoints_module.KPathBuilder().interactive_build()
         is False
     )
     output = capsys.readouterr().out
@@ -459,7 +459,7 @@ def test_centroid_failure_without_spin_analysis_also_aborts(
     )
     monkeypatch.setattr(kpoints_module, "compute_centroid", failing_centroid)
 
-    result = kpoints_module.KPointsModifier().interactive_modify()
+    result = kpoints_module.KPathBuilder().interactive_build()
     output = capsys.readouterr().out
 
     assert result is False
@@ -509,7 +509,7 @@ def test_step1_internal_error_propagates_without_manual_fallback(
     )
 
     with pytest.raises(KeyError, match="sp_path"):
-        kpoints_module.KPointsModifier().interactive_modify()
+        kpoints_module.KPathBuilder().interactive_build()
     output = capsys.readouterr().out
 
     assert input_stream.tell() == 0
@@ -563,7 +563,7 @@ def test_missing_centroid_aborts_without_manual_k_prompt(
         kpoints_module, "compute_centroid", lambda *a, **k: centroid_result
     )
 
-    assert kpoints_module.KPointsModifier().interactive_modify() is False
+    assert kpoints_module.KPathBuilder().interactive_build() is False
     output = capsys.readouterr().out
 
     assert input_stream.tell() == 0
@@ -599,7 +599,7 @@ def test_workflow_gates_on_findspingroup_g0(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", io.StringIO(answers))
 
-    kpoints_module.KPointsModifier().interactive_modify()
+    kpoints_module.KPathBuilder().interactive_build()
 
     assert seen, "the gate was never consulted"
     working = seen[0]

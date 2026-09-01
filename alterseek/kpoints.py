@@ -1,4 +1,4 @@
-"""KPointsModifier: build the altermagnetic k-path around the IBZ-centroid
+"""KPathBuilder: build the altermagnetic k-path around the IBZ-centroid
 general k-point, drive the interactive Step 0-5 workflow, and write the
 VASP, QE, and ABINIT path files.
 """
@@ -292,7 +292,9 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
         raise ValueError(f"Failed to read {path}: {exc}") from exc
 
 
-class KPointsModifier:
+class KPathBuilder:
+    """Build the general-k path and write it for VASP, QE, or ABINIT."""
+
     def __init__(self, mode_2d: bool = False, input_vacuum_axis: int = None):
         self.kpoints_data = []
         self.header_lines = []
@@ -360,7 +362,7 @@ class KPointsModifier:
 
     @staticmethod
     def _display_label(label: str) -> str:
-        return KPointsModifier._kpoints_label(label)
+        return KPathBuilder._kpoints_label(label)
 
     @staticmethod
     def _kpoints_label(label: str) -> str:
@@ -1393,8 +1395,12 @@ class KPointsModifier:
             R_for_kpts = R
         return R_for_kpts, R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot
 
-    def interactive_modify(self):
-        """Interactive modification of KPOINTS file"""
+    def interactive_build(self):
+        """Run the interactive session, from the structure to the written k-path.
+
+        Steps 0-5: spin symmetry, high-symmetry path, general k point,
+        spin-flip operation, path construction, and output.
+        """
         BOLD  = "\033[1m"
         RESET = "\033[0m"
         print("=== Altermagnetic K-Path Generator ===")
