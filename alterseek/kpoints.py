@@ -1,4 +1,4 @@
-"""KPathBuilder: build the altermagnetic k-path around the IBZ-centroid
+"""KPathBuilder: build the general-k path around the IBZ-centroid
 general k-point, drive the interactive Step 0-5 workflow, and write the
 VASP, QE, and ABINIT path files.
 """

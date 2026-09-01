@@ -69,7 +69,7 @@ figures and diagnostic records go into `alterseek_output/`.
 
 | File | Description |
 |------|-------------|
-| `KPOINTS_alter` | Altermagnetic k-path for VASP line-mode band calculations |
+| `KPOINTS_alter` | General-k path for VASP line-mode band calculations |
 | `KPOINTS_alter_<code>` | QE or ABINIT k-path; `<code>` is `qe` or `abinit` |
 | `alterseek_plot_<code>.toml` | Plot configuration; `<code>` is `vasp`, `qe`, or `abinit` |
 

@@ -1,4 +1,4 @@
-"""AlterSeeK-Path: altermagnetic k-path generation for VASP/QE/ABINIT.
+"""AlterSeeK-Path: general-k path generation for VASP/QE/ABINIT.
 
 Public API re-exports for library use:
     from alterseek import compute_centroid_3d, kpoints, geometry, symmetry

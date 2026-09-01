@@ -12,7 +12,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="alterseek-path",
-        description="Generate an altermagnetic k-point path.",
+        description="Generate a general-k path.",
     )
     parser.add_argument(
         "--2d",
