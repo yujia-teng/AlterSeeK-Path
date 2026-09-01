@@ -14,7 +14,7 @@ It prompts for any input not supplied in `alterseek_input.toml`.
 | **1** | Generates the high-symmetry path | Automatic |
 | **2** | Computes the general k point | Automatic IBZ centroid |
 | **3** | Selects a detected spin-flip operation | Press Enter for default, enter a number, or type `list` |
-| **4** | Builds the altermagnetic path | Automatic |
+| **4** | Builds the general-k path | Automatic |
 | **5** | Saves the output | Output code (`vasp`, `qe`, or `abinit`); filenames are fixed |
 
 ## Step 0: Spin Symmetry
@@ -50,7 +50,7 @@ Lists the detected spin-flip operations with a default. Accept the default,
 pick another by number, or `list` the matrices. Every selectable operation
 comes from the detected symmetry set.
 
-## Step 4: Build The Altermagnetic Path
+## Step 4: Build The General-k Path
 
 The selected operation maps k to k'; both are inserted into the path. Written
 coordinates are converted to the submitted reciprocal basis.

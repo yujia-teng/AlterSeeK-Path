@@ -2093,7 +2093,7 @@ class KPathBuilder:
                 )
             # In 3D, reaching this point without flip operations indicates missing or inconsistent operation output, so abort instead of writing an ordinary path.
             print(
-                "[Error] Spin-symmetry analysis reached the altermagnetic path, "
+                "[Error] Spin-symmetry analysis reached the general-k path, "
                 "but no detected spin-flip point operation is available. "
                 "The symmetry result or operation output is inconsistent. "
                 "Aborting."
@@ -2131,7 +2131,7 @@ class KPathBuilder:
                 return False
 
         # --- Step 4: Process k-points ---
-        print(f"\n{BOLD}>>> Step 4: Build altermagnetic path{RESET}")
+        print(f"\n{BOLD}>>> Step 4: Build general-k path{RESET}")
 
         (R_for_kpts, R_cart_for_plot, flip_ops_for_plot,
          preserve_ops_for_plot) = self._convert_operation_to_primitive_basis(
@@ -2166,7 +2166,7 @@ class KPathBuilder:
             path_points=butterfly_path_points,
         )
         if not figure_kpoints:
-            print("[Error] Failed to build a nonempty altermagnetic path.")
+            print("[Error] Failed to build a nonempty general-k path.")
             return False
         output_kpoints = figure_kpoints
 

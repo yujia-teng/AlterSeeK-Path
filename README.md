@@ -112,7 +112,7 @@ Default R: Option 1
 Press [Enter] to use default, type a number, or 'list' to show matrices: 1
 Selected: Option 1  (C6+ [0 0 1])
 
->>> Step 4: Build altermagnetic path
+>>> Step 4: Build general-k path
 k' = [-0.1111, 0.3889, 0.2500]
 Generated path: GAMMA-M-k | k'-M'-K'-k' | k-K-GAMMA-k | ... | k-H-A | L-M | H-K
 Full path: 9 original segments -> 21 generated segments, 36 k-points
