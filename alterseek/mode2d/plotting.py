@@ -33,6 +33,13 @@ from ..symmetry import (
 )
 
 
+def _ibz_sector_flags(centroid_result, labels):
+    """Copied-sector colors only for genuine project-enlarged IBZ sectors."""
+    if not centroid_result.get("color_copied_ibz_sectors", True):
+        return [False] * len(labels)
+    return _doubled_ibz_extra_flags(labels)
+
+
 # --- Geometry helpers ---
 
 def _cart_from_frac(frac, b_matrix):
@@ -40,7 +47,9 @@ def _cart_from_frac(frac, b_matrix):
     return f[0] * b_matrix[0] + f[1] * b_matrix[1] + f[2] * b_matrix[2]
 
 
-def _plane_projector(b_matrix, axis, lattice_class=None):
+def _plane_projector(
+    b_matrix, axis, lattice_class=None, path_basis_transform=None
+):
     """2D screen basis (kx, ky) for the in-plane reciprocal vectors.
 
     Screen x/y are the structure's own Cartesian axes when the vacuum
@@ -60,9 +69,13 @@ def _plane_projector(b_matrix, axis, lattice_class=None):
     normal /= normal_norm
 
     if lattice_class == "centered-rectangular":
-        # The conventional axis A = a1 + a2 is parallel to g1 + g2, so screen x
-        # is the conventional a direction in both metric branches.
-        conv_a = g1 + g2
+        reciprocal_pair = np.array([g1, g2])
+        if path_basis_transform is not None:
+            transform = np.asarray(path_basis_transform, dtype=float)
+            reciprocal_pair = np.linalg.inv(transform).T @ reciprocal_pair
+        # In the temporary centered primitive basis, conventional a is
+        # parallel to g1 + g2.  This is also the screen x direction.
+        conv_a = reciprocal_pair[0] + reciprocal_pair[1]
         e1 = conv_a / np.linalg.norm(conv_a)
         # Derive screen y from the plane normal so the frame stays right-handed
         # and the drawn sense of every rotation operation is preserved.
@@ -104,8 +117,14 @@ def _to_2d(point, basis):
     return np.array([point[0], point[1]], dtype=float)
 
 
-def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
-                   lattice_class=None):
+def _bz_polygon_2d(
+    b_matrix,
+    axis,
+    radius=2,
+    cartesian_xy=False,
+    lattice_class=None,
+    path_basis_transform=None,
+):
     """2D Wigner-Seitz BZ polygon for the selected reciprocal plane."""
     if cartesian_xy:
         if axis != 2:
@@ -113,7 +132,12 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
         basis = None
         in_plane_axes = [0, 1]
     else:
-        basis = _plane_projector(b_matrix, axis, lattice_class=lattice_class)
+        basis = _plane_projector(
+            b_matrix,
+            axis,
+            lattice_class=lattice_class,
+            path_basis_transform=path_basis_transform,
+        )
         _, _, in_plane_axes = basis
     vectors = []
     for i in range(-radius, radius + 1):
@@ -157,6 +181,17 @@ def _bz_polygon_2d(b_matrix, axis, radius=2, cartesian_xy=False,
     center = np.mean(poly, axis=0)
     angles = np.arctan2(poly[:, 1] - center[1], poly[:, 0] - center[0])
     return poly[np.argsort(angles)], basis
+
+
+def _path_projection_kwargs(centroid_result):
+    """Return the screen-frame inputs for the selected 2D path convention."""
+    path_class = centroid_result.get(
+        "path_lattice_class_2d", centroid_result.get("sc_type")
+    )
+    return {
+        "lattice_class": str(path_class).replace("_", "-"),
+        "path_basis_transform": centroid_result.get("path_basis_transform_2d"),
+    }
 
 
 # --- Drawing helpers ---
@@ -891,7 +926,8 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     # example, oA2 can place its physical vacuum reciprocal vector along kx.
     # Always construct the screen basis from the physical reciprocal plane.
     bz_poly, basis = _bz_polygon_2d(
-        b_matrix, axis, lattice_class=centroid_result.get("sc_type"))
+        b_matrix, axis, **_path_projection_kwargs(centroid_result)
+    )
 
     spin_down_mask = _classify_spin_down_ops_2d(
         b_matrix, unique_ops, R_for_kpts,
@@ -920,7 +956,7 @@ def _plot_spin_pattern_top_view_2d(centroid_result, R_for_kpts,
     ibz_polygon_labels = centroid_result.get("ibz_polygon_labels")
     extra_flags = None
     if ibz_polygon_labels and len(ibz_polygon_labels) == len(ibz_polygon_frac):
-        flags = _doubled_ibz_extra_flags(ibz_polygon_labels)
+        flags = _ibz_sector_flags(centroid_result, ibz_polygon_labels)
         if any(flags):
             extra_flags = flags
     original_idx = (
@@ -1020,7 +1056,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     lattice_title = _physical_lattice_title(centroid_result)
     # Do not infer a Cartesian kx/ky section from a fractional-axis index.
     # The standardized basis may permute Cartesian axes.
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, lattice_class=sc_type)
+    bz_poly, basis = _bz_polygon_2d(
+        b_matrix, axis, **_path_projection_kwargs(centroid_result)
+    )
     reciprocal_axis_dirs = [
         _to_2d(vec, basis)
         for i, vec in enumerate(b_matrix)
@@ -1065,7 +1103,9 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         extra_flags_fig1 = None
         if ibz_polygon_labels_fig1 and \
                 len(ibz_polygon_labels_fig1) == len(ibz_polygon_frac):
-            flags = _doubled_ibz_extra_flags(ibz_polygon_labels_fig1)
+            flags = _ibz_sector_flags(
+                centroid_result, ibz_polygon_labels_fig1
+            )
             if any(flags):
                 extra_flags_fig1 = flags
         if extra_flags_fig1 is not None:
@@ -1153,7 +1193,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         hull_idx = ConvexHull(poly).vertices
         hp = poly[hull_idx]
         hp_labels = [str(labels[i]).rstrip("'") for i in hull_idx]
-        flags = _doubled_ibz_extra_flags(hp_labels)
+        flags = _ibz_sector_flags(centroid_result, hp_labels)
         if any(flags):
             original_idx = [j for j, is_extra in enumerate(flags) if not is_extra]
             ax.fill(hp[:, 0], hp[:, 1], color=extra_color, alpha=0.20, zorder=1)
@@ -1257,7 +1297,9 @@ def plot_2d_general_path_figure(
     b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
     axis = int(centroid_result.get("vacuum_axis", 2))
     sc_type = centroid_result.get("sc_type", "BZ")
-    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, lattice_class=sc_type)
+    bz_poly, basis = _bz_polygon_2d(
+        b_matrix, axis, **_path_projection_kwargs(centroid_result)
+    )
     reciprocal_axis_dirs = [
         _to_2d(vec, basis)
         for i, vec in enumerate(b_matrix)
@@ -1299,7 +1341,7 @@ def plot_2d_general_path_figure(
         extra_flags = None
         if ibz_polygon_labels and \
                 len(ibz_polygon_labels) == len(ibz_polygon_frac):
-            flags = _doubled_ibz_extra_flags(ibz_polygon_labels)
+            flags = _ibz_sector_flags(centroid_result, ibz_polygon_labels)
             if any(flags):
                 extra_flags = flags
         if extra_flags is not None:

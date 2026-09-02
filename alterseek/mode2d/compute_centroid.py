@@ -84,9 +84,16 @@ def run(
         orthogonality_tol=max(2e-3, tolerance / shortest),
         metric_tol=max(2e-3, 2.0 * tolerance / shortest),
     )
-    path_data = build_path(lattice_2d, dataset.pointgroup)
     point_operations = project_point_operations(
         lattice_2d, dataset.rotations, add_inversion=True
+    )
+    # The path needs the projected order too: a lowered in-plane group splits
+    # points the lattice's own symmetry would have made equivalent.
+    path_data = build_path(
+        lattice_2d,
+        dataset.pointgroup,
+        len(point_operations),
+        projected_operations=point_operations,
     )
     bz_polygon = build_bz(lattice_2d.reciprocal_2d)
     ibz_polygon, centroid_2d, ibz_area, ibz_labels = build_ibz(
@@ -169,6 +176,9 @@ def run(
         "vacuum_axis": input_vacuum_axis,
         "ibz_polygon_frac": ibz_polygon_frac,
         "ibz_polygon_labels": ibz_labels,
+        "color_copied_ibz_sectors": (
+            path_data["path_lattice_class"] != "oblique"
+        ),
         "seekpath_rotation_matrix": np.eye(3),
         "standardized_structure_path": None,
         "standard_mapping_path": None,
@@ -176,6 +186,11 @@ def run(
         "mcif_parent_recovery": None,
         "path_source_2d": True,
         "lattice_class_2d": lattice_2d.lattice_class,
+        "path_lattice_class_2d": path_data["path_lattice_class"],
+        "path_metric_branch_2d": path_data["path_metric_branch"],
+        "path_basis_transform_2d": np.asarray(
+            path_data["path_lattice"].canonical_transform, dtype=int
+        ),
         "metric_branch_2d": lattice_2d.centered_branch,
         "bz_polygon_2d": bz_polygon,
         "projected_point_operations_2d": point_operations,

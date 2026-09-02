@@ -30,7 +30,9 @@ from alterseek.plotting_common import (
 )
 from alterseek.mode2d.plotting import (
     _draw_op_visual_2d,
+    _ibz_sector_flags,
     _order_mixed_label_left_to_right,
+    _plane_projector,
     _physical_lattice_title,
     _spinflip_display_points_2d,
     plot_2d_figures,
@@ -92,6 +94,59 @@ def test_2d_figure_title_uses_native_physical_lattice_class():
         "sc_type": "oC1",
         "lattice_class_2d": "centered_rectangular",
     }) == "centered rectangular"
+
+
+def test_cross_family_centered_plot_uses_conventional_a_as_screen_x():
+    lattice = np.array([
+        [4.0, 0.0, 0.0],
+        [-2.0, 2.0 * np.sqrt(3.0), 0.0],
+        [0.0, 0.0, 20.0],
+    ])
+    lattice_2d = analyze_lattice(lattice, 2)
+    first, second = lattice_2d.direct_2d
+
+    def reflection(axis):
+        direction = axis / np.linalg.norm(axis)
+        return 2.0 * np.outer(direction, direction) - np.eye(2)
+
+    operations = [
+        np.eye(2), -np.eye(2),
+        reflection(first + second), reflection(first - second),
+    ]
+    path_data = build_path(
+        lattice_2d, "2mm", 4, projected_operations=operations
+    )
+    basis = _plane_projector(
+        lattice_2d.reciprocal_3d,
+        2,
+        lattice_class="centered-rectangular",
+        path_basis_transform=path_data["path_lattice"].canonical_transform,
+    )
+    points = {
+        label: np.array([
+            np.dot(np.asarray(frac) @ lattice_2d.reciprocal_3d, basis[0]),
+            np.dot(np.asarray(frac) @ lattice_2d.reciprocal_3d, basis[1]),
+        ])
+        for label, frac in path_data["points"].items()
+    }
+
+    assert np.allclose(points["Y"][0], 0.0, atol=1e-10)
+    assert points["Y"][1] > 0.0
+    assert points["SIGMA_0"][0] > 0.0
+    assert np.allclose(points["SIGMA_0"][1], 0.0, atol=1e-10)
+    assert points["C_0"][0] > 0.0
+    assert np.allclose(points["C_0"][1], points["Y"][1])
+
+
+def test_oblique_copy_labels_do_not_trigger_enlarged_sector_colors():
+    labels = ["Q", "Q_A", "Y", "Y_A", "Q_B"]
+
+    assert not any(_ibz_sector_flags(
+        {"color_copied_ibz_sectors": False}, labels
+    ))
+    assert any(_ibz_sector_flags(
+        {"color_copied_ibz_sectors": True}, labels
+    ))
 
 
 # Reference operations with the vacuum on axis 2 (z); in-plane block = rows/cols (0,1).
@@ -250,12 +305,12 @@ def test_2d_tp1_keeps_reference_path_separate_from_butterfly_override():
     lattice_2d = analyze_lattice(_diag([4.0, 4.0, 20.0]), 2)
     path_data = build_path(lattice_2d, "4")
 
+    # M-Gamma stays here; the centroid lies on it, so the general-k filter in
+    # kpoints.py is what removes it.
     assert path_data["path"] == [
         (GAMMA_LABEL, "X"), ("X", "M"), ("M", GAMMA_LABEL)
     ]
-    assert path_data["butterfly_path"] == [
-        (GAMMA_LABEL, "X"), ("X", "M")
-    ]
+    assert path_data["butterfly_path"] == path_data["path"]
     assert path_data["butterfly_extra_vertices"] == [
         GAMMA_LABEL, "X_A"
     ]

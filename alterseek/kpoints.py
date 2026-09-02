@@ -548,6 +548,13 @@ class KPathBuilder:
         # --- Phase 1: group flat kpoints_data into segment pairs ---
         raw = self._combine_coincident_path_labels(source_path)
         seg_pairs = [(raw[i], raw[i+1]) for i in range(0, len(raw) - 1, 2)]
+        seg_pairs = [
+            (start, end) for start, end in seg_pairs
+            if not self._general_k_covers_segment(general_kpoint, start, end)
+        ]
+        if not seg_pairs:
+            print("Error: Every path segment already runs through general k.")
+            return []
 
         # --- Phase 2: build connected chains ---
         chains = []
@@ -734,6 +741,10 @@ class KPathBuilder:
         kpt = [kpoint[0], kpoint[1], kpoint[2], "k"]
         raw = self._combine_coincident_path_labels(self.kpoints_data)
         seg_pairs = [(raw[i], raw[i + 1]) for i in range(0, len(raw) - 1, 2)]
+        seg_pairs = [
+            (start, end) for start, end in seg_pairs
+            if not self._general_k_covers_segment(kpoint, start, end)
+        ]
         path_sequence = []
         for idx, (start, end) in enumerate(seg_pairs):
             if idx:
@@ -773,6 +784,24 @@ class KPathBuilder:
         )
         return path_sequence
     
+    @staticmethod
+    def _general_k_covers_segment(kpoint, start, end, tol=1e-8):
+        """Whether general k sits between the endpoints and so is drawn twice.
+
+        The ordinary segment is then the duplicate and is dropped.
+        """
+        first = np.asarray(start[:3], dtype=float)
+        second = np.asarray(end[:3], dtype=float)
+        along = second - first
+        length_squared = float(np.dot(along, along))
+        if length_squared <= tol:
+            return False
+        offset = np.asarray(kpoint[:3], dtype=float) - first
+        position = float(np.dot(offset, along)) / length_squared
+        if not tol < position < 1.0 - tol:
+            return False
+        return bool(np.allclose(offset, position * along, atol=1e-6, rtol=0.0))
+
     @staticmethod
     def _combine_coincident_path_labels(points):
         """Return copies with coincident path labels combined, e.g. M/Z_0.
