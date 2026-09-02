@@ -8,6 +8,16 @@ version = "1.0.0"
 description = "Generate altermagnetic k-point paths for VASP, Quantum ESPRESSO, and ABINIT workflows."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Yujia Teng", email = "tyj657151724@gmail.com" }]
+keywords = ["altermagnetism", "band structure", "k-path", "Brillouin zone", "DFT"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "numpy>=1.26",
     "matplotlib>=3.8",
@@ -19,6 +29,13 @@ dependencies = [
     "seekpath>=2.1",
     "pymatgen>=2024.11",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yujia-teng/AlterSeeK-Path"
+Documentation = "https://yujia-teng.github.io/AlterSeeK-Path/"
+Source = "https://github.com/yujia-teng/AlterSeeK-Path"
+Issues = "https://github.com/yujia-teng/AlterSeeK-Path/issues"
+Archive = "https://doi.org/10.5281/zenodo.22133631"
 
 [project.scripts]
 alterseek-path = "alterseek_path:main"

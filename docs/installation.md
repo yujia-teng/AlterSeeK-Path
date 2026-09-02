@@ -2,9 +2,15 @@
 
 AlterSeeK-Path requires Python 3.11 or newer.
 
+## Install
+
+```bash
+pip install alterseek-path
+```
+
 ## Install From Source
 
-Clone the repository and install the package:
+For the latest development version, clone the repository and install it:
 
 ```bash
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git

@@ -5,6 +5,8 @@ __pycache__/
 *.bak_*
 site/
 *.egg-info/
+build/
+dist/
 
 # Jupyter
 .ipynb_checkpoints/

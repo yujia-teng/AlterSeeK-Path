@@ -11,6 +11,12 @@ AlterSeeK-Path generates general-k paths for altermagnet band-structure calculat
 Requires Python >= 3.11.
 
 ```bash
+pip install alterseek-path
+```
+
+To install the latest development version from source instead:
+
+```bash
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git
 cd AlterSeeK-Path
 pip install .
@@ -22,6 +28,9 @@ pip install .
 
 For a longer user guide, see
 [yujia-teng.github.io/AlterSeeK-Path](https://yujia-teng.github.io/AlterSeeK-Path/).
+
+The released code and the case database are archived at
+[doi.org/10.5281/zenodo.22133631](https://doi.org/10.5281/zenodo.22133631).
 
 ---
 
