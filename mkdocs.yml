@@ -20,8 +20,8 @@ theme:
       accent: blue
 
 nav:
-  - User Guide: index.md
   - Installation: installation.md
+  - User Guide: index.md
   - Workflow: workflow.md
   - Plotting: plotting.md
 

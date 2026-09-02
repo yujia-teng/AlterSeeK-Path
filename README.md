@@ -1,5 +1,8 @@
 # AlterSeeK-Path
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22133630.svg)](https://doi.org/10.5281/zenodo.22133630)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 AlterSeeK-Path generates general-k paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
 
 ![AlterSeeK-Path example](./example/GdAuGe/VASP/HEX.png)
@@ -26,11 +29,11 @@ pip install .
 
 ## Documentation
 
-For a longer user guide, see
+For the full user guide, see
 [yujia-teng.github.io/AlterSeeK-Path](https://yujia-teng.github.io/AlterSeeK-Path/).
 
-The released code and the case database are archived at
-[doi.org/10.5281/zenodo.22133631](https://doi.org/10.5281/zenodo.22133631).
+The case library - VASP inputs, generated k-paths, and band-structure data for
+54 three-dimensional and 12 two-dimensional cases - is archived at [doi.org/10.5281/zenodo.22133631](https://doi.org/10.5281/zenodo.22133631).
 
 ---
 
