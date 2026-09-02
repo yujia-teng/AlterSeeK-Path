@@ -77,7 +77,7 @@ figures and diagnostic records go into `alterseek_output/`.
 
 | File | Description |
 |------|-------------|
-| `*_ibz_*`, `*_spinflip_*`, `*_spinbz_*`, `*_spinbz_top_*` | BZ, IBZ, spin-flip, and spin-pattern figures (`.png`, plus `.pdf` when requested) |
+| `*_ibz_*`, `*_generalpath_*`, `*_spinflip_*`, `*_spinbz_*`, `*_spinbz_top_*` | BZ and IBZ figures; the red-only general-k figure for a non-altermagnet (`*_2d_generalpath_*` in 2D mode); and spin-flip/spin-pattern figures for an altermagnet (`.png`, plus `.pdf` when requested) |
 | `spin*_operations.txt` | Full, spin-flip, and spin-preserving operation logs; written only when spin analysis runs |
 | `*_magnetic_primitive.mcif` | Direct FindSpinGroup magnetic primitive reference with vector moments; it is not the calculation cell |
 | `*_seekpath_basis_mapping.txt` | Submitted analysis/output lattice, internal primitive path lattice, standardized conventional lattice, and rotation mapping |

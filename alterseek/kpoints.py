@@ -20,10 +20,12 @@ from .symmetry import (no_altermagnetism_reason,
                        keeps_2d_plane_cartesian,
                        slab_plane_normal_cartesian,
                        describe_spinflip_op)
-from .plotting_3d import (plot_spin_flip_figure,
+from .plotting_3d import (plot_general_path_figure,
+                          plot_spin_flip_figure,
                           plot_spin_bz_figure,
                           plot_spin_bz_top_view_figure)
-from .mode2d.plotting import plot_2d_figures
+from .mode2d.plotting import (plot_2d_figures,
+                              plot_2d_general_path_figure)
 from .plotting_common import (
     alterseek_plot_style,
     combine_point_labels,
@@ -1159,6 +1161,55 @@ class KPathBuilder:
                 except Exception as _e:
                     print(f"[Warning] Could not generate {fig_name} figure: {_e}")
 
+    @alterseek_plot_style
+    def _generate_non_altermagnetic_figure(
+        self, centroid_result, struct_file, general_kpoint, path_sequence,
+        display_figures, save_pdf=False,
+    ):
+        """Add the red-only general-k figure for a non-altermagnet."""
+        # The 2D centroid module writes no diagnostics, so on a slab run
+        # nothing has created the output directory yet.
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        basename = (
+            os.path.splitext(os.path.basename(struct_file))[0]
+            if struct_file else 'output'
+        )
+        if self.mode_2d:
+            plot_2d_general_path_figure(
+                centroid_result,
+                general_kpoint,
+                basename,
+                output_dir=OUTPUT_DIR,
+                path_sequence=path_sequence,
+                save_pdf=save_pdf,
+                deferred_figures=display_figures,
+            )
+            return
+        if centroid_result.get('bz_loops') is None:
+            return
+        sc_type = centroid_result.get('sc_type', 'BZ')
+        figure = plot_general_path_figure(
+            b_matrix=centroid_result['b_matrix'],
+            bz_loops=centroid_result['bz_loops'],
+            bz_center=centroid_result.get('bz_center'),
+            kpoints_data=self.kpoints_data,
+            ibz_kpoints_frac=centroid_result.get('ibz_kpoints_frac', {}),
+            hull_pts=centroid_result.get('hull_pts'),
+            hull_simplices=centroid_result.get('hull_simplices'),
+            centroid_frac=general_kpoint,
+            output_path=os.path.join(
+                OUTPUT_DIR, f'{basename}_generalpath_{sc_type}.png'
+            ),
+            path_sequence=path_sequence,
+            elev=centroid_result.get('elev', 14),
+            azim=centroid_result.get('azim', 20),
+            show_plot=True,
+            defer_show=True,
+            save_pdf=save_pdf,
+        )
+        if figure is not None:
+            display_figures.append(figure)
+
     @staticmethod
     def _validate_standardized_spin_map(
         centroid_result,
@@ -2024,6 +2075,21 @@ class KPathBuilder:
                 general_kpoint,
                 self.extra_general_points,
             )
+            # Every route to this exit is a non-altermagnet: no moments,
+            # Laue -1/-3/m-3, PT, Ut, no spin-flip point operation, or
+            # the 2D in-plane +-I rule.  The helper picks the 2D or 3D
+            # plate.
+            try:
+                self._generate_non_altermagnetic_figure(
+                    centroid_result, struct_file, general_kpoint,
+                    standard_general_path, display_figures,
+                    save_pdf=save_pdf,
+                )
+            except Exception as exc:
+                print(
+                    "[Warning] Could not generate general-path figure: "
+                    f"{exc}"
+                )
             return _save_and_finish(standard_general_path, None, None)
 
         if standard_path_reason:

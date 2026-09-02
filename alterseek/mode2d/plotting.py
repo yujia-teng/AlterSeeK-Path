@@ -1241,3 +1241,116 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
         saved.extend(fig3_saved)
 
     return saved
+
+
+def plot_2d_general_path_figure(
+    centroid_result, general_kpoint, basename, output_dir=".",
+    path_sequence=None, save_pdf=False, deferred_figures=None,
+):
+    """Save the red-only 2D general-k figure for a non-altermagnet.
+
+    The slab counterpart of ``plot_general_path_figure``: one IBZ, the ordinary
+    in-plane path, and dashed connections from every in-plane high-symmetry
+    point to the centroid k.  No spin-flip image, k', or operation visual is
+    drawn because no spin-flip operation was selected.  Returns the saved paths.
+    """
+    b_matrix = np.array(centroid_result["b_matrix"], dtype=float)
+    axis = int(centroid_result.get("vacuum_axis", 2))
+    sc_type = centroid_result.get("sc_type", "BZ")
+    bz_poly, basis = _bz_polygon_2d(b_matrix, axis, lattice_class=sc_type)
+    reciprocal_axis_dirs = [
+        _to_2d(vec, basis)
+        for i, vec in enumerate(b_matrix)
+        if i != axis
+    ]
+
+    kpath = centroid_result["band_kpath"]
+    coords = centroid_result["band_kpoints_frac"]
+    # Only physical in-plane labels appear in the top-down view.
+    kpoints_cart = {
+        label: _to_2d(_cart_from_frac(frac, b_matrix), basis)
+        for label, frac in coords.items()
+        if not str(label).startswith("_") and abs(np.array(frac)[axis]) < 1e-4
+    }
+    centroid_xy = _to_2d(_cart_from_frac(general_kpoint, b_matrix), basis)
+
+    if path_sequence is not None:
+        drawn_labels = {
+            alias
+            for point in path_sequence
+            if point is not None
+            for alias in label_aliases(point[3])
+        }
+    else:
+        drawn_labels = {label for segment in kpath for label in segment}
+
+    fig, ax = _setup_2d_ax("2D general-k path connections", bz_poly)
+
+    # Shade the IBZ, splitting off a project-doubled extra sector exactly as
+    # Figure 1 does so the two plates read the same.
+    ibz_polygon_frac = centroid_result.get("ibz_polygon_frac")
+    if ibz_polygon_frac is not None and len(ibz_polygon_frac) >= 3:
+        ibz_xy = np.array(
+            [_to_2d(_cart_from_frac(point, b_matrix), basis)
+             for point in ibz_polygon_frac],
+            dtype=float,
+        )
+        ibz_polygon_labels = centroid_result.get("ibz_polygon_labels")
+        extra_flags = None
+        if ibz_polygon_labels and \
+                len(ibz_polygon_labels) == len(ibz_polygon_frac):
+            flags = _doubled_ibz_extra_flags(ibz_polygon_labels)
+            if any(flags):
+                extra_flags = flags
+        if extra_flags is not None:
+            original_idx = [j for j, is_extra in enumerate(extra_flags)
+                            if not is_extra]
+            ax.fill(ibz_xy[:, 0], ibz_xy[:, 1],
+                    color=IBZ_FACE_COLORS["up_extra"], alpha=0.20, zorder=1)
+            if len(original_idx) >= 3:
+                sub_xy = ibz_xy[original_idx]
+                ax.fill(sub_xy[:, 0], sub_xy[:, 1],
+                        color=IBZ_FACE_COLORS["up_main"], alpha=0.35, zorder=1)
+        else:
+            ax.fill(ibz_xy[:, 0], ibz_xy[:, 1],
+                    color=IBZ_FACE_COLORS["up_main"], alpha=0.20, zorder=1)
+
+    if path_sequence is not None:
+        for first, second, spin_side in generated_plain_path_segments(
+                path_sequence):
+            if spin_side != "up":
+                continue
+            first_xy = _to_2d(_cart_from_frac(first, b_matrix), basis)
+            second_xy = _to_2d(_cart_from_frac(second, b_matrix), basis)
+            ax.plot([first_xy[0], second_xy[0]], [first_xy[1], second_xy[1]],
+                    c="red", lw=4.0, alpha=0.9, zorder=50)
+    else:
+        for start, end in kpath:
+            if start in kpoints_cart and end in kpoints_cart:
+                p1, p2 = kpoints_cart[start], kpoints_cart[end]
+                ax.plot([p1[0], p2[0]], [p1[1], p2[1]], c="red", lw=4.0,
+                        alpha=0.9, zorder=50)
+
+    _draw_reciprocal_axes_2d(ax, b_matrix, axis, basis, bz_poly, zorder=51)
+    _draw_labeled_points(ax, kpoints_cart, "salmon", "darkred",
+                         path_labels=drawn_labels, bz_poly=bz_poly,
+                         avoid_dirs=reciprocal_axis_dirs, zorder=213)
+
+    # Skip a point sitting on the centroid: a zero-length dash draws nothing
+    # but still leaves a stray marker under the star.
+    threshold = 0.05 * max(np.max(np.linalg.norm(bz_poly, axis=1)), 1e-8)
+    for point in kpoints_cart.values():
+        if np.linalg.norm(point - centroid_xy) > threshold:
+            ax.plot([point[0], centroid_xy[0]], [point[1], centroid_xy[1]],
+                    c="deepskyblue", lw=2.0, ls="--", alpha=0.75, zorder=40)
+    ax.scatter(*centroid_xy, c="gold", s=300, marker="*", edgecolors="k",
+               linewidths=0.8, zorder=120, label=r"$k$")
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=18,
+              borderaxespad=0, frameon=True)
+    fig.tight_layout()
+    output_path = os.path.join(
+        output_dir, f"{basename}_2d_generalpath_{sc_type}.png"
+    )
+    return _finish_2d_figure(
+        fig, output_path, save_pdf, deferred_figures=deferred_figures
+    )

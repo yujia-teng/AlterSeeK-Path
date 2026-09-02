@@ -1011,6 +1011,192 @@ def plot_spin_flip_figure(b_matrix, bz_loops, bz_center,
     return display_fig
 
 
+def plot_general_path_figure(
+    b_matrix, bz_loops, bz_center, kpoints_data, ibz_kpoints_frac,
+    hull_pts, hull_simplices, centroid_frac, output_path, path_sequence,
+    elev=14, azim=20, show_plot=True, block=True, defer_show=False,
+    save_pdf=False,
+):
+    """Plot the red-only general-k path for a 3D non-altermagnet."""
+    if path_sequence is None or len(path_sequence) == 0:
+        raise ValueError(
+            "General-path Figure 2 requires a nonempty generated path_sequence"
+        )
+
+    b1, b2, b3 = np.asarray(b_matrix, dtype=float)
+    centroid_frac = np.asarray(centroid_frac[:3], dtype=float)
+    centroid_cart = centroid_frac[0] * b1 + centroid_frac[1] * b2 + centroid_frac[2] * b3
+
+    ibz_points = {}
+    for label, frac in ibz_kpoints_frac.items():
+        if str(label).startswith('_'):
+            continue
+        frac = np.asarray(frac, dtype=float)
+        ibz_points[label] = frac[0] * b1 + frac[1] * b2 + frac[2] * b3
+    if not ibz_points and kpoints_data:
+        for row in kpoints_data:
+            if len(row) < 4 or row[3] == 'k':
+                continue
+            label = str(row[3])
+            if label not in ibz_points:
+                ibz_points[label] = row[0] * b1 + row[1] * b2 + row[2] * b3
+
+    hull_labels = (
+        list(ibz_kpoints_frac.keys())
+        if hull_pts is not None and len(ibz_kpoints_frac) == len(hull_pts)
+        else None
+    )
+
+    def _path_point(label):
+        if label == 'k':
+            return None
+        for alias in label_aliases(label):
+            base = _seekpath_label_to_internal(alias)
+            point = ibz_points.get(alias)
+            if point is None:
+                point = ibz_points.get(base)
+            if point is not None:
+                return point
+        return None
+
+    sequence_labels = {
+        alias
+        for point in path_sequence
+        if point is not None and point[3] not in ('k', "k'")
+        for alias in label_aliases(point[3])
+    }
+
+    def _draw(ax):
+        if hull_pts is not None and hull_simplices is not None:
+            points = np.asarray(hull_pts, dtype=float)
+            _draw_ibz_faces_by_sector(
+                ax, points, hull_simplices, hull_labels,
+                IBZ_FACE_COLORS["up_main"], IBZ_FACE_COLORS["up_extra"],
+            )
+            for first, second in _get_ibz_frame_edges(
+                points, hull_simplices, hull_labels
+            ):
+                ax.plot(
+                    [first[0], second[0]], [first[1], second[1]],
+                    [first[2], second[2]], c='darkred', lw=1.8,
+                    alpha=0.85, zorder=10,
+                )
+
+        for first, second, spin_side in generated_plain_path_segments(
+            path_sequence
+        ):
+            if spin_side != 'up':
+                continue
+            first_cart = _path_point(first[3])
+            second_cart = _path_point(second[3])
+            if first_cart is None or second_cart is None:
+                continue
+            ax.plot(
+                [first_cart[0], second_cart[0]],
+                [first_cart[1], second_cart[1]],
+                [first_cart[2], second_cart[2]],
+                c='red', lw=4.0, alpha=0.9, zorder=50,
+            )
+
+        if ibz_points:
+            point_array = np.asarray(list(ibz_points.values()), dtype=float)
+            center = np.mean(point_array, axis=0)
+            span = max(float(np.max(np.ptp(point_array, axis=0))), 1e-8)
+            label_distance = 0.1 * span
+            for label, point in grouped_point_labels(
+                ibz_points, sequence_labels
+            ):
+                ax.scatter(
+                    *point, c='salmon', s=60, zorder=110,
+                    edgecolors='darkred', linewidths=0.5,
+                )
+                direction = point - center
+                norm = np.linalg.norm(direction)
+                displacement = (
+                    direction / norm * label_distance
+                    if norm > 1e-8 else np.array([0, 0, label_distance])
+                )
+                ax.text(
+                    *(point + displacement), _math_label(label),
+                    fontsize=22, color='darkred', zorder=111,
+                    ha='center', va='center',
+                )
+
+        for point in ibz_points.values():
+            ax.plot(
+                [point[0], centroid_cart[0]],
+                [point[1], centroid_cart[1]],
+                [point[2], centroid_cart[2]],
+                c='deepskyblue', lw=2.0, ls='--', alpha=0.75, zorder=40,
+            )
+        ax.scatter(
+            *centroid_cart, c='gold', s=300, marker='*', edgecolors='k',
+            linewidths=0.8, zorder=120, label=r'$k$',
+        )
+        ax.legend(loc='upper right', fontsize=18)
+
+    title = "General-k path connections"
+    fig, ax = setup_3d_ax(
+        title, bz_loops, b_matrix, bz_center,
+        elev=elev, azim=azim, dashed_back=False,
+    )
+    if show_plot:
+        attach_camera_angle_display(fig, ax)
+    _draw(ax)
+    plt.tight_layout()
+
+    display_fig = fig if show_plot and defer_show else None
+    if display_fig is not None:
+        def _save_after_show(fig=fig, ax=ax):
+            save_figure = None
+            try:
+                save_figure, save_ax = setup_3d_ax(
+                    title, bz_loops, b_matrix, bz_center,
+                    elev=ax.elev, azim=ax.azim, dashed_back=True,
+                )
+                _draw(save_ax)
+                plt.tight_layout()
+                _relayout_labels_for_save(save_figure, save_ax)
+                saved_paths = _save_figure(
+                    save_figure, output_path,
+                    extra_formats=("pdf",) if save_pdf else (),
+                    dpi=300, bbox_inches='tight',
+                )
+                view = (ax.elev, ax.azim)
+                fig._alterseek_camera_angle = (saved_paths[0],) + view
+                _print_saved_paths(saved_paths, view=view)
+            finally:
+                if save_figure is not None:
+                    plt.close(save_figure)
+                plt.close(fig)
+        display_fig._alterseek_save_after_show = _save_after_show
+        return display_fig
+
+    if show_plot and not defer_show:
+        plt.show(block=block)
+        if block:
+            elev, azim = ax.elev, ax.azim
+            plt.close(fig)
+    elif not show_plot:
+        plt.close(fig)
+
+    fig_save, ax_save = setup_3d_ax(
+        title, bz_loops, b_matrix, bz_center,
+        elev=elev, azim=azim, dashed_back=True,
+    )
+    _draw(ax_save)
+    plt.tight_layout()
+    _relayout_labels_for_save(fig_save, ax_save)
+    saved_paths = _save_figure(
+        fig_save, output_path,
+        extra_formats=("pdf",) if save_pdf else (),
+        dpi=300, bbox_inches='tight',
+    )
+    plt.close(fig_save)
+    _print_saved_paths(saved_paths, view=(elev, azim))
+    return display_fig
+
+
 def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
                         unique_ops, centroid_cart,
                         hull_pts, hull_simplices,
