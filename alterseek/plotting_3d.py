@@ -11,6 +11,7 @@ from matplotlib.colors import to_rgb
 
 from .plotting_common import (
     IBZ_FACE_COLORS,
+    IBZ_UP_EXTRA_SECTOR_COLORS,
     _get_bz_path_style,
     _math_label,
     _print_saved_paths,
@@ -24,6 +25,7 @@ from .symmetry import (
     _classify_spin_down_ops,
     _classify_spinflip_op,
     _doubled_ibz_extra_flags,
+    _hp1_four_sector_label_groups,
     _format_miller,
     _mirror_plane_bz_polygon,
     _perp_unit,
@@ -63,6 +65,21 @@ def _draw_ibz_faces_by_sector(ax, hull_pts, hull_simplices, hull_labels,
         _doubled_ibz_extra_flags(labels) if labels is not None
         else [False] * len(points)
     )
+    sector_groups = (
+        _hp1_four_sector_label_groups(labels) if labels is not None else None
+    )
+    if sector_groups is not None:
+        colors = (main_color,) + IBZ_UP_EXTRA_SECTOR_COLORS
+        for indices, color in zip(sector_groups, colors):
+            sector_points = points[indices]
+            sector_hull = ConvexHull(sector_points)
+            faces = [
+                [sector_points[index] for index in simplex]
+                for simplex in sector_hull.simplices
+            ]
+            ax.add_collection3d(Poly3DCollection(
+                faces, facecolor=color, alpha=main_alpha, edgecolor='none'))
+        return
     if len(extra_flags) != len(points) or not any(extra_flags):
         faces = [[points[s] for s in simplex] for simplex in hull_simplices]
         ax.add_collection3d(Poly3DCollection(
@@ -1279,10 +1296,15 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
     up_labeled = False
     down_labeled = False
 
-    # Only a project-added _A-style label identifies a doubled IBZ; ordinary HPKOT _2 labels alone do not.
+    # Only project-added letter suffixes identify enlarged sectors; ordinary
+    # HPKOT _2 labels alone do not.
     extra_flags = (
         _doubled_ibz_extra_flags(hull_labels) if hull_labels is not None
         else None
+    )
+    sector_groups = (
+        _hp1_four_sector_label_groups(hull_labels)
+        if hull_labels is not None else None
     )
 
     if mapped_spin_hulls is not None:
@@ -1311,7 +1333,28 @@ def plot_spin_bz_top_view_figure(b_matrix, bz_loops,
             up_labeled = True
 
         closed = np.vstack([poly, poly[0]])
-        if has_extra:
+        if sector_groups is not None and not is_down:
+            sector_colors = (color,) + IBZ_UP_EXTRA_SECTOR_COLORS
+            for group_index, (indices, sector_color) in enumerate(zip(
+                sector_groups, sector_colors
+            )):
+                sector_pts = cell_pts[indices]
+                try:
+                    sector_hull = ConvexHull(sector_pts)
+                    sector_poly = _points_on_kz_plane(
+                        sector_pts, sector_hull.simplices,
+                        z0=section_z, axis=cut_axis,
+                    )
+                except Exception:
+                    sector_poly = None
+                if sector_poly is not None:
+                    ax.fill(
+                        sector_poly[:, 0], sector_poly[:, 1],
+                        facecolor=sector_color, alpha=0.68,
+                        edgecolor='none',
+                        label=label if group_index == 0 else None,
+                    )
+        elif has_extra:
             ax.fill(poly[:, 0], poly[:, 1], facecolor=extra_color, alpha=0.46,
                     edgecolor='none', label=label)
             original_pts = np.array([

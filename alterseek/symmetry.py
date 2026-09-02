@@ -456,15 +456,38 @@ def _classify_spin_down_ops(b_matrix, unique_ops, flip_ops_frac):
 def _is_doubled_ibz_extra_label(label):
     label = str(label)
     suffix = label.rsplit("_", 1)[-1] if "_" in label else ""
-    return suffix.endswith("A") or label.endswith("_2")
+    # Project copies use A, B, C, ... suffixes. HPKOT's own _2 labels name
+    # inequivalent points and must not be classified as copied vertices.
+    return suffix.endswith("A") or (
+        len(suffix) == 1 and suffix.isalpha() and suffix.isupper()
+    )
 
 
 def _doubled_ibz_extra_flags(hull_labels):
     labels = [str(label) for label in hull_labels]
     # Project-doubled sectors always include a copied _A label, while ordinary HPKOT _2 labels must not trigger sector coloring.
     if not any(
-        "_" in label and label.rsplit("_", 1)[-1].endswith("A")
+        "_" in label and _is_doubled_ibz_extra_label(label)
         for label in labels
     ):
         return [False] * len(labels)
     return [_is_doubled_ibz_extra_label(label) for label in labels]
+
+
+def _hp1_four_sector_label_groups(hull_labels):
+    """Indices of the four fixed hP1 3/-3 wedges, or ``None``."""
+    labels = [str(label) for label in hull_labels]
+    required = {
+        "\u0393", "A", "K", "H", "M", "L",
+        "K_A", "H_A", "M_A", "L_A", "M_B", "L_B",
+    }
+    if not required.issubset(labels):
+        return None
+    by_label = {label: index for index, label in enumerate(labels)}
+    groups = [
+        ("\u0393", "A", "K", "H", "M", "L"),
+        ("\u0393", "A", "K_A", "H_A", "M_A", "L_A"),
+        ("\u0393", "A", "K", "H", "M_B", "L_B"),
+        ("\u0393", "A", "K_A", "H_A", "M", "L"),
+    ]
+    return [[by_label[label] for label in group] for group in groups]

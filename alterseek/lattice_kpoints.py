@@ -87,8 +87,19 @@ HULL_EXCLUDED_POINTS = {
 }
 
 
-# Cubic 23/m-3 and trigonal 3/-3 use no project-only copied vertices.
 PROJECT_HULL_EXTRA_POINTS_BY_SG = {
+    # Cubic 23/m-3: fixed doubled fundamental domains.
+    ("cP1", frozenset({195, 198, 200, 201, 205})): {
+        "X_A": ("1/2", "0", "0"),
+    },
+    ("cF1", frozenset({196, 202, 203})): {
+        "W_A": ("3/4", "1/4", "1/2"),
+        "K_A": ("3/4", "3/8", "3/8"),
+    },
+    ("cI1", frozenset({197, 199, 204, 206})): {
+        "N_A": ("1/2", "0", "0"),
+    },
+
     # Tetragonal 4, -4, and 4/m point groups: doubled project IBZ.
     ("tP1", range(75, 89)): {
         "X_A": ("1/2", "0", "0"),
@@ -117,11 +128,47 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "M_A": ("0", "1/2", "0"),
         "L_A": ("0", "1/2", "1/2"),
     },
+
+    # Trigonal 3/-3. hP1 contains four HPKOT wedges; hR1/hR2 contain two.
+    ("hP1", frozenset({143, 144, 145, 147})): {
+        "K_A": ("2/3", "-1/3", "0"),
+        "H_A": ("2/3", "-1/3", "1/2"),
+        "M_A": ("1/2", "-1/2", "0"),
+        "L_A": ("1/2", "-1/2", "1/2"),
+        "M_B": ("0", "1/2", "0"),
+        "L_B": ("0", "1/2", "1/2"),
+    },
+    ("hR1", frozenset({146, 148})): {
+        "L_A": ("0", "0", "1/2"),
+        "S_0A": ("0", "-N", "N"),
+        "S_2A": ("N", "0", "1-N"),
+        "H_0A": ("1-Y", "-1+Y", "1/2"),
+        "H_2A": ("1/2", "1-Y", "Y"),
+        "M_4A": ("N", "N", "Y"),
+    },
+    ("hR2", frozenset({146, 148})): {
+        "T_A": ("1/2", "1/2", "-1/2"),
+        "P_0A": ("H", "H", "-1+H"),
+        "F_A": ("1/2", "0", "-1/2"),
+    },
 }
 
 
-# Reference paths for doubled IBZs; cubic 23/m-3 and trigonal 3/-3 use the ordinary path.
+# Reference paths for enlarged IBZs. Each retains the ordinary HPKOT path and
+# adds only inequivalent copied segments.
 PROJECT_HULL_PATH_BY_SG = {
+    ("cP1", frozenset({195, 198, 200, 201, 205})): [
+        ("\u0393", "X"), ("X", "M"), ("M", "\u0393"),
+        ("\u0393", "R"), ("R", "X"), ("R", "M"), ("M", "X_A"),
+    ],
+    ("cF1", frozenset({196, 202, 203})): [
+        ("\u0393", "X"), ("X", "U"), ("K", "\u0393"),
+        ("\u0393", "L"), ("L", "W"), ("W", "X"), ("X", "W_A"),
+    ],
+    ("cI1", frozenset({197, 199, 204, 206})): [
+        ("\u0393", "H"), ("H", "N"), ("N", "\u0393"),
+        ("\u0393", "P"), ("P", "H"), ("P", "N"),
+    ],
     ("tP1", range(75, 89)): [
         ("\u0393", "X"), ("X", "M"), ("M", "\u0393"),
         ("\u0393", "Z"),
@@ -151,6 +198,21 @@ PROJECT_HULL_PATH_BY_SG = {
         ("\u0393", "A"),
         ("A", "L"), ("L", "H"), ("H", "A"),
         ("L", "M"), ("H", "K"),
+    ],
+    ("hP1", frozenset({143, 144, 145, 147})): [
+        ("\u0393", "M"), ("M", "K"), ("K", "\u0393"),
+        ("\u0393", "A"), ("A", "L"), ("L", "H"), ("H", "A"),
+        ("L", "M"), ("H", "K"),
+        ("H_A", "K_A"),
+    ],
+    ("hR1", frozenset({146, 148})): [
+        ("\u0393", "T"), ("T", "H_2"), ("H_0", "L"),
+        ("L", "\u0393"), ("\u0393", "S_0"), ("S_2", "F"),
+        ("F", "\u0393"),
+    ],
+    ("hR2", frozenset({146, 148})): [
+        ("\u0393", "L"), ("L", "T"), ("T", "P_0"),
+        ("P_2", "\u0393"), ("\u0393", "F"),
     ],
 }
 
@@ -337,6 +399,17 @@ def get_hull_kpath(lattice_type, spacegroup_number=None):
             if key == rule_key and sg in sg_range:
                 return list(path)
     return list(LATTICE_DATA[key]["kpath"])
+
+
+def get_project_hull_extra_labels(lattice_type, spacegroup_number):
+    """Return the fixed copied vertices for one enlarged-IBZ case."""
+    key = canonical_lattice_type(lattice_type)
+    sg = int(spacegroup_number)
+    labels = []
+    for (rule_key, sg_range), extra_points in PROJECT_HULL_EXTRA_POINTS_BY_SG.items():
+        if key == rule_key and sg in sg_range:
+            labels.extend(extra_points)
+    return labels
 
 
 def get_kpath(lattice_type, spacegroup_number=None):

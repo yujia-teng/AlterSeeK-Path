@@ -34,6 +34,7 @@ IBZ_FACE_COLORS = {
     "down_main": "cornflowerblue",
     "down_extra": "#91b2e8",
 }
+IBZ_UP_EXTRA_SECTOR_COLORS = ("#8b0000", "#d6604d", "#f4a582")
 BZ_PATH_STYLE_OVERRIDES = {
     "cP1": {("M", "X_1"): {"color": "red", "ls": "--"}},
     "cF1": {("X", "W_2"): {"color": "red", "ls": "--"}},

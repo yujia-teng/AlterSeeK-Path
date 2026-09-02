@@ -23,7 +23,7 @@ from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
 from .lattice_kpoints import (
     get_kpoints, get_hull_kpoints, get_hull_kpath, get_kpath,
-    get_params, _normalize_label,
+    get_params, get_project_hull_extra_labels, _normalize_label,
 )
 from .symmetry import (
     laue_group_from_point_group,
@@ -48,6 +48,28 @@ from .plotting_3d import attach_camera_angle_display, setup_3d_ax, plot_ibz
 # See find_sf_operations._DEFAULT_SYMPREC for why 1e-3 is used rather than spglib's 1e-5 default.
 # Override it per run with `symprec` in alterseek_input.toml.
 _DEFAULT_SYMPREC = 1e-3
+
+
+def _prepare_enlarged_ibz_path(
+    sc_type, sg, kpath, hull_kpath, path_kpoints_frac,
+    kpoints_frac_centroid,
+):
+    """Use the curated enlarged hull path and expose unused copied corners."""
+    project_extra_labels = get_project_hull_extra_labels(sc_type, sg)
+    band_kpath = list(hull_kpath if project_extra_labels else kpath)
+    band_kpoints_frac = dict(path_kpoints_frac)
+    extra_general_vertices = [
+        label for label in project_extra_labels
+        if label in kpoints_frac_centroid
+    ]
+    for label in extra_general_vertices:
+        band_kpoints_frac[label] = kpoints_frac_centroid[label]
+
+    path_labels = {label for segment in band_kpath for label in segment}
+    extra_general_vertices = [
+        label for label in extra_general_vertices if label not in path_labels
+    ]
+    return band_kpath, band_kpoints_frac, extra_general_vertices
 
 
 def run(
@@ -383,41 +405,12 @@ def _analyze_kspace(
         print(f"\nSymmetry operations: {len(sym_ops_cart)}")
         print(f"With time-reversal: {len(unique_ops)}")
 
-    doubled_ibz_case = (
-        (75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'})
-        or (149 <= sg <= 176 and sc_type == 'hP2')
-        or (sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163})
+    band_kpath, band_kpoints_frac, extra_general_vertices = (
+        _prepare_enlarged_ibz_path(
+            sc_type, sg, kpath, hull_kpath, path_kpoints_frac,
+            kpoints_frac_centroid,
+        )
     )
-    band_kpath = list(hull_kpath if doubled_ibz_case else kpath)
-    band_kpoints_frac = dict(path_kpoints_frac)
-    extra_general_vertices = []
-    if sc_type == 'hP1' and sg in {149, 151, 153, 157, 159, 162, 163}:
-        extra_general_vertices = ["K_A", "H_A"]
-        for label in extra_general_vertices:
-            if label in kpoints_frac_centroid:
-                band_kpoints_frac[label] = kpoints_frac_centroid[label]
-    elif sc_type == 'hP2' and 149 <= sg <= 176:
-        extra_general_vertices = ["L_A", "M_A"]
-        for label in ("L_A", "M_A"):
-            if label in kpoints_frac_centroid:
-                band_kpoints_frac[label] = kpoints_frac_centroid[label]
-    elif 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
-        tetragonal_extra = {
-            'tP1': ["X_A", "R_A"],
-            'tI1': ["X_A", "P_A"],
-            'tI2': ["R_A", "S_0A", "S_A", "N_A"],
-        }
-        extra_general_vertices = [
-            label for label in tetragonal_extra[sc_type]
-            if label in kpoints_frac_centroid
-        ]
-        for label in extra_general_vertices:
-            band_kpoints_frac[label] = kpoints_frac_centroid[label]
-
-    path_labels = {label for segment in band_kpath for label in segment}
-    extra_general_vertices = [
-        label for label in extra_general_vertices if label not in path_labels
-    ]
     butterfly_kpath = None
     butterfly_extra_vertices = None
 
