@@ -195,6 +195,18 @@ required band files and settings.
 ## Citation
 
 ```bibtex
+@misc{teng2026alterseekpath,
+  title = {AlterSeeK-Path: Systematic construction of generalized band-structure paths for displaying altermagnetic spin splitting},
+  author = {Yujia Teng and Mesfin Eshete and Andrea Urru and Daniel Seleznev and Se Young Park and Sebastian E. Reyes-Lillo and Karin M. Rabe},
+  year = {2026},
+  archivePrefix = {arXiv},
+  eprint = {2609.02770},
+  primaryClass = {cond-mat.mtrl-sci},
+  url = {https://arxiv.org/abs/2609.02770}
+}
+```
+
+```bibtex
 @article{v3fg-6smc,
   title = {$G$-type antiferromagnetic ${\mathrm{BiFeO}}_{3}$ is a multiferroic $g$-wave altermagnet},
   author = {Urru, Andrea and Seleznev, Daniel and Teng, Yujia and Park, Se Young and Reyes-Lillo, Sebastian E. and Rabe, Karin M.},
