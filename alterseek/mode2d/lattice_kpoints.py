@@ -55,18 +55,31 @@ def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
     return point.tolist()
 
 
-def _is_common_axis(vector, operations, tol=2e-6):
-    """Whether a Cartesian direction is an eigenline of every operation."""
-    vector = np.asarray(vector, dtype=float)
-    norm = float(np.linalg.norm(vector))
-    if norm <= 1e-12:
-        return False
-    unit = vector / norm
+def _cell_rotations(lattice_2d, operations, tol=2e-6):
+    """Integer matrix each k-space operation applies to cell coordinates."""
+    direct = np.asarray(lattice_2d.direct_2d, dtype=float)
+    inverse = np.linalg.inv(direct)
+    rotations = []
     for operation in operations:
-        mapped = np.asarray(operation, dtype=float) @ unit
-        if abs(float(np.linalg.det(np.column_stack((unit, mapped))))) > tol:
-            return False
-    return True
+        # A k-space action C = D^-1 R^-T D moves cell coordinates by R.
+        exact = (direct @ np.linalg.inv(operation) @ inverse).T
+        rotation = np.rint(exact).astype(int)
+        if not np.allclose(exact, rotation, atol=tol, rtol=0.0):
+            raise RuntimeError(
+                "A projected 2D operation does not map the submitted lattice "
+                "onto itself."
+            )
+        rotations.append(rotation)
+    return rotations
+
+
+def _is_common_axis(vector, rotations):
+    """Whether every rotation fixes or reverses an integer cell vector."""
+    return all(
+        np.array_equal(rotation @ vector, vector)
+        or np.array_equal(rotation @ vector, -vector)
+        for rotation in rotations
+    )
 
 
 def _positive_screen_direction(vector, tol=1e-10):
@@ -109,37 +122,28 @@ def _canonical_hexagonal_centered_basis(lattice_2d, primitive_basis):
     return transform, canonical
 
 
-def _oriented_rectangular_path_lattice(lattice_2d, operations, tol=2e-5):
+def _oriented_rectangular_path_lattice(lattice_2d, operations):
     """Return the rectangular or centred basis the two mirrors fix.
 
-    Primitive orthogonal when one exists, otherwise the equal-length pair
-    whose sum and difference are the mirror axes.
+    Primitive when both basis vectors lie on mirror lines, otherwise the pair
+    whose sum and difference do.
     """
-    direct = np.asarray(lattice_2d.direct_2d, dtype=float)
+    rotations = _cell_rotations(lattice_2d, operations)
     candidates = []
     for transform in _BASIS_TRANSFORMS:
-        basis = transform @ direct
-        lengths = np.linalg.norm(basis, axis=1)
-        if np.any(lengths <= 1e-12):
-            continue
-        cosine = float(np.dot(basis[0], basis[1]) / np.prod(lengths))
-        primitive = abs(cosine) <= tol
-        centered = (
-            abs(lengths[0] - lengths[1])
-            <= tol * max(float(np.max(lengths)), 1.0)
-        )
+        first, second = transform
         forms = []
-        if primitive:
-            forms.append(("rectangular", 0, basis))
-        if centered:
-            forms.append((
-                "centered_rectangular",
-                1,
-                np.array([basis[0] + basis[1], basis[0] - basis[1]]),
-            ))
-        for path_class, family_rank, axes in forms:
-            if not all(_is_common_axis(axis, operations) for axis in axes):
-                continue
+        if (
+            _is_common_axis(first, rotations)
+            and _is_common_axis(second, rotations)
+        ):
+            forms.append(("rectangular", 0))
+        if (
+            _is_common_axis(first + second, rotations)
+            and _is_common_axis(first - second, rotations)
+        ):
+            forms.append(("centered_rectangular", 1))
+        for path_class, family_rank in forms:
             # Primitive before centred, then the rewrite closest to the
             # submitted cell.  The distance-from-identity part is load-bearing:
             # dropping it changes the chosen basis on the 2mm cases.
@@ -149,16 +153,15 @@ def _oriented_rectangular_path_lattice(lattice_2d, operations, tol=2e-5):
                 int(np.sum(np.abs(transform - np.eye(2, dtype=int)))),
                 tuple(int(value) for value in transform.ravel()),
             )
-            candidates.append((score, path_class, transform, basis, cosine))
+            candidates.append((score, path_class, transform))
 
     if not candidates:
         raise RuntimeError(
             "Could not orient a 2D rectangular path basis from the detected "
             "four-operation in-plane point group."
         )
-    _score, path_class, transform, basis, cosine = min(
-        candidates, key=lambda item: item[0]
-    )
+    _score, path_class, transform = min(candidates, key=lambda item: item[0])
+    basis = transform @ np.asarray(lattice_2d.direct_2d, dtype=float)
     if (
         lattice_2d.lattice_class == "hexagonal"
         and path_class == "centered_rectangular"
@@ -166,11 +169,11 @@ def _oriented_rectangular_path_lattice(lattice_2d, operations, tol=2e-5):
         transform, basis = _canonical_hexagonal_centered_basis(
             lattice_2d, basis
         )
+    branch = None
+    if path_class == "centered_rectangular":
         cosine = float(np.dot(basis[0], basis[1]) / np.prod(
             np.linalg.norm(basis, axis=1)
         ))
-    branch = None
-    if path_class == "centered_rectangular":
         branch = "acute" if cosine > 0.0 else "obtuse"
     return replace(
         lattice_2d,

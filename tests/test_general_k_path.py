@@ -369,6 +369,39 @@ def test_general_k_path_slab_mode(tmp_path, stem, moments):
         assert got_coords == pytest.approx(want_coords, abs=1e-9)
 
 
+def test_general_k_path_slab_mode_on_a_nearly_square_cell(tmp_path):
+    """CrS2 (2D Case 05) in a sqrt2 x sqrt2 cell, square only within the
+    symmetry tolerance."""
+    from alterseek import general_k_path
+
+    result = general_k_path(
+        str(Path(__file__).parent / "references" / "case2d05_sqrt2_POSCAR"),
+        moments="2.55 2.55 -2.55 -2.55 8*0",
+        mode_2d=True,
+        vacuum_axis="c",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["lattice"] == "square"
+    assert result["no_splitting_reason"] == (
+        "PT symmetry detected, not altermagnet."
+    )
+    assert result["k"] == pytest.approx([0.25, 0.25, 0.0])
+    produced = []
+    for segment in result["segments"][:4]:
+        produced.append((_kpoints_label(segment["start_label"]), segment["start"]))
+        produced.append((_kpoints_label(segment["end_label"]), segment["end"]))
+    expected = [
+        ("GAMMA", [0.0, 0.0, 0.0]), ("X", [0.5, 0.0, 0.0]),
+        ("X", [0.5, 0.0, 0.0]), ("S", [0.5, 0.5, 0.0]),
+        ("S", [0.5, 0.5, 0.0]), ("Y", [0.0, 0.5, 0.0]),
+        ("Y", [0.0, 0.5, 0.0]), ("GAMMA", [0.0, 0.0, 0.0]),
+    ]
+    assert [label for label, _ in produced] == [label for label, _ in expected]
+    for (_, got), (_, want) in zip(produced, expected):
+        assert got == pytest.approx(want, abs=1e-9)
+
+
 @pytest.mark.parametrize(
     "degeneracy_forcing, valid_in_plane, expected_reason",
     [

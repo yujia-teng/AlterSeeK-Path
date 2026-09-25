@@ -597,6 +597,53 @@ def test_square_2mm_orientation_selects_primitive_or_centered_path(
     _assert_tiles_bz(polygon, bz, operations)
 
 
+_CRS2_A = 5.8085896111839164
+_CRS2_B = 5.8086385286173563
+
+
+@pytest.mark.parametrize(
+    ("lattice", "mirror", "path_class"),
+    [
+        (
+            np.array([
+                [_CRS2_A, _CRS2_B, 0.0],
+                [-_CRS2_A, _CRS2_B, 0.0],
+                [0.0, 0.0, 16.3359055923905032],
+            ]),
+            np.diag([1, -1, 1]),
+            "rectangular",
+        ),
+        (
+            np.diag([2.0 * _CRS2_A, 2.0 * _CRS2_B, 16.3359055923905032]),
+            np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]),
+            "centered_rectangular",
+        ),
+    ],
+)
+def test_nearly_square_cells_orient_the_path_by_their_mirrors(
+    lattice, mirror, path_class
+):
+    """CrS2 (2D Case 05) cells, square only within the symmetry tolerance."""
+    lattice_2d = analyze_lattice(lattice, 2)
+    operations = project_point_operations(
+        lattice_2d, [np.eye(3, dtype=int), mirror], add_inversion=True
+    )
+    path_data = build_path(
+        lattice_2d, "mm2", len(operations), projected_operations=operations
+    )
+    _polygon, _centroid, area, _labels = build_ibz(
+        lattice_2d, path_data, "mm2", len(operations)
+    )
+    bz_area, _ = polygon_area_centroid_2d(build_bz(lattice_2d.reciprocal_2d))
+
+    assert lattice_2d.lattice_class == "square"
+    assert path_data["path_lattice_class"] == path_class
+    assert np.array_equal(
+        path_data["path_lattice"].canonical_transform, np.eye(2, dtype=int)
+    )
+    assert area / bz_area == pytest.approx(0.25, abs=1e-12)
+
+
 def test_hexagonal_cmm2_end_to_end_keeps_hexagonal_bz_and_uses_oc_labels(
     tmp_path,
 ):
