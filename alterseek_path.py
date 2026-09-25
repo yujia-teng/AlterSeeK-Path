@@ -1,10 +1,7 @@
 """Command-line entry point for AlterSeeK-Path."""
-import os
 import sys
 
-from alterseek.kpoints import KPathBuilder, OUTPUT_DIR
-from alterseek.mode2d.kpoints import KPathBuilder2D
-from alterseek.run_log import RUN_LOG_FILENAME, run_log
+from alterseek.workflow import run_workflow
 
 
 def main():
@@ -31,26 +28,18 @@ def main():
     )
     args = parser.parse_args(sys.argv[1:])
 
-    vacuum_axis = (
-        None if args.vacuum_axis is None
-        else {"a": 0, "b": 1, "c": 2}[args.vacuum_axis]
-    )
-    if args.mode_2d:
-        builder = KPathBuilder2D(input_vacuum_axis=vacuum_axis)
-    else:
-        builder = KPathBuilder()
-    with run_log(os.path.join(OUTPUT_DIR, RUN_LOG_FILENAME)) as log:
-        try:
-            success = builder.interactive_build()
-        except Exception as exc:
-            # This is the command-line workflow's final failure boundary.
-            # Required calculations raise here, while expected input failures and optional-output warnings remain with their own subsystems.
-            # Never continue after an unexpected failure or reinterpret it as a request for different scientific input.
-            print(f"[Error] AlterSeeK-Path failed: {exc}", file=sys.stderr)
-            return 1
-        if success:
-            log.mark_success()
-        return 0 if success else 1
+    try:
+        success = run_workflow(
+            mode_2d=args.mode_2d,
+            vacuum_axis=args.vacuum_axis,
+        )
+    except Exception as exc:
+        # This is the command-line workflow's final failure boundary.
+        # Required calculations raise here, while expected input failures and optional-output warnings remain with their own subsystems.
+        # Never continue after an unexpected failure or reinterpret it as a request for different scientific input.
+        print(f"[Error] AlterSeeK-Path failed: {exc}", file=sys.stderr)
+        return 1
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

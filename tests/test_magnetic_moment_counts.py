@@ -92,7 +92,7 @@ def test_spin_symmetry_route_reports_excess_count(tmp_path, monkeypatch):
             str(poscar),
             "1 -1 7",
             verbose=False,
-            spin_axis_cart="0 0 1",
+            spin_axis="0 0 1",
             output_dir=str(tmp_path / "output"),
         )
 

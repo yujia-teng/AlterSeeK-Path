@@ -23,6 +23,7 @@ nav:
   - Installation: installation.md
   - User Guide: index.md
   - Workflow: workflow.md
+  - API: api.md
   - Plotting: plotting.md
 
 markdown_extensions:

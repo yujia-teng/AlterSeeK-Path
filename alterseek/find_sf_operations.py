@@ -16,6 +16,7 @@ import os
 import re
 import sympy as sp
 from .atomic_write import _atomic_open_text
+from .constants import OUTPUT_DIR
 from .symmetry import laue_group_from_point_group
 from .mcif import (
     _MCIF_PARENT_SYMPREC_CANDIDATES,
@@ -549,8 +550,8 @@ class SpinSymmetryError(RuntimeError):
     """A required spin-symmetry analysis or output step failed."""
 
 
-def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=None,
-        output_dir='.'):
+def run(structure_file, moments, spin_axis="0 0 1", symprec=None,
+        output_dir=OUTPUT_DIR, verbose=False):
     """
     Run spin-flip operations analysis.
     Called by the interactive workflow (alterseek/kpoints.py) or used standalone.
@@ -560,11 +561,11 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
     try:
         return _run(
             structure_file,
-            moments_str,
-            verbose=verbose,
-            spin_axis_cart=spin_axis_cart,
+            moments,
+            spin_axis=spin_axis,
             symprec=symprec,
             output_dir=output_dir,
+            verbose=verbose,
         )
     except SpinSymmetryError:
         raise
@@ -574,8 +575,8 @@ def run(structure_file, moments_str, verbose=True, spin_axis_cart=None, symprec=
         ) from exc
 
 
-def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
-         symprec=None, output_dir='.'):
+def _run(structure_file, moments, spin_axis="0 0 1", symprec=None,
+         output_dir=OUTPUT_DIR, verbose=False):
     """Internal implementation for :func:`run`; failures raise exceptions."""
     # --- PART 1: Structure Loading ---
     if verbose:
@@ -668,13 +669,13 @@ def _run(structure_file, moments_str, verbose=True, spin_axis_cart=None,
 
     if magmoms is None:
         if verbose:
-            print(f"Moments: {moments_str}")
+            print(f"Moments: {moments}")
         try:
-            manual_axis = parse_cartesian_spin_axis(spin_axis_cart)
-            if not moments_str:
+            manual_axis = parse_cartesian_spin_axis(spin_axis)
+            if not moments:
                 user_mags = []
             else:
-                user_mags = parse_magmoms(moments_str)
+                user_mags = parse_magmoms(moments)
             user_mags = fit_magmoms_to_structure(user_mags, num_atoms)
         except ValueError as exc:
             raise SpinSymmetryError(
@@ -897,7 +898,7 @@ if __name__ == "__main__":
         moments_input = input("Moments: ").strip()
 
     try:
-        run(filename, moments_input, spin_axis_cart=spin_axis_input)
+        run(filename, moments_input, spin_axis=spin_axis_input, verbose=True)
     except SpinSymmetryError as exc:
         print(f"Error: {exc}")
         sys.exit(1)

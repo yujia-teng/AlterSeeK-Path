@@ -1,0 +1,64 @@
+# Left basis: submitted structure 'POSCAR' real-space fractional basis (a1, a2, a3).
+# Right basis: SeeK-path standardized primitive real-space fractional basis (a1, a2, a3).
+# k mapping: k' = R^(-T) k (mod G) in each corresponding reciprocal basis (b1, b2, b3).
+# Found 12 spin-flipping point operations
+Operation_1
+0 0 -1    |    1 1 1
+-1 0 0    |    0 0 -1
+1 1 1    |    -1 0 0
+
+Operation_2
+0 -1 0    |    0 0 -1
+1 1 1    |    1 1 1
+-1 0 0    |    0 -1 0
+
+Operation_3
+1 1 1    |    0 -1 0
+-1 0 0    |    0 0 -1
+0 -1 0    |    1 1 1
+
+Operation_4
+0 -1 0    |    1 1 1
+0 0 -1    |    -1 0 0
+1 1 1    |    0 -1 0
+
+Operation_5
+1 1 1    |    0 0 -1
+0 0 -1    |    -1 0 0
+-1 0 0    |    1 1 1
+
+Operation_6
+0 0 -1    |    0 -1 0
+1 1 1    |    1 1 1
+0 -1 0    |    -1 0 0
+
+Operation_7
+-1 0 0    |    0 -1 0
+0 0 -1    |    -1 0 0
+0 -1 0    |    0 0 -1
+
+Operation_8
+0 0 -1    |    0 0 -1
+0 -1 0    |    0 -1 0
+-1 0 0    |    -1 0 0
+
+Operation_9
+0 -1 0    |    -1 0 0
+-1 0 0    |    0 0 -1
+0 0 -1    |    0 -1 0
+
+Operation_10
+1 1 1    |    -1 0 0
+0 -1 0    |    0 -1 0
+0 0 -1    |    1 1 1
+
+Operation_11
+-1 0 0    |    -1 0 0
+1 1 1    |    1 1 1
+0 0 -1    |    0 0 -1
+
+Operation_12
+-1 0 0    |    1 1 1
+0 -1 0    |    0 -1 0
+1 1 1    |    0 0 -1
+

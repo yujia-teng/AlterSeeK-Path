@@ -47,6 +47,9 @@ python -m alterseek.find_sf_operations
 python -m alterseek.compute_centroid_3d POSCAR
 ```
 
+The same steps can be called from Python; see
+[API](api.md).
+
 ## Coordinate Conventions
 
 SeeK-path may construct the path in a standardized reciprocal basis.

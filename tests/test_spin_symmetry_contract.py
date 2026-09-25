@@ -16,7 +16,7 @@ def test_missing_structure_raises_spin_symmetry_error(tmp_path):
             str(missing),
             "1 -1",
             verbose=False,
-            spin_axis_cart="0 0 1",
+            spin_axis="0 0 1",
         )
 
 
@@ -39,7 +39,7 @@ def test_structure_parser_failure_raises_spin_symmetry_error(
             str(structure),
             "1 -1",
             verbose=False,
-            spin_axis_cart="0 0 1",
+            spin_axis="0 0 1",
         )
 
 

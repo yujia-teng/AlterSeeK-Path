@@ -1,6 +1,6 @@
 structure = "POSCAR"
 spin_axis = "0 0 1"
 moments = "8 -8 4*0"
-flip_option = 10
+flip_option = 11
 output_code = "vasp"
 save_pdf = true

@@ -110,10 +110,10 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
         "P_A": ("-1/4", "3/4", "-1/4"),
     },
     ("tI2", range(75, 89)): {
-        "N_A": ("1/2", "0", "0"),
+        "R_A": ("Z", "-Z", "1/2"),
         "S_0A": ("H", "-H", "H"),
         "S_A": ("1-H", "H", "-H"),
-        "R_A": ("Z", "-Z", "1/2"),
+        "N_A": ("1/2", "0", "0"),
     },
 
     # The trigonal hP1 second half is the in-plane image across the Gamma-M plane, which is the only in-plane doubling the group allows here: M and L stay put and K, H are copied.
@@ -125,8 +125,8 @@ PROJECT_HULL_EXTRA_POINTS_BY_SG = {
 
     # Trigonal 32, 3m, -3m and hexagonal 6, -6, 6/m share the same in-plane side copied sector across the Gamma-K plane.
     ("hP2", range(149, 177)): {
-        "M_A": ("0", "1/2", "0"),
         "L_A": ("0", "1/2", "1/2"),
+        "M_A": ("0", "1/2", "0"),
     },
 
     # Trigonal 3/-3. hP1 contains four HPKOT wedges; hR1/hR2 contain two.

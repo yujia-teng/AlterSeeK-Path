@@ -21,6 +21,7 @@ import spglib
 
 from .atomic_write import _atomic_open_text
 from .mcif import _MCIF_PARENT_SYMPREC_CANDIDATES, _declared_mcif_parent_hint
+from .constants import OUTPUT_DIR, _normalize_vacuum_axis
 from .lattice_kpoints import (
     get_kpoints, get_hull_kpoints, get_hull_kpath, get_kpath,
     get_params, get_project_hull_extra_labels, _normalize_label,
@@ -76,14 +77,14 @@ def _prepare_enlarged_ibz_path(
 
 
 def run(
-    filename,
-    output_dir=None,
+    structure_file,
+    output_dir=OUTPUT_DIR,
     show_plot=True,
     defer_show=False,
-    verbose=True,
+    verbose=False,
     seekpath_type_numbers=None,
     mode_2d=False,
-    input_vacuum_axis=2,
+    vacuum_axis="c",
     view_elev=None,
     view_azim=None,
     symprec=None,
@@ -99,18 +100,19 @@ def run(
     instead of slicing a 3D one.  Otherwise the four stages below run in
     order: k-space analysis, centroid, optional diagnostics, and Figure 1.
     """
+    vacuum_axis = _normalize_vacuum_axis(vacuum_axis, allow_index=True)
     if mode_2d:
         from .mode2d.compute_centroid import run as run_2d
 
         return run_2d(
-            filename,
+            structure_file,
             output_dir=output_dir,
             show_plot=show_plot,
             defer_show=defer_show,
             verbose=verbose,
             seekpath_type_numbers=seekpath_type_numbers,
             mode_2d=True,
-            input_vacuum_axis=input_vacuum_axis,
+            input_vacuum_axis=vacuum_axis,
             view_elev=view_elev,
             view_azim=view_azim,
             symprec=symprec,
@@ -119,18 +121,16 @@ def run(
             analysis_cell=analysis_cell,
             analysis_has_markers=analysis_has_markers,
         )
-    if output_dir is None:
-        output_dir = os.path.dirname(os.path.abspath(filename))
-    basename = os.path.splitext(os.path.basename(filename))[0]
+    basename = os.path.splitext(os.path.basename(structure_file))[0]
     fig_basename = figure_basename or basename
 
     if verbose:
         print("=" * 60)
-        print(f"Processing: {filename}")
+        print(f"Processing: {structure_file}")
         print("=" * 60)
 
     analysis_result = _analyze_kspace(
-        filename,
+        structure_file,
         analysis_cell=analysis_cell,
         seekpath_type_numbers=seekpath_type_numbers,
         symprec=symprec,
@@ -150,7 +150,7 @@ def run(
     diagnostic_result = _write_optional_diagnostics(
         analysis_result,
         centroid_result,
-        filename=filename,
+        filename=structure_file,
         output_dir=output_dir,
         basename=basename,
         verbose=verbose,
@@ -904,5 +904,5 @@ if __name__ == '__main__':
         sys.exit(1)
 
     structure_file = sys.argv[1]
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else None
-    results = run(structure_file, out_dir)
+    out_dir = sys.argv[2] if len(sys.argv) > 2 else OUTPUT_DIR
+    results = run(structure_file, out_dir, verbose=True)

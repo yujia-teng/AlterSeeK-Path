@@ -2,6 +2,7 @@
 general k-point, drive the interactive Step 0-5 workflow, and write the
 VASP, QE, and ABINIT path files.
 """
+import numbers
 import os
 import warnings
 from typing import List, Optional
@@ -48,6 +49,12 @@ from .io import (
     write_qe_bandplot_config,
     write_abinit_bandplot_config,
 )
+# OUTPUT_DIR is re-exported so `from alterseek.kpoints import OUTPUT_DIR` keeps working.
+from .constants import (
+    OUTPUT_DIR,
+    _VACUUM_AXIS_INDEX,
+    _normalize_vacuum_axis,
+)
 
 
 STEP0_VERBOSE_SUMMARY = False
@@ -60,26 +67,20 @@ _INPUT_CONFIG_KEYS = {
     "vacuum_axis",
 }
 
-_VACUUM_AXIS_INDEX = {"a": 0, "b": 1, "c": 2}
-
-
-def _fmt_coord(value):
-    """Format a k-point coordinate, collapsing signed zero to plain zero.
+def _fmt_coord(value, digits=10):
+    """Format a k-point coordinate or matrix entry, collapsing signed zero to plain zero.
 
     -0.0 and 0.0 are the same k-point, but they render differently and so make
     otherwise identical KPOINTS files compare unequal. Which one comes out
     depends on sign carried through the basis conversion -- that is, on which
     cell the path was built in -- not on the physics.
     """
-    text = f"{value:.10f}"
+    text = f"{value:.{digits}f}"
     return text[1:] if text.startswith("-") and float(text) == 0.0 else text
 
 
 # Fix the label width so the submitted and reference-cell fields align.
 _CELL_LABEL_WIDTH = 30
-
-# Keep diagnostics under OUTPUT_DIR; calculation inputs and plot configs stay in the working directory.
-OUTPUT_DIR = "alterseek_output"
 
 
 
@@ -293,6 +294,38 @@ def _read_input_config(path=INPUT_CONFIG_FILE):
         return _validate_input_config(config)
     except Exception as exc:
         raise ValueError(f"Failed to read {path}: {exc}") from exc
+
+
+def operation_in_standardized_basis(R, centroid_result):
+    """Express one spin operation in SeeK-path's standardized primitive basis.
+
+    Returns the standardized fractional matrix and its Cartesian reciprocal form.
+    """
+    b_input = np.array(
+        centroid_result.get('b_matrix_input', centroid_result['b_matrix_conv']),
+        dtype=float,
+    )
+    b_prim = np.array(centroid_result['b_matrix'], dtype=float) @ np.array(
+        centroid_result.get('seekpath_rotation_matrix', np.eye(3)), dtype=float
+    )
+    R_arr = np.array(R, dtype=float)
+    R_cart = b_input.T @ np.linalg.inv(R_arr).T @ np.linalg.inv(b_input.T)
+    R_prim_inv_T = np.linalg.inv(b_prim.T) @ R_cart @ b_prim.T
+    return np.linalg.inv(R_prim_inv_T.T), R_cart
+
+
+def inversion_extended(ops):
+    """Add the inversion partner of every operation that lacks one.
+
+    Inversion changes only the spatial operation, not whether the spin
+    operation flips or preserves spin.
+    """
+    expanded = list(ops)
+    for op in ops:
+        neg_op = -np.array(op, dtype=float)
+        if not any(np.allclose(neg_op, ex, atol=1e-8) for ex in expanded):
+            expanded.append(neg_op)
+    return expanded
 
 
 class KPathBuilder:
@@ -737,7 +770,8 @@ class KPathBuilder:
 
     def build_ordinary_path_with_general_k(
             self, kpoint: List[float],
-            extra_general_points: Optional[List[List]] = None) -> List[List]:
+            extra_general_points: Optional[List[List]] = None,
+            *, report: bool = True) -> List[List]:
         """Keep the ordinary path and append A-k-B connections through general k."""
         kpt = [kpoint[0], kpoint[1], kpoint[2], "k"]
         raw = self._combine_coincident_path_labels(self.kpoints_data)
@@ -779,10 +813,11 @@ class KPathBuilder:
 
         pair_count = len(general_points) // 2
         leftover = len(general_points) % 2
-        print(
-            f"Kept ordinary path and added {pair_count} A-k-B connection segments"
-            f"{' plus 1 A-k tail' if leftover else ''}."
-        )
+        if report:
+            print(
+                f"Kept ordinary path and added {pair_count} A-k-B connection segments"
+                f"{' plus 1 A-k tail' if leftover else ''}."
+            )
         return path_sequence
     
     @staticmethod
@@ -925,7 +960,7 @@ class KPathBuilder:
 
         if transformation_matrix is not None:
             flat_matrix = np.array(transformation_matrix).flatten()
-            matrix_str = " ".join(f"{x:.8f}" for x in flat_matrix)
+            matrix_str = " ".join(_fmt_coord(x, 8) for x in flat_matrix)
             label = f" ({transformation_label})" if transformation_label else ""
             # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
@@ -1000,7 +1035,7 @@ class KPathBuilder:
             )
         if transformation_matrix is not None:
             flat = np.array(transformation_matrix).flatten()
-            mat_str = " ".join(f"{x:.8f}" for x in flat)
+            mat_str = " ".join(_fmt_coord(x, 8) for x in flat)
             lbl = f" ({transformation_label})" if transformation_label else ""
             # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
@@ -1059,7 +1094,7 @@ class KPathBuilder:
             )
         if transformation_matrix is not None:
             flat = np.array(transformation_matrix).flatten()
-            mat_str = " ".join(f"{x:.8f}" for x in flat)
+            mat_str = " ".join(_fmt_coord(x, 8) for x in flat)
             lbl = f" ({transformation_label})" if transformation_label else ""
             # Record the spin-flip matrix in its source basis, which may differ from the submitted cell.
             basis_name = operation_basis_label or "operation-source structure"
@@ -1371,6 +1406,7 @@ class KPathBuilder:
         operation_basis_label,
         output_flip_ops=None,
         output_preserve_ops=None,
+        output_dir=OUTPUT_DIR,
     ):
         """Express spin operations in SeeK-path's standardized primitive basis.
 
@@ -1387,17 +1423,8 @@ class KPathBuilder:
             preserve_ops if output_preserve_ops is None else output_preserve_ops
         )
         if centroid_result is not None and 'b_matrix' in centroid_result:
-            _b_input = np.array(centroid_result.get('b_matrix_input',
-                                                    centroid_result['b_matrix_conv']), dtype=float)
-            _b_prim = np.array(centroid_result['b_matrix'], dtype=float) @ np.array(
-                centroid_result.get('seekpath_rotation_matrix', np.eye(3)),
-                dtype=float,
-            )
             def _convert_input_frac_R_to_prim(_R):
-                _R_arr = np.array(_R, dtype=float)
-                _R_cart = _b_input.T @ np.linalg.inv(_R_arr).T @ np.linalg.inv(_b_input.T)
-                _R_prim_inv_T = np.linalg.inv(_b_prim.T) @ _R_cart @ _b_prim.T
-                return np.linalg.inv(_R_prim_inv_T.T), _R_cart
+                return operation_in_standardized_basis(_R, centroid_result)
 
             R_for_kpts, _ = _convert_input_frac_R_to_prim(R)
             # Figure 2 draws the HPKOT hull in SeeK-path's standardized Cartesian frame, so let it reconstruct the operation there rather than reuse the input structure's orientation, which notably differs for MCIF input.
@@ -1461,13 +1488,13 @@ class KPathBuilder:
             )
             if operation_basis_changed:
                 _annotate_ops_with_standardized_basis(
-                    os.path.join(OUTPUT_DIR, "spin_flip_operations.txt"),
+                    os.path.join(output_dir, "spin_flip_operations.txt"),
                     output_flip_ops,
                     output_flip_ops_standardized,
                     "spin-flipping",
                 )
                 _annotate_ops_with_standardized_basis(
-                    os.path.join(OUTPUT_DIR, "spin_preserve_operations.txt"),
+                    os.path.join(output_dir, "spin_preserve_operations.txt"),
                     output_preserve_ops,
                     output_preserve_ops_standardized,
                     "spin-preserving",
@@ -1475,6 +1502,134 @@ class KPathBuilder:
         else:
             R_for_kpts = R
         return R_for_kpts, R_cart_for_plot, flip_ops_for_plot, preserve_ops_for_plot
+
+    def load_path_from_centroid(self, centroid_result, verbose: bool = True):
+        """Load the high-symmetry path and reciprocal bases from a centroid result."""
+        def report(*parts):
+            if verbose:
+                print("".join(parts))
+
+        sp_path   = centroid_result['sp_path']
+        sp_coords = centroid_result['sp_point_coords']
+        displayed_path = centroid_result.get(
+            'band_kpath',
+            centroid_result.get('ibz_kpath', sp_path)
+        )
+        report(f"Path: {self._format_path(displayed_path)}")
+        # Build kpoints_data in Figure 1's HPKOT/SeeK-path convention.
+        # Curated closure vertices stay in the centroid hull, while path-only labels such as H_2 remain available without entering that hull.
+        self.kpoints_data = []
+        sc_type_auto = centroid_result.get('sc_type', '')
+        if (
+            ('band_kpath' in centroid_result and 'band_kpoints_frac' in centroid_result)
+            or ('ibz_kpath' in centroid_result and 'ibz_kpoints_frac' in centroid_result)
+        ):
+            path_source = (
+                f"2D {sc_type_auto}"
+                if centroid_result.get('path_source_2d')
+                else f"HPKOT {sc_type_auto}"
+            )
+            self.header_lines = [
+                f'K-Path generated by AlterSeeK-Path ({path_source})',
+                '20', 'Line-Mode', 'Reciprocal'
+            ]
+            self.kpoints_basis_matrix = np.array(
+                centroid_result['b_matrix'], dtype=float
+            )
+            self.kpoints_basis_rotation = np.array(
+                centroid_result.get(
+                    'seekpath_rotation_matrix', np.eye(3)
+                ),
+                dtype=float,
+            )
+            self.output_basis_matrix = np.array(
+                centroid_result.get(
+                    'b_matrix_output',
+                    centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
+                ),
+                dtype=float,
+            )
+            # Prefer the selected band path so the prompt, Figure 1, and KPOINTS remain consistent.
+            auto_path = centroid_result.get(
+                'band_kpath',
+                centroid_result['ibz_kpath']
+            )
+            ibz_coords = centroid_result.get(
+                'band_kpoints_frac',
+                centroid_result.get(
+                    'path_kpoints_frac',
+                    centroid_result['ibz_kpoints_frac']
+                )
+            )
+            for seg_start, seg_end in auto_path:
+                for label in (seg_start, seg_end):
+                    coords = ibz_coords[label]
+                    self.kpoints_data.append([coords[0], coords[1], coords[2], label])
+            extra_vertices = centroid_result.get('extra_general_vertices', [])
+            self.extra_general_points = []
+            for label in extra_vertices:
+                if label in ibz_coords:
+                    coords = ibz_coords[label]
+                    self.extra_general_points.append([coords[0], coords[1], coords[2], label])
+            if self.mode_2d and centroid_result.get('path_source_2d'):
+                report(
+                    f"Using 2D {sc_type_auto} path ",
+                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)",
+                )
+            else:
+                report(
+                    f"Using HPKOT {sc_type_auto} path ",
+                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)",
+                )
+            if self.extra_general_points:
+                labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
+                report(f"Extra doubled-IBZ general-k: {labels}")
+
+            butterfly_path = centroid_result.get('butterfly_kpath')
+            butterfly_extra = centroid_result.get('butterfly_extra_vertices')
+            self.butterfly_kpoints_data = None
+            self.butterfly_extra_general_points = None
+            if butterfly_path is not None:
+                self.butterfly_kpoints_data = []
+                for seg_start, seg_end in butterfly_path:
+                    for label in (seg_start, seg_end):
+                        coords = ibz_coords[label]
+                        self.butterfly_kpoints_data.append([
+                            coords[0], coords[1], coords[2], label
+                        ])
+                self.butterfly_extra_general_points = []
+                for label in butterfly_extra or []:
+                    coords = ibz_coords[label]
+                    self.butterfly_extra_general_points.append([
+                        coords[0], coords[1], coords[2], label
+                    ])
+                report(
+                    "Using 2D 4/m specific path ",
+                    f"{self._format_path(butterfly_path)}",
+                )
+        else:
+            self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
+            self.kpoints_basis_matrix = np.array(
+                centroid_result['b_matrix'], dtype=float
+            )
+            self.kpoints_basis_rotation = np.array(
+                centroid_result.get(
+                    'seekpath_rotation_matrix', np.eye(3)
+                ),
+                dtype=float,
+            )
+            self.output_basis_matrix = np.array(
+                centroid_result.get(
+                    'b_matrix_output',
+                    centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
+                ),
+                dtype=float,
+            )
+            for seg_start, seg_end in sp_path:
+                for label in (seg_start, seg_end):
+                    coords = sp_coords[label]
+                    self.kpoints_data.append([coords[0], coords[1], coords[2], label])
+            report(f"Using auto-generated path ({len(sp_path)} segments, {len(self.kpoints_data)} k-points)")
 
     def interactive_build(self):
         """Run the interactive session, from the structure to the written k-path.
@@ -1529,8 +1684,6 @@ class KPathBuilder:
         )
         if not struct_file: struct_file = "POSCAR"
 
-        # Track operation-log ownership separately because a magnetic non-altermagnet can write a log with zero spin-flip operations.
-        _step0_wrote_operation_log = False
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
         standard_path_reason = None
@@ -1615,11 +1768,10 @@ class KPathBuilder:
                         struct_file,
                         moments_str,
                         verbose=False,
-                        spin_axis_cart=spin_axis_cart,
+                        spin_axis=spin_axis_cart,
                         symprec=symprec,
                         output_dir=OUTPUT_DIR,
                     )
-                    _step0_wrote_operation_log = True
                 except SpinSymmetryError as e:
                     print(f"[Error] Spin-symmetry analysis failed: {e} Aborting.")
                     return False
@@ -1657,7 +1809,7 @@ class KPathBuilder:
                         defer_show=True, verbose=False,
                         seekpath_type_numbers=centroid_seekpath_type_numbers,
                         mode_2d=self.mode_2d,
-                        input_vacuum_axis=self.input_vacuum_axis,
+                        vacuum_axis=self.input_vacuum_axis,
                         view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                         figure_basename=_figure_basename(struct_file),
                         save_pdf=save_pdf,
@@ -1814,7 +1966,7 @@ class KPathBuilder:
                     defer_show=True, verbose=False,
                     seekpath_type_numbers=centroid_seekpath_type_numbers,
                     mode_2d=self.mode_2d,
-                    input_vacuum_axis=self.input_vacuum_axis,
+                    vacuum_axis=self.input_vacuum_axis,
                     view_elev=view_elev, view_azim=view_azim, symprec=symprec,
                     figure_basename=_figure_basename(struct_file),
                     save_pdf=save_pdf,
@@ -1916,127 +2068,7 @@ class KPathBuilder:
 
         # --- Step 1: Read the high-symmetry path from the centroid analysis ---
         print(f"\n{BOLD}>>> Step 1: High-symmetry k-path{RESET}")
-        sp_path   = centroid_result['sp_path']
-        sp_coords = centroid_result['sp_point_coords']
-        displayed_path = centroid_result.get(
-            'band_kpath',
-            centroid_result.get('ibz_kpath', sp_path)
-        )
-        print(f"Path: {self._format_path(displayed_path)}")
-        # Build kpoints_data in Figure 1's HPKOT/SeeK-path convention.
-        # Curated closure vertices stay in the centroid hull, while path-only labels such as H_2 remain available without entering that hull.
-        self.kpoints_data = []
-        sc_type_auto = centroid_result.get('sc_type', '')
-        if (
-            ('band_kpath' in centroid_result and 'band_kpoints_frac' in centroid_result)
-            or ('ibz_kpath' in centroid_result and 'ibz_kpoints_frac' in centroid_result)
-        ):
-            path_source = (
-                f"2D {sc_type_auto}"
-                if centroid_result.get('path_source_2d')
-                else f"HPKOT {sc_type_auto}"
-            )
-            self.header_lines = [
-                f'K-Path generated by AlterSeeK-Path ({path_source})',
-                '20', 'Line-Mode', 'Reciprocal'
-            ]
-            self.kpoints_basis_matrix = np.array(
-                centroid_result['b_matrix'], dtype=float
-            )
-            self.kpoints_basis_rotation = np.array(
-                centroid_result.get(
-                    'seekpath_rotation_matrix', np.eye(3)
-                ),
-                dtype=float,
-            )
-            self.output_basis_matrix = np.array(
-                centroid_result.get(
-                    'b_matrix_output',
-                    centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
-                ),
-                dtype=float,
-            )
-            # Prefer the selected band path so the prompt, Figure 1, and KPOINTS remain consistent.
-            auto_path = centroid_result.get(
-                'band_kpath',
-                centroid_result['ibz_kpath']
-            )
-            ibz_coords = centroid_result.get(
-                'band_kpoints_frac',
-                centroid_result.get(
-                    'path_kpoints_frac',
-                    centroid_result['ibz_kpoints_frac']
-                )
-            )
-            for seg_start, seg_end in auto_path:
-                for label in (seg_start, seg_end):
-                    coords = ibz_coords[label]
-                    self.kpoints_data.append([coords[0], coords[1], coords[2], label])
-            extra_vertices = centroid_result.get('extra_general_vertices', [])
-            self.extra_general_points = []
-            for label in extra_vertices:
-                if label in ibz_coords:
-                    coords = ibz_coords[label]
-                    self.extra_general_points.append([coords[0], coords[1], coords[2], label])
-            if self.mode_2d and centroid_result.get('path_source_2d'):
-                print(
-                    f"Using 2D {sc_type_auto} path "
-                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)"
-                )
-            else:
-                print(
-                    f"Using HPKOT {sc_type_auto} path "
-                    f"({len(auto_path)} segments, {len(self.kpoints_data)} k-points)"
-                )
-            if self.extra_general_points:
-                labels = ", ".join(str(pt[3]) for pt in self.extra_general_points)
-                print(f"Extra doubled-IBZ general-k: {labels}")
-
-            butterfly_path = centroid_result.get('butterfly_kpath')
-            butterfly_extra = centroid_result.get('butterfly_extra_vertices')
-            self.butterfly_kpoints_data = None
-            self.butterfly_extra_general_points = None
-            if butterfly_path is not None:
-                self.butterfly_kpoints_data = []
-                for seg_start, seg_end in butterfly_path:
-                    for label in (seg_start, seg_end):
-                        coords = ibz_coords[label]
-                        self.butterfly_kpoints_data.append([
-                            coords[0], coords[1], coords[2], label
-                        ])
-                self.butterfly_extra_general_points = []
-                for label in butterfly_extra or []:
-                    coords = ibz_coords[label]
-                    self.butterfly_extra_general_points.append([
-                        coords[0], coords[1], coords[2], label
-                    ])
-                print(
-                    "Using 2D 4/m specific path "
-                    f"{self._format_path(butterfly_path)}"
-                )
-        else:
-            self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
-            self.kpoints_basis_matrix = np.array(
-                centroid_result['b_matrix'], dtype=float
-            )
-            self.kpoints_basis_rotation = np.array(
-                centroid_result.get(
-                    'seekpath_rotation_matrix', np.eye(3)
-                ),
-                dtype=float,
-            )
-            self.output_basis_matrix = np.array(
-                centroid_result.get(
-                    'b_matrix_output',
-                    centroid_result.get('b_matrix_input', centroid_result['b_matrix']),
-                ),
-                dtype=float,
-            )
-            for seg_start, seg_end in sp_path:
-                for label in (seg_start, seg_end):
-                    coords = sp_coords[label]
-                    self.kpoints_data.append([coords[0], coords[1], coords[2], label])
-            print(f"Using auto-generated path ({len(sp_path)} segments, {len(self.kpoints_data)} k-points)")
+        self.load_path_from_centroid(centroid_result)
 
         # Laue groups -1, -3, and m-3 have no one-dimensional, nonidentical inversion-even irrep, so they cannot support altermagnetic splitting.
         # Use the ordinary IBZ path without butterfly insertion.
@@ -2074,28 +2106,6 @@ class KPathBuilder:
                 f"[{input_cell_k[0]:.6f}, {input_cell_k[1]:.6f}, "
                 f"{input_cell_k[2]:.6f}]"
             )
-        if _step0_wrote_operation_log:
-            try:
-                with open(os.path.join(OUTPUT_DIR, "spin_operations.txt"),
-                          "a", encoding="utf-8", newline="\n") as f:
-                    if not path_source_2d:
-                        f.write(
-                            "\nGeneral k-point (IBZ centroid, standardized basis): "
-                            f"[{general_kpoint[0]:.6f}, "
-                            f"{general_kpoint[1]:.6f}, "
-                            f"{general_kpoint[2]:.6f}]\n"
-                        )
-                    else:
-                        f.write("\n")
-                    if input_cell_k is not None:
-                        f.write(
-                            "General k-point (IBZ centroid, input-cell basis): "
-                            f"[{input_cell_k[0]:.6f}, {input_cell_k[1]:.6f}, "
-                            f"{input_cell_k[2]:.6f}]\n"
-                        )
-            except OSError as exc:
-                print("[Warning] Could not append the general k-point to "
-                      f"spin_operations.txt: {exc}")
 
         def _write_ordinary_path_and_stop(reason, reason_reported):
             if not reason_reported:
@@ -2139,17 +2149,8 @@ class KPathBuilder:
         output_flip_ops = list(flip_ops)
         output_preserve_ops = list(preserve_ops)
 
-        # Add inversion partners because inversion changes only the spatial operation, not whether the spin operation flips or preserves spin.
-        def _inversion_extended(ops):
-            expanded = list(ops)
-            for op in ops:
-                neg_op = -np.array(op, dtype=float)
-                if not any(np.allclose(neg_op, ex, atol=1e-8) for ex in expanded):
-                    expanded.append(neg_op)
-            return expanded
-
-        flip_ops = _inversion_extended(flip_ops)
-        preserve_ops = _inversion_extended(preserve_ops)
+        flip_ops = inversion_extended(flip_ops)
+        preserve_ops = inversion_extended(preserve_ops)
 
         # Test in Cartesian reciprocal space because the magnetic-cell fractional basis may have reordered axes.
         # An in-plane action of +I or -I rules out 2D altermagnetic spin splitting; keep only other nontrivial plane-preserving flips.
@@ -2278,3 +2279,323 @@ class KPathBuilder:
         return _save_and_finish(
             output_kpoints, R, selected_transformation_label
         )
+
+
+_NO_2D_FLIP_REASON = (
+    "No in-plane spin-flip point operation available: not a 2D altermagnet."
+)
+_NO_2D_DEGENERACY_REASON = (
+    "C_2z T / U m_z symmetry detected, not a 2D altermagnet."
+)
+
+
+def _submitted_cell_zone(
+    structure_file,
+    moments,
+    spin_axis,
+    mode_2d,
+    vacuum_axis,
+    symprec,
+    output_dir,
+    verbose,
+    show_plot=False,
+    view_elev=None,
+    view_azim=None,
+    save_pdf=False,
+):
+    """Run the spin-symmetry, marker-cell and zone steps in workflow order.
+
+    Returns the spin-symmetry result (None without magnetic input), the
+    marker-cell preparation, and the zone of the submitted cell.
+    """
+    vacuum_axis = _normalize_vacuum_axis(vacuum_axis, allow_index=True)
+
+    if not os.path.exists(structure_file):
+        raise SpinSymmetryError(
+            f"Structure file '{structure_file}' was not found."
+        )
+
+    os.makedirs(output_dir, exist_ok=True)
+    is_mcif = str(structure_file).lower().endswith(".mcif")
+    moments_str = "" if is_mcif else (moments or "").strip()
+    spin_axis_cart = None if is_mcif else spin_axis
+
+    spin = None
+    if is_mcif or moments_str:
+        spin = find_sf_run(
+            structure_file,
+            moments_str,
+            verbose=verbose,
+            spin_axis=spin_axis_cart,
+            symprec=symprec,
+            output_dir=output_dir,
+        )
+
+    # The marker cell carries the magnetic distinction between sites, so the
+    # zone must be built from it rather than from the raw structure.
+    analysis = prepare_submitted_cell_analysis(
+        structure_file,
+        moments_str=moments_str,
+        spin_axis_cart=spin_axis_cart,
+        output_dir=output_dir,
+        symprec=(1e-3 if symprec is None else symprec),
+        write_magnetic_diagnostic=spin is not None,
+        input_vacuum_axis=vacuum_axis if mode_2d else None,
+    )
+    zone = compute_centroid(
+        structure_file,
+        output_dir=output_dir,
+        show_plot=show_plot,
+        verbose=verbose,
+        mode_2d=mode_2d,
+        vacuum_axis=vacuum_axis,
+        view_elev=view_elev,
+        view_azim=view_azim,
+        symprec=symprec,
+        figure_basename=_figure_basename(structure_file),
+        save_pdf=save_pdf,
+        analysis_cell=analysis["analysis_cell"],
+        analysis_has_markers=analysis["analysis_has_markers"],
+    )
+    return spin, analysis, zone
+
+
+def brillouin_zone(
+    structure_file,
+    moments=None,
+    spin_axis="0 0 1",
+    mode_2d=False,
+    vacuum_axis="c",
+    symprec=None,
+    output_dir=OUTPUT_DIR,
+    show_plot=True,
+    view_elev=None,
+    view_azim=None,
+    save_pdf=False,
+    verbose=False,
+):
+    """Return the Brillouin-zone, high-symmetry-path, and IBZ-centroid data.
+
+    The zone is the one ``alterseek-path`` uses: that of the submitted cell,
+    with the magnetic structure taken into account.
+
+    ``moments`` and ``spin_axis`` are ignored for ``.mcif`` input.
+    """
+    _, _, zone = _submitted_cell_zone(
+        structure_file,
+        moments,
+        spin_axis,
+        mode_2d,
+        _normalize_vacuum_axis(vacuum_axis),
+        symprec,
+        output_dir,
+        verbose,
+        show_plot=show_plot,
+        view_elev=view_elev,
+        view_azim=view_azim,
+        save_pdf=save_pdf,
+    )
+    return zone
+
+
+def general_k_path(
+    structure_file,
+    moments=None,
+    spin_axis="0 0 1",
+    flip_option=1,
+    mode_2d=False,
+    vacuum_axis="c",
+    symprec=None,
+    output_dir=OUTPUT_DIR,
+    verbose=False,
+):
+    """Return the general-k path for one structure without writing a path file.
+
+    Runs the spin-symmetry and Brillouin-zone steps, maps the general k point
+    through one detected spin-flip operation R, and returns the same segments
+    ``alterseek-path`` writes, in the submitted cell's reciprocal basis.
+
+    ``moments`` and ``spin_axis`` are ignored for ``.mcif`` input.
+    """
+    if (
+        isinstance(flip_option, bool)
+        or not isinstance(flip_option, numbers.Integral)
+        or flip_option < 1
+    ):
+        raise ValueError("flip_option must be a positive integer")
+
+    vacuum_axis = _normalize_vacuum_axis(vacuum_axis)
+    spin, analysis, zone = _submitted_cell_zone(
+        structure_file,
+        moments,
+        spin_axis,
+        mode_2d,
+        vacuum_axis,
+        symprec,
+        output_dir,
+        verbose,
+    )
+    reason = "" if spin is not None else "No magnetic moments entered."
+    if zone is None or zone.get("centroid_frac") is None:
+        raise ValueError(
+            f"No irreducible-wedge centre could be computed for {structure_file}."
+        )
+    zone["b_matrix_output"] = zone["b_matrix_input"]
+    zone["b_matrix_submitted"] = zone["b_matrix_input"]
+
+    if spin is not None:
+        working_cell_symmetry = _g0_symmetry(
+            spin, sites=analysis.get("magnetic_primitive_sites")
+        )
+        forbidden = _altermagnetism_gate(spin, working_cell_symmetry)
+        if forbidden:
+            laue = forbidden.get(
+                "laue_group", (working_cell_symmetry or spin).get("laue_group")
+            )
+            reason = f"Laue group {laue}: no altermagnetism."
+        else:
+            reason = spin.get("spin_split_diagnostic") or ""
+
+    builder = KPathBuilder(
+        mode_2d=mode_2d,
+        input_vacuum_axis=vacuum_axis if mode_2d else None,
+    )
+    if mode_2d:
+        builder._configure_2d_plane(
+            zone, submitted_lattice=analysis["submitted_lattice"]
+        )
+    builder.load_path_from_centroid(zone, verbose=verbose)
+
+    # The submitted-cell zone can forbid altermagnetism even when the magnetic
+    # primitive cell does not, so it is checked after the path is loaded.
+    if not reason:
+        forbidden = zone.get("no_altermagnetism")
+        if forbidden is None:
+            forbidden = no_altermagnetism_reason(
+                zone.get("point_group"), zone.get("spacegroup")
+            )
+        if forbidden:
+            reason = (
+                f"Laue group {forbidden.get('laue_group', 'unknown')}: "
+                "no altermagnetism."
+            )
+
+    general_kpoint = [float(x) for x in zone["centroid_frac"]]
+
+    # Only this run's own operation file may be read; an older one left in
+    # output_dir describes a different structure.
+    flip_file = os.path.join(output_dir, "spin_flip_operations.txt")
+    this_run_wrote_flip_file = (
+        spin is not None and spin.get("spin_flip_operations", 0) > 0
+    )
+    listed_flip_ops = (
+        builder.load_flip_operations(flip_file)
+        if this_run_wrote_flip_file and not reason and os.path.exists(flip_file)
+        else []
+    )
+    flip_ops = inversion_extended(listed_flip_ops)
+    if mode_2d and flip_ops:
+        if any(builder._forces_2d_degeneracy(op, zone) for op in flip_ops):
+            flip_ops = []
+            reason = _NO_2D_DEGENERACY_REASON
+        else:
+            flip_ops = [
+                op for op in flip_ops if builder._is_valid_2d_operation(op, zone)
+            ]
+            if not flip_ops:
+                reason = _NO_2D_FLIP_REASON
+
+    if not flip_ops and not reason:
+        raise ValueError(
+            "Spin-symmetry analysis reached the general-k path, but no detected "
+            "spin-flip point operation is available for "
+            f"{structure_file}. The symmetry result or operation output is "
+            "inconsistent."
+        )
+
+    R = None
+    R_standardized = None
+    if flip_ops:
+        if not 1 <= flip_option <= len(flip_ops):
+            raise ValueError(
+                f"flip_option={flip_option} is out of range; "
+                f"available choices are 1-{len(flip_ops)}."
+            )
+        R = flip_ops[flip_option - 1]
+        listed_preserve_ops = builder.load_preserve_operations(
+            os.path.join(output_dir, "spin_preserve_operations.txt")
+        )
+        R_standardized, _, _, _ = builder._convert_operation_to_primitive_basis(
+            R,
+            flip_ops,
+            inversion_extended(listed_preserve_ops),
+            zone,
+            f"submitted structure '{os.path.basename(structure_file)}'",
+            listed_flip_ops,
+            listed_preserve_ops,
+            output_dir=output_dir,
+        )
+        path_points = (
+            builder.butterfly_kpoints_data
+            if builder.butterfly_kpoints_data is not None
+            else builder.kpoints_data
+        )
+        extra_points = (
+            builder.butterfly_extra_general_points
+            if builder.butterfly_extra_general_points is not None
+            else builder.extra_general_points
+        )
+        points = builder.insert_general_kpoints(
+            general_kpoint,
+            R_standardized,
+            extra_points,
+            path_points=path_points,
+            report=verbose,
+        )
+    else:
+        points = builder.build_ordinary_path_with_general_k(
+            general_kpoint, builder.extra_general_points, report=verbose
+        )
+    if not points:
+        raise ValueError(f"No general-k path could be built for {structure_file}.")
+
+    segments = []
+    text_parts = []
+    for start, end, break_before, _index, _raw_end in builder._prepare_output_segments(points):
+        segments.append({
+            "start_label": start[3],
+            "start": [float(x) for x in start[:3]],
+            "end_label": end[3],
+            "end": [float(x) for x in end[:3]],
+            "break_before": bool(break_before),
+        })
+        if not text_parts:
+            text_parts.append(f"{start[3]}-{end[3]}")
+        elif break_before:
+            text_parts.append(f" | {start[3]}-{end[3]}")
+        else:
+            text_parts.append(f"-{end[3]}")
+
+    k = builder._general_kpoint_output_basis(general_kpoint)
+    k_prime = None
+    if R_standardized is not None:
+        k_prime = builder._general_kpoint_output_basis(
+            builder.transform_kpoint(general_kpoint, R_standardized)
+        )
+
+    return {
+        "segments": segments,
+        "path": "".join(text_parts),
+        "k": k,
+        "k_prime": k_prime,
+        "spin_flip_operation": None if R is None else np.array(R, dtype=float),
+        "flip_option_count": len(flip_ops),
+        "no_splitting_reason": reason or None,
+        "lattice": zone.get("sc_type"),
+        "magnetic_phase": (spin or {}).get("magnetic_phase"),
+        "magnetic_space_group_without_soc": (spin or {}).get(
+            "magnetic_space_group_without_soc"
+        ),
+        "spin_symmetry": spin,
+        "brillouin_zone": zone,
+    }

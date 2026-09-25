@@ -7,17 +7,14 @@ import alterseek_path
 
 
 class _Recorder:
-    """Stands in for KPathBuilder so no workflow actually runs."""
+    """Stands in for run_workflow so no workflow actually runs."""
 
-    instances = []
+    calls = []
     result = True
     error = None
 
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        _Recorder.instances.append(self)
-
-    def interactive_build(self):
+    def __call__(self, **kwargs):
+        _Recorder.calls.append(kwargs)
         if self.error is not None:
             raise self.error
         return self.result
@@ -27,25 +24,24 @@ class _Recorder:
 def recorded(monkeypatch, tmp_path):
     # main() writes its run log into the working directory.
     monkeypatch.chdir(tmp_path)
-    _Recorder.instances = []
+    _Recorder.calls = []
     _Recorder.result = True
     _Recorder.error = None
-    monkeypatch.setattr(alterseek_path, "KPathBuilder", _Recorder)
-    monkeypatch.setattr(alterseek_path, "KPathBuilder2D", _Recorder)
-    return _Recorder.instances
+    monkeypatch.setattr(alterseek_path, "run_workflow", _Recorder())
+    return _Recorder.calls
 
 
 def _run(monkeypatch, recorded, argv):
     monkeypatch.setattr(sys, "argv", ["alterseek-path", *argv])
     assert alterseek_path.main() == 0
     assert len(recorded) == 1
-    return recorded[0].kwargs
+    return recorded[0]
 
 
 def test_other_flags_still_route_through(monkeypatch, recorded):
     kwargs = _run(monkeypatch, recorded, ["--2d", "--vacuum-axis", "a"])
-    assert kwargs["input_vacuum_axis"] == 0
-    assert "mode_2d" not in kwargs
+    assert kwargs["mode_2d"] is True
+    assert kwargs["vacuum_axis"] == "a"
     assert "magnetic_setting" not in kwargs
 
 

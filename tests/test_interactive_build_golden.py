@@ -66,11 +66,7 @@ def test_interactive_build_case12_golden(tmp_path, monkeypatch, capsys):
         "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3)."
     )
-    assert (
-        "General k-point (IBZ centroid, standardized basis)"
-        in full_text
-    )
-    assert "General k-point (IBZ centroid, input-cell basis)" in full_text
+    assert "General k-point" not in full_text
     assert "KPOINTS output basis" not in full_text
     assert "IBZ centroid (standardized basis)" in stdout
     assert "IBZ centroid (input-cell basis)" in stdout
