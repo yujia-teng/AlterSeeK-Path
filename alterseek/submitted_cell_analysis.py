@@ -182,40 +182,19 @@ def _space_operation_mismatch_report(missing, unexpected, intended_count):
     return "; ".join(parts)
 
 
-def _point_operations_preserving_submitted_lattice(
-    lattice, space_operations, tol=1e-7
-):
+def _point_operations_preserving_submitted_lattice(space_operations, tol=1e-7):
     """Return the point operations compatible with the submitted cell.
 
-    Keep the distinct rotations that preserve the lengths and angles of the
-    submitted lattice vectors, and verify that they form a closed point group.
-    The caller uses these rotations as ``(R, 0)`` only for the conventional or
-    supercell BZ helper. Removing additional pure translations, such as centering
-    translations, prevents SeeK-path from reducing the submitted translation
-    lattice to the physical primitive lattice.
+    Keep the distinct rotations that map the submitted lattice onto itself,
+    those with an integer matrix in its basis, and verify that they form a
+    closed point group. The caller uses these rotations as ``(R, 0)`` only for
+    the conventional or supercell BZ helper. Removing additional pure
+    translations, such as centering translations, prevents SeeK-path from
+    reducing the submitted translation lattice to the physical primitive lattice.
     """
-    lattice = np.asarray(lattice, dtype=float)
-    lattice_dot_products = lattice @ lattice.T
     candidates = _validated_space_operations(space_operations, tol=tol)
-    compatible = []
-    dot_product_tolerance = tol * max(
-        1.0, float(np.max(np.abs(lattice_dot_products)))
-    )
-    for operation in candidates:
-        rotation = np.asarray(operation["real_rotation"], dtype=int)
-        if np.allclose(
-            rotation.T @ lattice_dot_products @ rotation,
-            lattice_dot_products,
-            atol=dot_product_tolerance,
-            rtol=0.0,
-        ):
-            compatible.append(operation)
-    if not compatible:
-        raise RuntimeError(
-            "No point operation preserves the submitted lattice-vector lengths and angles."
-        )
     rotations = {}
-    for operation in compatible:
+    for operation in candidates:
         rotation = np.asarray(operation["real_rotation"], dtype=int)
         rotations.setdefault(tuple(rotation.ravel()), rotation)
 
@@ -233,7 +212,7 @@ def _point_operations_preserving_submitted_lattice(
                 raise RuntimeError(
                     "Submitted-cell compatible rotations do not form a closed point group."
                 )
-    return list(rotations.values()), compatible, candidates
+    return list(rotations.values()), candidates
 
 
 def _database_operations_in_input_basis(
@@ -673,10 +652,8 @@ def _build_nonprimitive_bz_marker_cell(
 
     real_type_numbers = [int(value) for value in real_type_numbers]
 
-    rotations, compatible_space_operations, source_space_operations = (
-        _point_operations_preserving_submitted_lattice(
-            lattice, space_operations
-        )
+    rotations, source_space_operations = (
+        _point_operations_preserving_submitted_lattice(space_operations)
     )
     translations = [np.zeros(3) for _rotation in rotations]
     operations = [
@@ -767,9 +744,7 @@ def _build_nonprimitive_bz_marker_cell(
             "space_operations": operations,
             "source_space_operations": source_space_operations,
             "source_space_operation_count": len(source_space_operations),
-            "compatible_space_operation_count": len(
-                compatible_space_operations
-            ),
+            "compatible_space_operation_count": len(source_space_operations),
             "intended_point_operation_count": len(intended_keys),
             "detected_point_operation_count": len(detected_keys),
             "intended_space_operation_count": len(intended_space_keys),
@@ -961,8 +936,9 @@ def prepare_submitted_cell_analysis(
 ):
     """Prepare the marker cell and symmetry data for submitted-cell BZ analysis.
 
-    Use the G0 marker cell for a primitive input and the marker-only ``(R, 0)``
-    helper for a conventional-cell or supercell input.
+    Use the G0 marker cell when the input is its own nonmagnetic primitive
+    cell and the marker-only ``(R, 0)`` helper when it is larger, so the zone
+    is always the input cell's own.
     """
     from ase.data import atomic_numbers
 
@@ -970,6 +946,18 @@ def prepare_submitted_cell_analysis(
         _load_magnetic_input_data(structure_file, moments_str, spin_axis_cart)
     )
     real_types = [atomic_numbers[str(element)] for element in elements]
+    primitive = spglib.find_primitive(
+        (lattice, positions, real_types),
+        symprec=symprec,
+    )
+    if primitive is None:
+        raise RuntimeError(
+            "Could not determine the physical primitive translation "
+            "cell of the submitted structure."
+        )
+    translation_index, translation_volume_ratio = (
+        _submitted_to_primitive_volume_index(lattice, primitive[0])
+    )
     fsg_result = None
     nonmagnetic_primitive_symmetry = None
     has_magnetic_moments = bool(np.any(
@@ -986,15 +974,6 @@ def prepare_submitted_cell_analysis(
             input_spin_setting=spin_setting,
         )
         expected_spacegroup_number = _g0_spacegroup_number(fsg_result)
-        magnetic_primitive_lattice = np.asarray(
-            fsg_result["acc_primitive_cell_detail"]["lattice"],
-            dtype=float,
-        )
-        translation_index, translation_volume_ratio = (
-            _submitted_to_primitive_volume_index(
-                lattice, magnetic_primitive_lattice
-            )
-        )
         # FindSpinGroup's magnetic-primitive list contains one operation for each G0 rotation.
         # Express these operations in the submitted basis; the nonprimitive BZ helper later keeps
         # only rotations that preserve the submitted lattice.
@@ -1078,15 +1057,6 @@ def prepare_submitted_cell_analysis(
             "hall_number": int(dataset.hall_number),
         }
 
-        primitive = spglib.find_primitive(
-            (lattice, positions, real_types),
-            symprec=symprec,
-        )
-        if primitive is None:
-            raise RuntimeError(
-                "Could not determine the physical primitive translation "
-                "cell of the submitted structure."
-            )
         primitive_dataset = spglib.get_symmetry_dataset(
             primitive,
             symprec=symprec,
@@ -1101,9 +1071,6 @@ def prepare_submitted_cell_analysis(
             "point_group": str(primitive_dataset.pointgroup),
             "sites": len(primitive[1]),
         }
-        translation_index, translation_volume_ratio = (
-            _submitted_to_primitive_volume_index(lattice, primitive[0])
-        )
 
     physical_helper = None
     if physical_operation_set_verified:

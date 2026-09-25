@@ -63,6 +63,12 @@ def _orthorhombic_operations():
     ]
 
 
+def _supercell_operations(rotations, multiples):
+    """Express cell rotations in the basis of a diagonal supercell."""
+    scale = np.diag(multiples).astype(float)
+    return [np.linalg.inv(scale) @ rotation @ scale for rotation in rotations]
+
+
 def _change_operation_basis(rotation, source_lattice, target_lattice):
     cartesian = source_lattice.T @ rotation @ np.linalg.inv(source_lattice.T)
     transformed = (
@@ -105,13 +111,15 @@ def test_cubic_221_supercell_has_tetragonal_bz_helper():
     result = _build_nonprimitive_bz_marker_cell(
         np.diag([8.0, 8.0, 4.0]),
         real_type_numbers=[26],
-        space_operations=_signed_permutation_operations(),
+        space_operations=_supercell_operations(
+            _signed_permutation_operations(), (2, 2, 1)
+        ),
     )
 
     assert result["analysis_spacegroup_symbol"] == "P4/mmm"
     assert result["seekpath_bravais"].startswith("tP")
     assert result["intended_point_operation_count"] == 16
-    assert result["source_space_operation_count"] == 48
+    assert result["source_space_operation_count"] == 16
     assert result["compatible_space_operation_count"] == 16
     assert result["volume_original_wrt_prim"] == 1.0
 
@@ -120,7 +128,9 @@ def test_cubic_321_supercell_has_orthorhombic_bz_helper():
     result = _build_nonprimitive_bz_marker_cell(
         np.diag([12.0, 8.0, 4.0]),
         real_type_numbers=[26],
-        space_operations=_signed_permutation_operations(),
+        space_operations=_supercell_operations(
+            _signed_permutation_operations(), (3, 2, 1)
+        ),
     )
 
     assert result["analysis_spacegroup_symbol"] == "Pmmm"
@@ -468,30 +478,34 @@ def test_no_moments_221_uses_pure_rotation_hP_helper():
     )
 
 
-def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
+def test_spin_flipping_translation_211_keeps_the_input_cell_zone(tmp_path):
+    """GdAuGe 2x1x1: G0 Cmc2_1 contains the spin-flipping translation."""
     preparation = prepare_submitted_cell_analysis(
         str(REFERENCES / "SUPERCELL_211.vasp"),
         moments_str="1 -1 1 -1",
         spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path),
+        write_magnetic_diagnostic=True,
     )
 
-    assert preparation["uses_conventional_supercell_bz"] is False
+    assert preparation["uses_conventional_supercell_bz"] is True
     assert preparation["summary"][
         "submitted_to_primitive_volume_index"
-    ] == 1
-    assert preparation["analysis_symmetry"]["number"] == 36
-    assert preparation["analysis_symmetry"]["symbol"] == "Cmc2_1"
-    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oC1"
-    assert preparation["summary"]["intended_space_operations"] == 8
-    assert preparation["summary"]["detected_space_operations"] == 8
+    ] == 2
+    assert preparation["analysis_symmetry"]["number"] == 25
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oP1"
+    assert preparation["summary"]["intended_space_operations"] == 4
+    assert preparation["summary"]["detected_space_operations"] == 4
     assert preparation["summary"]["physical_space_operations"] == 8
     assert preparation["input_cell_symmetry"]["number"] == 36
     assert preparation["input_cell_symmetry"]["symbol"] == "Cmc2_1"
     assert preparation["input_cell_symmetry"][
         "seekpath_bravais"
     ] == "oC1"
+    assert preparation["magnetic_primitive_sites"] == 12
+    assert preparation["magnetic_primitive_lattice_tag"] == "oC1"
     assert np.isclose(
-        preparation["summary"]["volume_original_wrt_prim"], 2.0
+        preparation["summary"]["volume_original_wrt_prim"], 1.0
     )
 
     result = compute_centroid(
@@ -502,7 +516,7 @@ def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
         analysis_cell=preparation["analysis_cell"],
         analysis_has_markers=preparation["analysis_has_markers"],
     )
-    assert result["sc_type"] == "oC1"
+    assert result["sc_type"] == "oP1"
     _assert_ibz_volume_matches_k_group(result)
 
     bz_hull = ConvexHull(np.vstack(result["bz_loops"]))
@@ -512,6 +526,29 @@ def test_magnetic_211_keeps_full_seitz_helper_for_basis_change(tmp_path):
         + bz_hull.equations[:, -1]
     )
     assert np.all(signed_distances <= 1e-8)
+
+
+def test_spin_flipping_translation_with_primitive_g0_keeps_the_input_cell_zone():
+    """V2Se2O 2x1 with V moments 1 1 -1 -1: G0 Pmm2 repeats on the 1x1 cell."""
+    structure = REFERENCES / "case2d04_square_2x1_POSCAR"
+    preparation = prepare_submitted_cell_analysis(
+        str(structure),
+        moments_str="1 1 -1 -1",
+        spin_axis_cart="0 0 1",
+    )
+
+    assert preparation["uses_conventional_supercell_bz"] is True
+    assert preparation["summary"][
+        "submitted_to_primitive_volume_index"
+    ] == 2
+    assert preparation["summary"]["physical_operation_set_verified"] is False
+    assert preparation["bz_helper_symmetry"]["seekpath_bravais"] == "oP1"
+    assert np.allclose(
+        preparation["analysis_cell"][0], read(structure).cell[:]
+    )
+    assert np.isclose(
+        preparation["summary"]["volume_original_wrt_prim"], 1.0
+    )
 
 
 def test_primitive_magnetic_input_keeps_native_ops_when_hall_is_ambiguous(
@@ -529,15 +566,15 @@ def test_primitive_magnetic_input_keeps_native_ops_when_hall_is_ambiguous(
         ambiguous_hall,
     )
     preparation = prepare_submitted_cell_analysis(
-        str(REFERENCES / "SUPERCELL_211.vasp"),
-        moments_str="1 -1 1 -1",
+        str(REFERENCES / "BiFeO3_R3c_primitive.vasp"),
+        moments_str="4 -4 8*0",
         spin_axis_cart="0 0 1",
     )
 
     assert preparation["uses_conventional_supercell_bz"] is False
     assert preparation["summary"]["physical_operation_set_verified"] is True
-    assert preparation["analysis_symmetry"]["number"] == 36
-    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "oC1"
+    assert preparation["analysis_symmetry"]["number"] == 161
+    assert preparation["analysis_symmetry"]["seekpath_bravais"] == "hR1"
     marker_types = preparation["summary"]["marker_types"]
     assert len(marker_types) >= 2
     assert len(marker_types) == len(set(marker_types))

@@ -170,7 +170,7 @@ def test_general_k_path_uses_the_marker_cell_for_a_supercell(tmp_path, monkeypat
     result = general_k_path(
         str(structure), moments="1 -1 1 -1", output_dir=str(tmp_path / "out")
     )
-    assert result["lattice"] == "oC1"
+    assert result["lattice"] == "oP1"
 
     expected = _cli_points(tmp_path / "cli", monkeypatch, structure, ["0 0 1", "1 -1 1 -1", ""])
     produced = []
@@ -182,6 +182,69 @@ def test_general_k_path_uses_the_marker_cell_for_a_supercell(tmp_path, monkeypat
     for (got_label, got_coords), (want_label, want_coords) in zip(produced, expected):
         assert got_label == want_label
         assert got_coords == pytest.approx(want_coords, abs=1e-9)
+
+
+def test_general_k_path_gives_a_spin_flipping_translation_cell_its_own_zone(tmp_path):
+    """GdAuGe 2x1x1 against the stored path file of its oP1 zone."""
+    from alterseek import general_k_path
+
+    references = Path(__file__).parent / "references"
+    result = general_k_path(
+        str(references / "SUPERCELL_211.vasp"),
+        moments="1 -1 1 -1",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["lattice"] == "oP1"
+    assert result["no_splitting_reason"] == "Ut symmetry detected, not altermagnet."
+    assert result["k"] == pytest.approx([0.0, 0.25, -0.25], abs=1e-9)
+
+    expected = []
+    for line in (references / "ssg_supercell211_golden_kpoints.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()[4:]:
+        fields = line.split()
+        if len(fields) >= 4:
+            expected.append((fields[3], [float(x) for x in fields[:3]]))
+    produced = []
+    for segment in result["segments"]:
+        produced.append((_kpoints_label(segment["start_label"]), segment["start"]))
+        produced.append((_kpoints_label(segment["end_label"]), segment["end"]))
+
+    assert [label for label, _ in produced] == [label for label, _ in expected]
+    for (_, got), (_, want) in zip(produced, expected):
+        assert got == pytest.approx(want, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "mode_2d, lattice, corners",
+    [
+        (True, "rectangular", {"X": [0.5, 0.0, 0.0], "S": [0.5, 0.5, 0.0], "Y": [0.0, 0.5, 0.0]}),
+        (False, "oP1", {"X": [0.0, -0.5, 0.0], "Y": [0.0, 0.0, -0.5], "Z": [0.5, 0.0, 0.0]}),
+    ],
+)
+def test_general_k_path_handles_a_spin_flipping_translation_in_primitive_g0(
+    tmp_path, mode_2d, lattice, corners
+):
+    """V2Se2O 2x1 with V moments 1 1 -1 -1: G0 Pmm2 repeats on the 1x1 cell."""
+    from alterseek import general_k_path
+
+    result = general_k_path(
+        str(Path(__file__).parent / "references" / "case2d04_square_2x1_POSCAR"),
+        moments="1 1 -1 -1",
+        mode_2d=mode_2d,
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["lattice"] == lattice
+    assert result["no_splitting_reason"] == "Ut symmetry detected, not altermagnet."
+    assert result["magnetic_space_group_without_soc"] == "P_cmm2 (BNS 25.61), Type IV"
+    points = {}
+    for segment in result["segments"]:
+        points[segment["start_label"]] = segment["start"]
+        points[segment["end_label"]] = segment["end"]
+    for label, coords in corners.items():
+        assert points[label] == pytest.approx(coords, abs=1e-9)
 
 
 def test_general_k_path_reads_moments_from_an_mcif(tmp_path):

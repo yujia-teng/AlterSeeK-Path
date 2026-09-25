@@ -1852,7 +1852,7 @@ class KPathBuilder:
                     ]
                     print(
                         "Conventional/supercell detected: input contains "
-                        f"{primitive_count} magnetic primitive cells"
+                        f"{primitive_count} nonmagnetic primitive cells"
                     )
                 input_cell_symmetry = analysis_preparation.get(
                     "input_cell_symmetry"
