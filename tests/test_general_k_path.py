@@ -516,6 +516,43 @@ def test_general_k_path_slab_mode_on_a_nearly_square_cell(tmp_path):
         assert got == pytest.approx(want, abs=1e-9)
 
 
+def test_general_k_path_slab_mode_on_a_sixty_degree_hexagonal_cell(tmp_path):
+    """FeBr3 (2D Case 01) in its 60-degree cell against the 120-degree cell."""
+    from alterseek import general_k_path
+
+    references = Path(__file__).parent / "references"
+    runs = {}
+    for name in ("case2d01_hex_6mmm", "case2d01_hex_6mmm_60deg"):
+        structure = references / f"{name}_POSCAR"
+        result = general_k_path(
+            str(structure),
+            moments="1 -1 6*0",
+            mode_2d=True,
+            vacuum_axis="c",
+            output_dir=str(tmp_path / name),
+        )
+        lattice = np.loadtxt(structure, skiprows=2, max_rows=3)
+        reciprocal = 2.0 * np.pi * np.linalg.inv(lattice).T
+        points = [(result["k"], "k"), (result["k_prime"], "k'")]
+        for segment in result["segments"]:
+            points.append((segment["start"], segment["start_label"]))
+            points.append((segment["end"], segment["end_label"]))
+        runs[name] = [
+            (label, np.linalg.norm(np.asarray(point) @ reciprocal))
+            for point, label in points
+        ]
+
+    sixty = runs["case2d01_hex_6mmm_60deg"]
+    assert [label for label, _ in sixty] == [
+        label for label, _ in runs["case2d01_hex_6mmm"]
+    ]
+    assert dict(sixty)["K"] == pytest.approx(
+        4.0 * np.pi / (3.0 * np.linalg.norm(lattice[0])), abs=1e-9
+    )
+    for (_, got), (_, want) in zip(sixty, runs["case2d01_hex_6mmm"]):
+        assert got == pytest.approx(want, abs=1e-9)
+
+
 @pytest.mark.parametrize(
     "degeneracy_forcing, valid_in_plane, expected_reason",
     [

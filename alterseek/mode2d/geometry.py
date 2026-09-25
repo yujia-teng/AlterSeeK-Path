@@ -58,7 +58,8 @@ def _basis_metric_kind(basis, tol):
     cosine = float(np.dot(first, second) / np.prod(lengths))
     equal = _relative_close(lengths[0], lengths[1], tol)
     orthogonal = abs(cosine) <= tol
-    hexagonal = equal and abs(abs(cosine) - 0.5) <= tol
+    # 120 degrees only: the basis the hexagonal K = (1/3, 1/3) is written in.
+    hexagonal = equal and abs(cosine + 0.5) <= tol
     if orthogonal and equal:
         return "square"
     if hexagonal:

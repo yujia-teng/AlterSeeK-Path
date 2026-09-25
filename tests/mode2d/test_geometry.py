@@ -61,6 +61,39 @@ def test_classifies_submitted_2d_translation_lattice(lattice, expected):
     assert lattice_2d.lattice_class == expected
 
 
+def test_sixty_degree_hexagonal_cell_gives_the_same_special_points():
+    """The 60- and 120-degree pairs of one hexagonal lattice."""
+    sixty = np.array([
+        [4.0, 0.0, 0.0],
+        [2.0, 2.0 * np.sqrt(3.0), 0.0],
+        [0.0, 0.0, 20.0],
+    ])
+    distances = {}
+    for name, lattice in (("120", _hexagonal_lattice()), ("60", sixty)):
+        lattice_2d = analyze_lattice(lattice, 2)
+        first, second = lattice_2d.canonical_direct_2d
+        assert lattice_2d.lattice_class == "hexagonal"
+        assert np.dot(first, second) / np.dot(first, first) == pytest.approx(
+            -0.5, abs=1e-12
+        )
+        path_data = build_path(lattice_2d, "6mm", 12)
+        _polygon, centroid, area, _labels = build_ibz(
+            lattice_2d, path_data, "6mm", 12
+        )
+        bz_area, _ = polygon_area_centroid_2d(build_bz(lattice_2d.reciprocal_2d))
+        assert area / bz_area == pytest.approx(1.0 / 12.0, abs=1e-12)
+        distances[name] = {
+            label: np.linalg.norm(
+                np.asarray(point) @ lattice_2d.reciprocal_3d
+            )
+            for label, point in path_data["points"].items()
+        }
+        distances[name]["centroid"] = np.linalg.norm(centroid)
+
+    assert distances["60"]["K"] == pytest.approx(4.0 * np.pi / 12.0, abs=1e-12)
+    assert distances["60"] == pytest.approx(distances["120"], abs=1e-12)
+
+
 def test_arbitrary_cartesian_orientation_and_vacuum_index_are_internal_only():
     canonical = np.diag([4.0, 6.0, 20.0])
     rotated = canonical @ _rotation_z(37.0).T
