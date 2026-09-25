@@ -10,6 +10,8 @@ Covers the pieces that have no 3D analogue:
     slab, asserting the path/centroid are restricted to the vacuum k=0 plane.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import matplotlib.pyplot as plt
@@ -23,7 +25,7 @@ from alterseek.kpoints import (
     OUTPUT_DIR,
     _print_2d_structure_summary,
 )
-from alterseek.submitted_cell_analysis import _layer_cell_summary
+from alterseek.submitted_cell_analysis import prepare_submitted_cell_analysis
 from alterseek.plotting_common import (
     GAMMA_LABEL, _figure_output_paths, _math_label,
     generated_plain_path_segments,
@@ -43,43 +45,94 @@ def _diag(vals):
     return np.diag(np.asarray(vals, dtype=float))
 
 
-def test_2d_cell_summary_reports_parent_and_magnetic_layer_groups(capsys):
-    lattice = np.diag([4.0, 4.0, 20.0])
-    positions = np.array([
-        [0.25, 0.0, 0.0],
-        [0.75, 0.0, 0.0],
-        [0.0, 0.25, 0.0],
-        [0.0, 0.75, 0.0],
-    ])
-    moments = np.array([
-        [0.0, 0.0, 1.0],
-        [0.0, 0.0, 1.0],
-        [0.0, 0.0, -1.0],
-        [0.0, 0.0, -1.0],
-    ])
-    summary = _layer_cell_summary(
-        lattice,
-        positions,
-        ["Fe"] * 4,
-        moments,
-        vacuum_axis=2,
-        symprec=1e-3,
+def test_2d_cell_summary_reports_parent_and_magnetic_layer_groups(capsys, tmp_path):
+    """Spin-flipping operations belong to the magnetic group, as in 3D."""
+    poscar = tmp_path / "POSCAR"
+    poscar.write_text(
+        "square d-wave\n1.0\n4 0 0\n0 4 0\n0 0 20\nFe\n4\ndirect\n"
+        "0.25 0 0\n0.75 0 0\n0 0.25 0\n0 0.75 0\n",
+        encoding="utf-8",
     )
+    analysis = prepare_submitted_cell_analysis(
+        str(poscar), moments_str="1 1 -1 -1", spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path / "out"), input_vacuum_axis=2,
+    )
+    summary = analysis["layer_cell_summary"]
 
-    assert summary["input_cell"]["label"] == "pmmm (37)"
+    assert summary["input_cell"]["label"] == "p4/mmm (61)"
     assert summary["nonmagnetic_primitive_cell"]["label"] == "p4/mmm (61)"
-    assert summary["magnetic_primitive_cell"]["label"] == "pmmm (37)"
+    assert summary["magnetic_primitive_cell"]["label"] == "p4/mmm (61)"
 
     _print_2d_structure_summary(
         {"layer_cell_summary": summary},
         {"sc_type": "square"},
     )
     assert capsys.readouterr().out.splitlines() == [
-        "Input cell:                   LG pmmm (37)    PG mmm    Laue mmm    [4 atoms]",
+        "Input cell:                   LG p4/mmm (61)  PG 4/mmm  Laue 4/mmm  [4 atoms]",
         "Nonmagnetic primitive cell:   LG p4/mmm (61)  PG 4/mmm  Laue 4/mmm  [4 atoms]",
-        "Magnetic primitive cell:      LG pmmm (37)    PG mmm    Laue mmm    [4 atoms]",
+        "Magnetic primitive cell:      LG p4/mmm (61)  PG 4/mmm  Laue 4/mmm  [4 atoms]",
         "2D lattice: square",
     ]
+
+
+@pytest.mark.parametrize(
+    "moments, magnetic",
+    [
+        ("1 -1 -1 1 6*0", "p4 (49)"),
+        # C2z flips spin: the magnetic group keeps it, so the Laue group is 2/m, not -1.
+        ("1 1 -1 -1 6*0", "p112 (3)"),
+        ("1 1 1 1 6*0", "p4 (49)"),
+    ],
+)
+def test_2d_magnetic_layer_group_includes_spin_flipping_operations(
+    tmp_path, moments, magnetic
+):
+    structure = Path(__file__).parents[1] / "references" / "case2d06_square_4m_POSCAR"
+    analysis = prepare_submitted_cell_analysis(
+        str(structure), moments_str=moments, spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path / "out"), input_vacuum_axis=2,
+    )
+    summary = analysis["layer_cell_summary"]
+
+    assert summary["nonmagnetic_primitive_cell"]["label"] == "p4 (49)"
+    assert summary["magnetic_primitive_cell"]["label"] == magnetic
+    assert summary["magnetic_primitive_cell"]["sites"] == 10
+
+
+def test_2d_magnetic_layer_group_of_a_supercell_is_the_full_group(tmp_path):
+    """A 2x1 cell cannot carry the four-fold rotation, but the magnetic group has it."""
+    poscar = tmp_path / "POSCAR"
+    poscar.write_text(
+        "square d-wave 2x1\n1.0\n8 0 0\n0 4 0\n0 0 20\nFe\n8\ndirect\n"
+        "0.125 0 0\n0.375 0 0\n0.625 0 0\n0.875 0 0\n"
+        "0 0.25 0\n0 0.75 0\n0.5 0.25 0\n0.5 0.75 0\n",
+        encoding="utf-8",
+    )
+    analysis = prepare_submitted_cell_analysis(
+        str(poscar), moments_str="1 1 1 1 -1 -1 -1 -1", spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path / "out"), input_vacuum_axis=2,
+    )
+    magnetic = analysis["layer_cell_summary"]["magnetic_primitive_cell"]
+
+    assert magnetic["label"] == "p4/mmm (61)"
+    assert magnetic["sites"] == 4
+
+
+def test_2d_zone_layer_group_of_a_slab_on_the_cell_boundary(tmp_path):
+    from alterseek import brillouin_zone
+
+    poscar = tmp_path / "POSCAR"
+    poscar.write_text(
+        "square d-wave\n1.0\n4 0 0\n0 4 0\n0 0 20\nFe\n4\ndirect\n"
+        "0.25 0 0\n0.75 0 0\n0 0.25 0\n0 0.75 0\n",
+        encoding="utf-8",
+    )
+    zone = brillouin_zone(
+        str(poscar), moments="1 1 -1 -1", mode_2d=True, vacuum_axis="c",
+        show_plot=False, output_dir=str(tmp_path / "out"),
+    )
+
+    assert zone["layer_group_symbol"] == "p4/mmm"
 
 
 @pytest.mark.parametrize("hpkot_setting", ["oC1", "oC2", "oA2", "mC2"])

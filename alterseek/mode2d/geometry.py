@@ -287,3 +287,20 @@ def to_input_fractional(points, lattice_2d):
     fractional = cartesian @ np.linalg.inv(lattice_2d.reciprocal_3d)
     fractional[np.abs(fractional) < 1e-11] = 0.0
     return fractional
+
+
+def slab_centred_cell(cell, vacuum_axis):
+    """Move the widest gap along the vacuum axis to the cell boundary.
+
+    A slab that crosses the boundary would otherwise lose the mirror through
+    its own plane in a layer-group search.
+    """
+    lattice, positions, types = cell
+    positions = np.array(positions, dtype=float) % 1.0
+    heights = np.sort(positions[:, vacuum_axis])
+    gaps = np.diff(np.append(heights, heights[0] + 1.0))
+    widest = int(np.argmax(gaps))
+    bottom = heights[(widest + 1) % len(heights)]
+    shift = 0.5 - (bottom + (1.0 - gaps[widest]) / 2.0)
+    positions[:, vacuum_axis] = (positions[:, vacuum_axis] + shift) % 1.0
+    return lattice, positions, types

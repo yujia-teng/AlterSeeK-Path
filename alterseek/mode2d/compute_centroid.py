@@ -8,7 +8,9 @@ from pymatgen.core import Structure
 
 from ..geometry import get_symmetry_operations
 from ..symmetry import laue_group_from_point_group, no_altermagnetism_reason
-from .geometry import analyze_lattice, build_bz, to_input_fractional
+from .geometry import (
+    analyze_lattice, build_bz, slab_centred_cell, to_input_fractional,
+)
 from .lattice_kpoints import build_ibz, build_path
 from .symmetry import project_point_operations
 
@@ -71,7 +73,7 @@ def run(
     if dataset is None:
         raise RuntimeError("Could not determine submitted-cell symmetry")
     layer_dataset = spglib.get_symmetry_layerdataset(
-        (lattice, positions, numbers),
+        slab_centred_cell((lattice, positions, numbers), input_vacuum_axis),
         aperiodic_dir=input_vacuum_axis,
         symprec=tolerance,
     )

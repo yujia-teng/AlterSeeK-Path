@@ -15,6 +15,7 @@ from .io import (
     _min_periodic_cart_distance,
     _write_magnetic_mcif,
 )
+from .mode2d.geometry import slab_centred_cell
 from .symmetry import laue_group_from_point_group
 
 
@@ -461,27 +462,43 @@ def _complete_g0_operations_in_submitted_basis(result, tol=1e-6):
     return next(iter(distinct_candidates.values()))[1]
 
 
-def _moment_colored_types(elements, moments, tol=0.02):
-    """Assign one spglib type to each distinct element-and-moment color."""
-    colors = []
-    types = []
-    for element, moment in zip(elements, np.asarray(moments, dtype=float)):
-        for index, (other_element, other_moment) in enumerate(colors):
-            if element == other_element and np.allclose(
-                moment, other_moment, atol=tol, rtol=0.0
-            ):
-                types.append(index + 1)
-                break
-        else:
-            colors.append((element, np.asarray(moment, dtype=float).copy()))
-            types.append(len(colors))
-    return types
+def _magnetic_primitive_marker_cell(
+    fsg_result, expected_spacegroup_number, symprec
+):
+    """Return FindSpinGroup's magnetic primitive cell and its G0 marker cell."""
+    from ase.data import atomic_numbers
+
+    magnetic_cell = fsg_result["acc_primitive_cell_detail"]
+    magnetic_lattice = np.asarray(magnetic_cell["lattice"], dtype=float)
+    magnetic_positions = [
+        np.asarray(position, dtype=float)
+        for position in magnetic_cell["positions"]
+    ]
+    magnetic_elements = [str(value) for value in magnetic_cell["elements"]]
+    # Equal lattice lengths can have higher metric symmetry than G0.
+    # Classify the magnetic primitive structure with its spatial operations,
+    # just as the physical input-cell helper does, rather than its metric alone.
+    helper = _build_g0_marker_cell(
+        magnetic_lattice,
+        magnetic_positions,
+        [atomic_numbers[element] for element in magnetic_elements],
+        _magnetic_primitive_nssg_operations(fsg_result),
+        symprec=symprec,
+        expected_spacegroup_number=expected_spacegroup_number,
+    )
+    return {
+        "cell": magnetic_cell,
+        "lattice": magnetic_lattice,
+        "positions": magnetic_positions,
+        "elements": magnetic_elements,
+        "helper": helper,
+    }
 
 
 def _layer_group_record(cell, vacuum_axis, symprec):
     """Return layer-group labels and the layer-primitive site count."""
     dataset = spglib.get_symmetry_layerdataset(
-        cell,
+        slab_centred_cell(cell, int(vacuum_axis)),
         aperiodic_dir=int(vacuum_axis),
         symprec=float(symprec),
     )
@@ -503,8 +520,27 @@ def _layer_group_record(cell, vacuum_axis, symprec):
     }
 
 
-def _layer_cell_summary(lattice, positions, elements, moments, vacuum_axis, symprec):
-    """Build the 2D input/nonmagnetic/magnetic cell-summary records."""
+def _out_of_plane_axis(cell_lattice, submitted_lattice, vacuum_axis):
+    """Return the one lattice vector leaving the slab plane, or None."""
+    in_plane = [
+        np.asarray(submitted_lattice[index], dtype=float)
+        for index in range(3) if index != vacuum_axis
+    ]
+    normal = np.cross(in_plane[0], in_plane[1])
+    normal /= np.linalg.norm(normal)
+    heights = np.abs(np.asarray(cell_lattice, dtype=float) @ normal)
+    leaving = [index for index, height in enumerate(heights) if height > 1e-6]
+    return leaving[0] if len(leaving) == 1 else None
+
+
+def _layer_cell_summary(
+    lattice, positions, elements, magnetic_primitive, vacuum_axis, symprec
+):
+    """Build the 2D input/nonmagnetic/magnetic cell-summary records.
+
+    The magnetic record is the layer group of the magnetic primitive G0
+    marker cell, the group the 3D summary reports.
+    """
     from ase.data import atomic_numbers
 
     nonmagnetic = _layer_group_record(
@@ -512,11 +548,14 @@ def _layer_cell_summary(lattice, positions, elements, moments, vacuum_axis, symp
         vacuum_axis, symprec,
     )
     magnetic = None
-    if np.any(np.linalg.norm(np.asarray(moments, dtype=float), axis=1) > 1e-10):
-        magnetic = _layer_group_record(
-            (lattice, positions, _moment_colored_types(elements, moments)),
-            vacuum_axis, symprec,
-        )
+    if magnetic_primitive is not None:
+        marker_cell = magnetic_primitive["helper"]["cell"]
+        axis = _out_of_plane_axis(marker_cell[0], lattice, vacuum_axis)
+        if axis is not None:
+            magnetic = {
+                **_layer_group_record(marker_cell, axis, symprec),
+                "sites": len(magnetic_primitive["elements"]),
+            }
 
     return {
         "input_cell": {**(magnetic or nonmagnetic), "sites": len(elements)},
@@ -1170,12 +1209,19 @@ def prepare_submitted_cell_analysis(
     result["summary"]["physical_operation_set_verified"] = (
         physical_operation_set_verified
     )
+    magnetic_primitive = None
+    if fsg_result is not None and (
+        input_vacuum_axis is not None or write_magnetic_diagnostic
+    ):
+        magnetic_primitive = _magnetic_primitive_marker_cell(
+            fsg_result, expected_spacegroup_number, symprec
+        )
     if input_vacuum_axis is not None:
         result["layer_cell_summary"] = _layer_cell_summary(
             lattice,
             positions,
             elements,
-            moments,
+            magnetic_primitive,
             input_vacuum_axis,
             symprec,
         )
@@ -1186,28 +1232,11 @@ def prepare_submitted_cell_analysis(
                 "A magnetic primitive diagnostic was requested for a "
                 "structure without nonzero magnetic moments."
             )
-        magnetic_cell = fsg_result["acc_primitive_cell_detail"]
-        magnetic_lattice = np.asarray(
-            magnetic_cell["lattice"], dtype=float
-        )
-        magnetic_positions = [
-            np.asarray(position, dtype=float)
-            for position in magnetic_cell["positions"]
-        ]
-        magnetic_elements = [
-            str(value) for value in magnetic_cell["elements"]
-        ]
-        # Equal lattice lengths can have higher metric symmetry than G0.
-        # Classify the magnetic primitive structure with its spatial operations,
-        # just as the physical input-cell helper does, rather than its metric alone.
-        magnetic_helper = _build_g0_marker_cell(
-            magnetic_lattice,
-            magnetic_positions,
-            [atomic_numbers[element] for element in magnetic_elements],
-            _magnetic_primitive_nssg_operations(fsg_result),
-            symprec=symprec,
-            expected_spacegroup_number=expected_spacegroup_number,
-        )
+        magnetic_cell = magnetic_primitive["cell"]
+        magnetic_lattice = magnetic_primitive["lattice"]
+        magnetic_positions = magnetic_primitive["positions"]
+        magnetic_elements = magnetic_primitive["elements"]
+        magnetic_helper = magnetic_primitive["helper"]
         magnetic_moments = np.asarray(
             magnetic_cell.get(
                 "moments", np.zeros((len(magnetic_elements), 3))
