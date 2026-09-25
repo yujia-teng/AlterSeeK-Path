@@ -8,6 +8,14 @@ import seekpath
 import spglib
 from findspingroup import find_spin_group_acc_primitive_from_data
 
+from .find_sf_operations import (
+    _display_ssg_symbol,
+    _operation_class_indices,
+    _parse_spin_axis,
+    _spin_axis_from_moments,
+    compute_msg_without_soc,
+    format_msg_without_soc,
+)
 from .io import (
     _dedupe_frac_positions,
     _group_poscar_sites,
@@ -16,7 +24,7 @@ from .io import (
     _write_magnetic_mcif,
 )
 from .mode2d.geometry import slab_centred_cell
-from .symmetry import laue_group_from_point_group
+from .symmetry import describe_spinflip_op, laue_group_from_point_group
 
 
 # Generic fractional seeds for the marker orbits; the trailing 1e-8 keeps a seed off special positions.
@@ -322,6 +330,119 @@ def _g0_representatives_in_submitted_basis(result):
             "translation": translation_input,
         })
     return _validated_space_operations(operations)
+
+
+def _magnet_operations_in_submitted_cell(
+    result, submitted_lattice, moments, tol=1e-6
+):
+    """Compare the whole magnet's point operations with those that fit the submitted cell.
+
+    An operation fits when its matrix in the submitted basis is integer.
+    Returns the magnet's SSG symbol and MSG without SOC, the number of its
+    distinct point operations and of those that fit, and the names of its
+    spin-flip point operations that do not fit.
+    """
+    view = (
+        result.get("operation_views", {})
+        .get("magnetic_primitive_cartesian", {})
+        .get("views", {})
+        .get("all", {})
+    )
+    operations = view.get("ops") if isinstance(view, dict) else None
+    if not operations:
+        raise RuntimeError(
+            "FindSpinGroup did not return the complete magnetic-primitive "
+            "operation list."
+        )
+    rotations = np.asarray(
+        [operation["real_rotation"] for operation in operations], dtype=float
+    )
+    if rotations.shape[1:] != (3, 3) or not np.allclose(
+        rotations, np.rint(rotations), atol=tol, rtol=0.0
+    ):
+        raise RuntimeError(
+            "FindSpinGroup returned a nonintegral magnetic-primitive rotation."
+        )
+    rotations = np.rint(rotations).astype(int)
+    translations = np.asarray(
+        [operation.get("translation", np.zeros(3)) for operation in operations],
+        dtype=float,
+    )
+    spin_rotations = np.asarray(
+        [operation["spin_rotation"] for operation in operations], dtype=float
+    )
+    spin_axis = _parse_spin_axis(
+        result.get("acc_primitive_spin_only_direction_cartesian")
+    )
+    if spin_axis is None:
+        spin_axis = _spin_axis_from_moments(moments)
+    flip_indices = set(
+        _operation_class_indices(spin_rotations, spin_axis, flip=True)
+    )
+
+    input_to_primitive = np.asarray(
+        result["T_input_to_acc_primitive"][0], dtype=float
+    )
+    primitive_to_input = np.linalg.inv(input_to_primitive)
+    primitive_lattice = np.asarray(
+        result["acc_primitive_cell_detail"]["lattice"], dtype=float
+    )
+    reciprocal = 2 * np.pi * np.linalg.inv(primitive_lattice).T
+    distinct = {}
+    for index, rotation in enumerate(rotations):
+        record = distinct.setdefault(
+            tuple(rotation.ravel()), {"rotation": rotation, "flip": False}
+        )
+        record["flip"] = record["flip"] or index in flip_indices
+    fitting = 0
+    flip_count = 0
+    flip_in_cell = 0
+    outside = []
+    for record in distinct.values():
+        rotation = record["rotation"]
+        in_input = primitive_to_input @ rotation @ input_to_primitive
+        fits = bool(np.allclose(in_input, np.rint(in_input), atol=tol, rtol=0.0))
+        fitting += fits
+        if not record["flip"]:
+            continue
+        flip_count += 1
+        flip_in_cell += fits
+        if not fits:
+            k_action = (
+                reciprocal.T
+                @ np.linalg.inv(rotation).T
+                @ np.linalg.inv(reciprocal.T)
+            )
+            outside.append(describe_spinflip_op(k_action, reciprocal))
+
+    # FindSpinGroup writes the magnet's symbol in the axes of its magnetic
+    # primitive cell, which need not follow the submitted cell's axes.
+    submitted_lattice = np.asarray(submitted_lattice, dtype=float)
+    axes_match_input = all(
+        np.isclose(
+            abs(np.dot(primitive, submitted))
+            / (np.linalg.norm(primitive) * np.linalg.norm(submitted)),
+            1.0,
+            atol=1e-6,
+            rtol=0.0,
+        )
+        for primitive, submitted in zip(primitive_lattice, submitted_lattice)
+    )
+    msg_type, _, _ = compute_msg_without_soc(
+        rotations, translations, spin_rotations, spin_axis
+    )
+    return {
+        "ssg_symbol": _display_ssg_symbol(
+            result.get("acc_primitive_ssg_international_linear")
+        ),
+        "ssg_symbol_axes_match_input": axes_match_input,
+        "msg_without_soc": format_msg_without_soc(msg_type),
+        "point_operations": len(distinct),
+        "point_operations_in_cell": fitting,
+        "spin_flip_point_operations": flip_count,
+        "spin_flip_point_operations_in_cell": flip_in_cell,
+        "spin_flip_outside_cell": sorted(outside),
+    }
 
 
 def _g0_spacegroup_number(result):
@@ -1176,6 +1297,10 @@ def prepare_submitted_cell_analysis(
     result["summary"]["physical_operation_set_verified"] = (
         physical_operation_set_verified
     )
+    if fsg_result is not None:
+        result["magnet_operations"] = _magnet_operations_in_submitted_cell(
+            fsg_result, lattice, moments
+        )
     magnetic_primitive = None
     if fsg_result is not None and (
         input_vacuum_axis is not None or write_magnetic_diagnostic

@@ -179,7 +179,7 @@ A dictionary containing:
 
 | Exception | Condition |
 |-----------|-----------|
-| `ValueError` | `flip_option` or `vacuum_axis` is invalid, no irreducible-wedge centre or path can be built, or no current-run spin-flip operation is available when spin splitting is allowed. |
+| `ValueError` | `flip_option` or `vacuum_axis` is invalid, no irreducible-wedge centre or path can be built, none of the structure's spin-flip operations maps the submitted cell onto itself, or no current-run spin-flip operation is available when spin splitting is allowed. |
 | `SpinSymmetryError` | The structure is missing, or spin-symmetry analysis cannot read the structure or analyse its moments. |
 | `RuntimeError` | Submitted-cell or Brillouin-zone analysis fails. This can include unreadable non-MCIF input when `moments=None`. |
 

@@ -4,6 +4,7 @@ import itertools
 from pathlib import Path
 
 import numpy as np
+import pytest
 import spglib
 from ase import Atoms
 from ase.build import bulk, make_supercell
@@ -672,3 +673,84 @@ def test_bifeo3_rhombohedral_and_hexagonal_settings_use_distinct_bz_helpers(
         nonmagnetic_conventional["summary"]["volume_original_wrt_prim"],
         1.0,
     )
+
+
+def test_no_spin_flip_operation_fits_a_2x1_square_d_wave_cell(tmp_path):
+    """Every spin-flip operation swaps x and y, so none maps the 8 x 4 box onto itself."""
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "square_dwave_2x1_POSCAR"),
+        moments_str="1 1 -1 -1 1 1 -1 -1",
+        spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path),
+    )
+
+    magnet = preparation["magnet_operations"]
+    assert magnet["ssg_symbol"] == "P -1|4/ 1|m 1|m -1|m infinity_{001}m|1"
+    assert magnet["ssg_symbol_axes_match_input"] is True
+    assert magnet["msg_without_soc"] == "P4'/mmm' (BNS 123.343), Type III"
+    assert magnet["point_operations"] == 16
+    assert magnet["point_operations_in_cell"] == 8
+    assert magnet["spin_flip_point_operations"] == 8
+    assert magnet["spin_flip_point_operations_in_cell"] == 0
+    assert magnet["spin_flip_outside_cell"] == [
+        "C2 [1 -1 0]", "C2 [1 1 0]", "C4+ [0 0 1]", "C4- [0 0 1]",
+        "S4+ [0 0 1]", "S4- [0 0 1]", "mirror m (1 -1 0)", "mirror m (1 1 0)",
+    ]
+
+
+def test_mnf2_211_cell_keeps_the_spin_flip_operations_along_x_and_y(tmp_path):
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "case12_211_supercell.vasp"),
+        moments_str="5 -5 5 -5",
+        spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path),
+    )
+
+    magnet = preparation["magnet_operations"]
+    assert magnet["msg_without_soc"] == "P4_2'/mn'm (BNS 136.498), Type III"
+    assert magnet["point_operations"] == 16
+    assert magnet["point_operations_in_cell"] == 8
+    assert magnet["spin_flip_point_operations"] == 8
+    assert magnet["spin_flip_point_operations_in_cell"] == 4
+    assert magnet["spin_flip_outside_cell"] == [
+        "C4+ [0 0 1]", "C4- [0 0 1]", "S4+ [0 0 1]", "S4- [0 0 1]",
+    ]
+
+
+def test_every_operation_of_primitive_mnf2_fits_its_cell(tmp_path):
+    preparation = prepare_submitted_cell_analysis(
+        str(REFERENCES / "case12_POSCAR"),
+        moments_str="5 -5",
+        spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path),
+    )
+
+    magnet = preparation["magnet_operations"]
+    assert magnet["point_operations"] == 16
+    assert magnet["point_operations_in_cell"] == 16
+    assert magnet["spin_flip_point_operations_in_cell"] == 8
+    assert magnet["spin_flip_outside_cell"] == []
+
+
+@pytest.mark.parametrize(
+    "views, message",
+    [
+        ({"nssg": {"ops": []}}, "complete magnetic-primitive operation list"),
+        (
+            {"all": {"ops": [{
+                "real_rotation": [[0.5, 0, 0], [0, 1, 0], [0, 0, 1]],
+                "translation": [0, 0, 0],
+                "spin_rotation": np.eye(3).tolist(),
+            }]}},
+            "nonintegral magnetic-primitive rotation",
+        ),
+    ],
+)
+def test_magnet_operations_refuse_an_incomplete_operation_list(views, message):
+    result = {
+        "operation_views": {"magnetic_primitive_cartesian": {"views": views}},
+    }
+    with pytest.raises(RuntimeError, match=message):
+        submitted_cell_analysis._magnet_operations_in_submitted_cell(
+            result, np.eye(3), np.array([[0.0, 0.0, 1.0]])
+        )

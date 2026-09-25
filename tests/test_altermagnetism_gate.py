@@ -621,3 +621,135 @@ def test_figure_basename_comes_from_the_submitted_structure():
     assert _figure_basename("1.0.47_MnSe2.mcif") == "1.0.47_MnSe2"
     assert _figure_basename("/tmp/case/SUPERCELL_211.vasp") == "SUPERCELL_211"
     assert _figure_basename(None) is None
+
+
+def _run_workflow_on(tmp_path, monkeypatch, structure, moments, mode_2d=False):
+    """Run the whole workflow from a settings file in a fresh folder."""
+    pytest.importorskip("findspingroup")
+    pytest.importorskip("ase")
+    from alterseek import run_workflow
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "POSCAR").write_bytes(Path(structure).read_bytes())
+    settings = (
+        'structure = "POSCAR"\n'
+        'spin_axis = "0 0 1"\n'
+        f'moments = "{moments}"\n'
+        'flip_option = 1\n'
+        'output_code = "vasp"\n'
+    )
+    if mode_2d:
+        settings += 'vacuum_axis = "c"\n'
+    (run_dir / "alterseek_input.toml").write_text(settings, encoding="utf-8")
+    monkeypatch.chdir(run_dir)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    return run_workflow(mode_2d=mode_2d), run_dir
+
+
+@pytest.mark.parametrize(
+    "mode_2d, repeat", [(True, "2 x 2 in the plane"), (False, "2 x 2 x 2")]
+)
+def test_workflow_stops_when_no_spin_flip_operation_fits_the_cell(
+    tmp_path, monkeypatch, capsys, mode_2d, repeat
+):
+    """Square d-wave 2x1: the symbol and MSG describe the magnet, the counts the cell."""
+    success, run_dir = _run_workflow_on(
+        tmp_path, monkeypatch, REF_DIR / "square_dwave_2x1_POSCAR",
+        "1 1 -1 -1 1 1 -1 -1", mode_2d=mode_2d,
+    )
+
+    assert success is False
+    output = capsys.readouterr().out
+    lines = output.splitlines()
+    start = lines.index("Phase: AFM(Altermagnet)")
+    mcif = Path("alterseek_output") / "POSCAR_magnetic_primitive.mcif"
+    assert lines[start:start + 10] == [
+        "Phase: AFM(Altermagnet)",
+        "Oriented SSG: 123.47.1.1.L",
+        "SSG Symbol (Chen-Liu): P -1|4/ 1|m 1|m -1|m infinity_{001}m|1",
+        "MSG without SOC: P4'/mmm' (BNS 123.343), Type III",
+        "Spin operations in the input cell: 0 flip, 8 preserve",
+        "[Error] The structure is an altermagnet, but none of its 8 spin-flip "
+        "point operations maps the input cell onto itself:",
+        "  C2 [1 -1 0], C2 [1 1 0], C4+ [0 0 1], C4- [0 0 1], S4+ [0 0 1], "
+        "S4- [0 0 1], mirror m (1 -1 0), mirror m (1 1 0).",
+        "  Rotation axis/mirror plane indices are in the reciprocal basis of "
+        "the magnetic primitive cell.",
+        "Only an operation that maps the cell onto itself relates all bands "
+        "folded into k and k' in this cell.",
+        f"Use the magnetic primitive cell (4 atoms, written to {mcif}), or a "
+        f"supercell of it that keeps these operations, such as {repeat}. "
+        "Aborting.",
+    ]
+    assert "Step 1" not in output
+    assert "inconsistent" not in output
+    assert (run_dir / mcif).exists()
+    assert not (run_dir / "KPOINTS_alter").exists()
+
+
+def test_workflow_labels_the_input_cell_counts_and_writes_the_path(
+    tmp_path, monkeypatch, capsys
+):
+    """MnF2 2x1x1 keeps four of its eight spin-flip operations."""
+    success, run_dir = _run_workflow_on(
+        tmp_path, monkeypatch, REF_DIR / "case12_211_supercell.vasp",
+        "5 -5 5 -5",
+    )
+
+    assert success is True
+    output = capsys.readouterr().out
+    assert (
+        "SSG Symbol (Chen-Liu): P -1|4_{2}/ 1|m -1|n 1|m infinity_{001}m|1"
+        in output
+    )
+    assert "MSG without SOC: P4_2'/mn'm (BNS 136.498), Type III\n" in output
+    assert (
+        "Spin operations in the input cell: 4 flip, 4 preserve\n"
+        "[Note] 4 of the 8 spin-flip operations of the magnetic primitive "
+        "cell are not symmetries of this supercell, so they are not used for "
+        "k': C4+ [0 0 1], C4- [0 0 1], S4+ [0 0 1], S4- [0 0 1].\n"
+    ) in output
+    assert "Pn'n'm" not in output
+    assert (run_dir / "KPOINTS_alter").exists()
+
+
+@pytest.mark.parametrize(
+    "outside, in_cell, expected",
+    [
+        (
+            ["C2 [0 1 0]"], 1,
+            "[Note] 1 of the 2 spin-flip operations of the magnetic primitive "
+            "cell is not a symmetry of this supercell, so it is not used for "
+            "k': C2 [0 1 0].",
+        ),
+        # None fits: the stop message explains it instead.
+        (["C2 [0 1 0]"], 0, None),
+        ([], 2, None),
+    ],
+)
+def test_unused_flip_operations_note(outside, in_cell, expected):
+    from alterseek.kpoints import _unused_flip_operations_note
+
+    analysis = {"magnet_operations": {
+        "spin_flip_outside_cell": outside,
+        "spin_flip_point_operations": len(outside) + in_cell,
+        "spin_flip_point_operations_in_cell": in_cell,
+    }}
+    assert _unused_flip_operations_note(analysis) == expected
+
+
+def test_workflow_prints_a_primitive_cell_as_before(
+    tmp_path, monkeypatch, capsys
+):
+    success, _ = _run_workflow_on(
+        tmp_path, monkeypatch, REF_DIR / "case12_POSCAR", "5 -5"
+    )
+
+    assert success is True
+    output = capsys.readouterr().out
+    assert "MSG without SOC: P4_2'/mn'm (BNS 136.498), Type III\n" in output
+    assert "\nSpin operations: 8 flip, 8 preserve\n" in output
+    assert "in the input cell" not in output
+    assert "axes of the magnetic primitive cell" not in output
+    assert "not symmetries of this supercell" not in output

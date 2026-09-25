@@ -330,60 +330,111 @@ def test_general_k_path_carries_the_doubled_ibz_vertices(
 
 DET5_SUPERCELL = Path(__file__).parent / "references" / "case12_det5_supercell.vasp"
 DET5_MOMENTS = " ".join(["5 -5 0 0 0 0"] * 5)
-
-
-def test_general_k_path_honours_the_submitted_cell_laue_gate(tmp_path):
-    """A generic supercell can forbid altermagnetism even when its magnetic
-    primitive cell does not."""
-    from alterseek import general_k_path
-
-    result = general_k_path(
-        str(DET5_SUPERCELL), moments=DET5_MOMENTS, output_dir=str(tmp_path / "out")
-    )
-
-    assert result["lattice"] == "aP3"
-    assert result["no_splitting_reason"] == "Laue group -1: no altermagnetism."
-    assert result["k_prime"] is None
-    assert result["spin_flip_operation"] is None
-
-
 DET3_SUPERCELL = Path(__file__).parent / "references" / "case12_det3_supercell.vasp"
 DET3_MOMENTS = " ".join(["5 -5 0 0 0 0"] * 3)
+SQUARE_DWAVE_2X1 = Path(__file__).parent / "references" / "square_dwave_2x1_POSCAR"
 
 
-def test_general_k_path_refuses_when_no_operation_was_found(tmp_path):
-    """No current spin-flip operation and no reason to skip: refuse, as the
-    session does, rather than return a path."""
-    from alterseek import general_k_path
+@pytest.mark.parametrize(
+    "structure, moments",
+    [(DET3_SUPERCELL, DET3_MOMENTS), (DET5_SUPERCELL, DET5_MOMENTS)],
+)
+def test_general_k_path_stops_when_a_skewed_supercell_keeps_no_spin_flip_operation(
+    tmp_path, structure, moments
+):
+    """Case 12 in two skewed supercells keeps none of its spin-flip operations.
 
-    with pytest.raises(ValueError, match="no detected spin-flip point operation"):
-        general_k_path(
-            str(DET3_SUPERCELL),
-            moments=DET3_MOMENTS,
-            output_dir=str(tmp_path / "clean"),
-        )
-
-
-def test_general_k_path_ignores_a_stale_operation_file(tmp_path):
-    """An operation file this run did not write is never read.
-
-    The structure has no spin-flip operation of its own and no reason to skip
-    the search, so a stale file is the only thing that could supply one.
+    The five-fold cell keeps only the identity and inversion, so its zone alone
+    reports Laue group -1, although the structure is an altermagnet.
     """
     from alterseek import general_k_path
 
+    with pytest.raises(
+        ValueError,
+        match=(
+            "The structure is an altermagnet, but none of its 8 spin-flip "
+            "point operations maps the input cell onto itself"
+        ),
+    ):
+        general_k_path(
+            str(structure), moments=moments, output_dir=str(tmp_path / "out")
+        )
+
+
+@pytest.mark.parametrize(
+    "mode_2d, repeat", [(True, "2 x 2 in the plane"), (False, "2 x 2 x 2")]
+)
+def test_general_k_path_stops_when_no_spin_flip_operation_fits_a_2x1_cell(
+    tmp_path, mode_2d, repeat
+):
+    from alterseek import general_k_path
+
+    with pytest.raises(ValueError) as error:
+        general_k_path(
+            str(SQUARE_DWAVE_2X1),
+            moments="1 1 -1 -1 1 1 -1 -1",
+            mode_2d=mode_2d,
+            output_dir=str(tmp_path / "out"),
+        )
+
+    message = str(error.value)
+    assert message.startswith(
+        "The structure is an altermagnet, but none of its 8 spin-flip point "
+        "operations maps the input cell onto itself: C2 [1 -1 0], C2 [1 1 0], "
+        "C4+ [0 0 1], C4- [0 0 1], S4+ [0 0 1], S4- [0 0 1], "
+        "mirror m (1 -1 0), mirror m (1 1 0). "
+    )
+    mcif = tmp_path / "out" / "square_dwave_2x1_POSCAR_magnetic_primitive.mcif"
+    assert (
+        f"Use the magnetic primitive cell (4 atoms, written to {mcif})"
+        in message
+    )
+    assert message.endswith(f"such as {repeat}.")
+    assert mcif.exists()
+
+
+def test_general_k_path_ignores_a_stale_operation_file(tmp_path, monkeypatch):
+    """An operation file this run did not write is never read.
+
+    The spin-symmetry result is made inconsistent on purpose: an altermagnet
+    whose operations all fit the cell, but for which no spin-flip operation
+    file was written. A file left by an earlier run is then the only thing
+    that could supply an operation.
+    """
+    from alterseek import general_k_path
+    from alterseek import kpoints as kpoints_module
+
     source = tmp_path / "source"
     general_k_path(str(POSCAR), moments="5 -5", output_dir=str(source))
-    stale = (source / "spin_flip_operations.txt").read_text(encoding="utf-8")
-
     seeded = tmp_path / "seeded"
     seeded.mkdir()
-    (seeded / "spin_flip_operations.txt").write_text(stale, encoding="utf-8")
+    (seeded / "spin_flip_operations.txt").write_text(
+        (source / "spin_flip_operations.txt").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    real_run = kpoints_module.find_sf_run
+
+    def run_without_flip_file(structure_file, moments, **kwargs):
+        kwargs["output_dir"] = str(tmp_path / "elsewhere")
+        result = real_run(structure_file, moments, **kwargs)
+        return {**result, "spin_flip_operations": 0}
+
+    loaded = []
+    real_load = kpoints_module.KPathBuilder.load_flip_operations
+
+    def spy_load(self, *args, **kwargs):
+        loaded.append(args)
+        return real_load(self, *args, **kwargs)
+
+    monkeypatch.setattr(kpoints_module, "find_sf_run", run_without_flip_file)
+    monkeypatch.setattr(
+        kpoints_module.KPathBuilder, "load_flip_operations", spy_load
+    )
 
     with pytest.raises(ValueError, match="no detected spin-flip point operation"):
-        general_k_path(
-            str(DET3_SUPERCELL), moments=DET3_MOMENTS, output_dir=str(seeded)
-        )
+        general_k_path(str(POSCAR), moments="5 -5", output_dir=str(seeded))
+    assert loaded == []
 
 
 def test_general_k_path_treats_blank_moments_as_none(tmp_path):

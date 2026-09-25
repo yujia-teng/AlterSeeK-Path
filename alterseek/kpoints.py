@@ -234,6 +234,66 @@ def _altermagnetism_gate(sf_result, working_cell_symmetry=None):
     return no_altermagnetism_reason(sf_result.get('point_group'))
 
 
+def _unused_flip_operations_note(analysis_preparation):
+    """Return the note naming the spin-flip operations a supercell drops while keeping others, else None."""
+    magnet = analysis_preparation.get("magnet_operations")
+    if (
+        not magnet
+        or not magnet["spin_flip_outside_cell"]
+        or not magnet["spin_flip_point_operations_in_cell"]
+    ):
+        return None
+    outside = magnet["spin_flip_outside_cell"]
+    count = (
+        f"{len(outside)} of the {magnet['spin_flip_point_operations']} "
+        "spin-flip operations of the magnetic primitive cell"
+    )
+    verdict = (
+        "are not symmetries of this supercell, so they are not used"
+        if len(outside) > 1
+        else "is not a symmetry of this supercell, so it is not used"
+    )
+    return f"[Note] {count} {verdict} for k': {', '.join(outside)}."
+
+
+def _no_flip_operation_fits_message(analysis_preparation, mode_2d):
+    """Return the stop message when no spin-flip operation of an altermagnet fits the submitted cell, else None."""
+    magnet = analysis_preparation.get("magnet_operations")
+    if (
+        not magnet
+        or not magnet["spin_flip_outside_cell"]
+        or magnet["spin_flip_point_operations_in_cell"]
+    ):
+        return None
+    count = len(magnet["spin_flip_outside_cell"])
+    none_fit = (
+        f"none of its {count} spin-flip point operations maps" if count > 1
+        else "its one spin-flip point operation does not map"
+    )
+    details = []
+    if analysis_preparation.get("magnetic_primitive_sites"):
+        details.append(
+            f"{analysis_preparation['magnetic_primitive_sites']} atoms"
+        )
+    if analysis_preparation.get("mcif_path"):
+        details.append(f"written to {analysis_preparation['mcif_path']}")
+    cell = "the magnetic primitive cell"
+    if details:
+        cell += f" ({', '.join(details)})"
+    repeat = "2 x 2 in the plane" if mode_2d else "2 x 2 x 2"
+    return [
+        f"The structure is an altermagnet, but {none_fit} the input cell "
+        "onto itself:",
+        "  " + ", ".join(magnet["spin_flip_outside_cell"]) + ".",
+        "  Rotation axis/mirror plane indices are in the reciprocal basis of "
+        "the magnetic primitive cell.",
+        "Only an operation that maps the cell onto itself relates all bands "
+        "folded into k and k' in this cell.",
+        f"Use {cell}, or a supercell of it that keeps these operations, such "
+        f"as {repeat}.",
+    ]
+
+
 def _validate_input_config(config):
     unknown = sorted(set(config) - _INPUT_CONFIG_KEYS)
     if unknown:
@@ -1922,8 +1982,22 @@ class KPathBuilder:
                     )
                 print(f"Phase: {sf_result['magnetic_phase']}")
                 print(f"Oriented SSG: {sf_result['ssg_index']}")
-                print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
-                print(f"MSG without SOC: {sf_result['magnetic_space_group_without_soc']}")
+                magnet = analysis_preparation.get("magnet_operations")
+                cell_drops_operations = bool(magnet) and (
+                    magnet["point_operations_in_cell"]
+                    < magnet["point_operations"]
+                )
+                if cell_drops_operations:
+                    # The input cell keeps only part of the magnet's operations, so the symbol and MSG describe the whole magnet and only the operation counts describe the input cell.
+                    axes_note = (
+                        "" if magnet["ssg_symbol_axes_match_input"]
+                        else "  (axes of the magnetic primitive cell)"
+                    )
+                    print(f"SSG Symbol (Chen-Liu): {magnet['ssg_symbol']}{axes_note}")
+                    print(f"MSG without SOC: {magnet['msg_without_soc']}")
+                else:
+                    print(f"SSG Symbol (Chen-Liu): {sf_result['ssg_symbol']}")
+                    print(f"MSG without SOC: {sf_result['magnetic_space_group_without_soc']}")
 
                 if laue_no_altermag:
                     laue = laue_no_altermag.get('laue_group', gate_laue_group)
@@ -1931,9 +2005,22 @@ class KPathBuilder:
                     print(f"{BOLD}[Note] {standard_path_reason}{RESET} Default path will be written.")
                     standard_path_reason_reported = True
                 else:
-                    print("Spin operations: "
+                    spin_operations_label = (
+                        "Spin operations in the input cell"
+                        if cell_drops_operations else "Spin operations"
+                    )
+                    print(f"{spin_operations_label}: "
                           f"{sf_result['actual_spin_flip_point_operations']} flip, "
                           f"{sf_result['actual_spin_preserve_point_operations']} preserve")
+                    unused_note = _unused_flip_operations_note(analysis_preparation)
+                    if unused_note:
+                        print(unused_note)
+                    no_fit = _no_flip_operation_fits_message(
+                        analysis_preparation, self.mode_2d
+                    )
+                    if no_fit:
+                        print("[Error] " + "\n".join(no_fit) + " Aborting.")
+                        return False
                     if spin_split_diagnostic:
                         standard_path_reason = spin_split_diagnostic
                         print(f"{BOLD}[Note] {standard_path_reason}{RESET} Default path will be written.")
@@ -2455,6 +2542,9 @@ def general_k_path(
             reason = f"Laue group {laue}: no altermagnetism."
         else:
             reason = spin.get("spin_split_diagnostic") or ""
+        no_fit = _no_flip_operation_fits_message(analysis, mode_2d)
+        if no_fit:
+            raise ValueError(" ".join(line.strip() for line in no_fit))
 
     builder = KPathBuilder(
         mode_2d=mode_2d,
