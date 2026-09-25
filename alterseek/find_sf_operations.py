@@ -550,6 +550,24 @@ class SpinSymmetryError(RuntimeError):
     """A required spin-symmetry analysis or output step failed."""
 
 
+def _left_handed_cell_message(structure_file):
+    """Return the stop message when the file's lattice vectors are left-handed, else None."""
+    if str(structure_file).lower().endswith(".mcif"):
+        return None
+    try:
+        lattice = np.asarray(read(structure_file).get_cell(), dtype=float)
+    except Exception:
+        # An unreadable file is reported where the structure is loaded.
+        return None
+    if np.linalg.det(lattice) >= 0.0:
+        return None
+    return (
+        f"The lattice vectors in {os.path.basename(structure_file)} are "
+        "left-handed (a . (b x c) < 0). Swap two of them, or reverse one, "
+        "and run again."
+    )
+
+
 def run(structure_file, moments, spin_axis="0 0 1", symprec=None,
         output_dir=OUTPUT_DIR, verbose=False):
     """
@@ -621,6 +639,9 @@ def _run(structure_file, moments, spin_axis="0 0 1", symprec=None,
         raise SpinSymmetryError(
             f"Could not read structure file '{structure_file}': {exc}"
         ) from exc
+    left_handed = _left_handed_cell_message(structure_file)
+    if left_handed:
+        raise SpinSymmetryError(left_handed)
 
     # --- PART 2: Non-Magnetic Space Group (SPG) ---
     if verbose:

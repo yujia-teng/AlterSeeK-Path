@@ -12,7 +12,11 @@ import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 
 from .version import __version__
-from .find_sf_operations import SpinSymmetryError, run as find_sf_run
+from .find_sf_operations import (
+    SpinSymmetryError,
+    _left_handed_cell_message,
+    run as find_sf_run,
+)
 from .compute_centroid_3d import run as compute_centroid
 from .symmetry import (no_altermagnetism_reason,
                        laue_group_from_spacegroup_number,
@@ -1803,6 +1807,10 @@ class KPathBuilder:
             print(f"[Error] Structure file '{struct_file}' not found. Aborting "
                   "(not falling back to a possibly stale spin_flip_operations.txt).")
             return False
+        left_handed = _left_handed_cell_message(struct_file)
+        if left_handed:
+            print(f"[Error] {left_handed} Aborting.")
+            return False
         else:
             is_mcif = struct_file.lower().endswith('.mcif')
             spin_axis_cart = None
@@ -2401,6 +2409,9 @@ def _submitted_cell_zone(
         raise SpinSymmetryError(
             f"Structure file '{structure_file}' was not found."
         )
+    left_handed = _left_handed_cell_message(structure_file)
+    if left_handed:
+        raise SpinSymmetryError(left_handed)
 
     os.makedirs(output_dir, exist_ok=True)
     is_mcif = str(structure_file).lower().endswith(".mcif")

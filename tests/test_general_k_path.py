@@ -627,3 +627,65 @@ def test_general_k_path_writes_the_operation_files_the_workflow_writes(
     assert (tmp_path / "out" / name).read_text(encoding="utf-8") == (
         references / f"case02_cF2_golden_{stem}.txt"
     ).read_text(encoding="utf-8")
+
+
+def _left_handed_copy(tmp_path):
+    """Case 12 with a and b swapped: the same crystal, left-handed vectors."""
+    from ase.io import read, write
+
+    atoms = read(POSCAR)
+    positions = atoms.get_scaled_positions()[:, [1, 0, 2]]
+    atoms.set_cell(atoms.cell[:][[1, 0, 2]])
+    atoms.set_scaled_positions(positions)
+    path = tmp_path / "POSCAR"
+    write(path, atoms, format="vasp", direct=True)
+    assert np.linalg.det(read(path).cell[:]) < 0.0
+    return path
+
+
+LEFT_HANDED = (
+    "The lattice vectors in POSCAR are left-handed (a . (b x c) < 0). "
+    "Swap two of them, or reverse one, and run again."
+)
+
+
+@pytest.mark.parametrize(
+    "function, moments",
+    [
+        ("spin_symmetry", "5 -5"),
+        ("brillouin_zone", "5 -5"),
+        ("brillouin_zone", None),
+        ("general_k_path", "5 -5"),
+        ("general_k_path", None),
+    ],
+)
+def test_left_handed_cell_stops_the_python_functions(tmp_path, function, moments):
+    import alterseek
+    from alterseek import SpinSymmetryError
+
+    kwargs = {"output_dir": str(tmp_path / "out")}
+    if function == "brillouin_zone":
+        kwargs["show_plot"] = False
+    with pytest.raises(SpinSymmetryError) as error:
+        getattr(alterseek, function)(str(_left_handed_copy(tmp_path)), moments, **kwargs)
+    assert str(error.value) == LEFT_HANDED
+
+
+def test_left_handed_cell_stops_the_workflow(tmp_path, monkeypatch, capsys):
+    import io
+    import sys
+
+    from alterseek import run_workflow
+
+    _left_handed_copy(tmp_path)
+    (tmp_path / "alterseek_input.toml").write_text(
+        'structure = "POSCAR"\nspin_axis = "0 0 1"\nmoments = "5 -5"\n'
+        'flip_option = 1\noutput_code = "vasp"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+
+    assert run_workflow() is False
+    assert f"[Error] {LEFT_HANDED} Aborting." in capsys.readouterr().out
+    assert not (tmp_path / "KPOINTS_alter").exists()
