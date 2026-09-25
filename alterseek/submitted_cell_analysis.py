@@ -23,7 +23,7 @@ from .io import (
     _min_periodic_cart_distance,
     _write_magnetic_mcif,
 )
-from .mode2d.geometry import slab_centred_cell
+from .mode2d.geometry import layer_dataset, slab_extent
 from .symmetry import describe_spinflip_op, laue_group_from_point_group
 
 
@@ -563,9 +563,13 @@ def _complete_g0_operations_in_submitted_basis(result, tol=1e-6):
 
 
 def _magnetic_primitive_marker_cell(
-    fsg_result, expected_spacegroup_number, symprec
+    fsg_result, expected_spacegroup_number, symprec,
+    submitted_lattice=None, vacuum_axis=None,
 ):
-    """Return FindSpinGroup's magnetic primitive cell and its G0 marker cell."""
+    """Return FindSpinGroup's magnetic primitive cell and its G0 marker cell.
+
+    ``vacuum_axis`` marks a slab, whose markers stay inside it.
+    """
     from ase.data import atomic_numbers
 
     magnetic_cell = fsg_result["acc_primitive_cell_detail"]
@@ -575,6 +579,11 @@ def _magnetic_primitive_marker_cell(
         for position in magnetic_cell["positions"]
     ]
     magnetic_elements = [str(value) for value in magnetic_cell["elements"]]
+    slab_axis = None
+    if vacuum_axis is not None:
+        slab_axis = _out_of_plane_axis(
+            magnetic_lattice, submitted_lattice, vacuum_axis
+        )
     # Equal lattice lengths can have higher metric symmetry than G0.
     # Classify the magnetic primitive structure with its spatial operations,
     # just as the physical input-cell helper does, rather than its metric alone.
@@ -585,23 +594,21 @@ def _magnetic_primitive_marker_cell(
         _magnetic_primitive_nssg_operations(fsg_result),
         symprec=symprec,
         expected_spacegroup_number=expected_spacegroup_number,
+        slab_axis=slab_axis,
     )
     return {
         "cell": magnetic_cell,
         "lattice": magnetic_lattice,
         "positions": magnetic_positions,
         "elements": magnetic_elements,
+        "slab_axis": slab_axis,
         "helper": helper,
     }
 
 
 def _layer_group_record(cell, vacuum_axis, symprec):
     """Return layer-group labels and the layer-primitive site count."""
-    dataset = spglib.get_symmetry_layerdataset(
-        slab_centred_cell(cell, int(vacuum_axis)),
-        aperiodic_dir=int(vacuum_axis),
-        symprec=float(symprec),
-    )
+    dataset = layer_dataset(cell, int(vacuum_axis), float(symprec))
     if dataset is None:
         raise RuntimeError("Could not determine the physical layer group.")
     point_group = str(dataset.pointgroup)
@@ -650,7 +657,7 @@ def _layer_cell_summary(
     magnetic = None
     if magnetic_primitive is not None:
         marker_cell = magnetic_primitive["helper"]["cell"]
-        axis = _out_of_plane_axis(marker_cell[0], lattice, vacuum_axis)
+        axis = magnetic_primitive["slab_axis"]
         if axis is not None:
             magnetic = {
                 **_layer_group_record(marker_cell, axis, symprec),
@@ -723,11 +730,24 @@ def _standard_physical_symmetry(spacegroup_number):
     return fallback
 
 
+def _seeds_inside_slab(seeds, real_positions, slab_axis):
+    """Scale each seed's out-of-plane coordinate from the cell to the slab."""
+    bottom, thickness = slab_extent(np.asarray(real_positions)[:, slab_axis])
+    moved = []
+    for seed in seeds:
+        seed = np.array(seed, dtype=float)
+        seed[slab_axis] = (bottom + seed[slab_axis] * thickness) % 1.0
+        moved.append(seed)
+    return moved
+
+
 def _marker_orbits_with_distinct_types(
     seeds,
     rotations,
     translations,
     reserved_type_numbers,
+    lattice,
+    symprec,
 ):
     """Generate each marker orbit with a distinct unused type number."""
     positions = []
@@ -736,10 +756,16 @@ def _marker_orbits_with_distinct_types(
     used_types = {int(value) for value in reserved_type_numbers}
     next_marker_type = max(used_types, default=0) + 1
     for seed in seeds:
-        orbit = _dedupe_frac_positions([
-            seed @ rotation.T + translation
-            for rotation, translation in zip(rotations, translations)
-        ])
+        # spglib counts points closer than symprec as one; in a flat layer a
+        # marker and its mirror image come that close.
+        orbit = _dedupe_frac_positions(
+            [
+                seed @ rotation.T + translation
+                for rotation, translation in zip(rotations, translations)
+            ],
+            tol=symprec,
+            lattice=lattice,
+        )
         while next_marker_type in used_types or next_marker_type <= 0:
             next_marker_type += 1
         orbit_type = next_marker_type
@@ -757,6 +783,8 @@ def _build_nonprimitive_bz_marker_cell(
     space_operations,
     *,
     symprec=1e-3,
+    real_positions=None,
+    slab_axis=None,
 ):
     """Build a marker-only BZ helper for a nonprimitive submitted cell.
 
@@ -764,6 +792,10 @@ def _build_nonprimitive_bz_marker_cell(
     SeeK-path preserves the submitted conventional-cell or supercell translation
     lattice and its folded BZ. Real atoms are excluded because they obey the
     complete G0 ``(R, t)`` operations rather than this artificial ``(R, 0)`` set.
+
+    For a slab, ``slab_axis`` is its out-of-plane lattice vector: the markers
+    are placed inside the slab of ``real_positions``, and each rotation acts
+    about the slab's middle instead of the cell origin.
     """
     lattice = np.asarray(lattice, dtype=float)
     if lattice.shape != (3, 3) or not np.all(np.isfinite(lattice)):
@@ -777,20 +809,33 @@ def _build_nonprimitive_bz_marker_cell(
         _point_operations_preserving_submitted_lattice(space_operations)
     )
     translations = [np.zeros(3) for _rotation in rotations]
+    if slab_axis is not None:
+        real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
+        bottom, thickness = slab_extent(real_positions[:, slab_axis])
+        middle = np.zeros(3)
+        middle[slab_axis] = bottom + thickness / 2.0
+        translations = [
+            _wrapped_translation(middle - rotation @ middle)
+            for rotation in rotations
+        ]
     operations = [
-        {"real_rotation": rotation, "translation": np.zeros(3)}
-        for rotation in rotations
+        {"real_rotation": rotation, "translation": translation}
+        for rotation, translation in zip(rotations, translations)
     ]
     intended_keys = _point_operation_keys(rotations)
     intended_space_keys = _space_operation_keys(rotations, translations)
     failures = []
     for seeds in _MARKER_SEED_SETS:
+        if slab_axis is not None:
+            seeds = _seeds_inside_slab(seeds, real_positions, slab_axis)
         helper_positions, helper_types, marker_types = (
             _marker_orbits_with_distinct_types(
                 seeds,
                 rotations,
                 translations,
                 real_type_numbers,
+                lattice,
+                symprec,
             )
         )
         cell = (
@@ -893,6 +938,7 @@ def _build_g0_marker_cell(
     *,
     symprec=1e-3,
     expected_spacegroup_number=None,
+    slab_axis=None,
 ):
     """Add marker orbits that help spglib and SeeK-path recognize G0.
 
@@ -901,6 +947,9 @@ def _build_g0_marker_cell(
     absent from G0 and verify its complete operation set. When the submitted
     translation lattice is primitive, the same augmented structure is passed to
     SeeK-path because its BZ already matches the requested one.
+
+    For a slab, ``slab_axis`` is the lattice vector leaving its plane, and the
+    markers are placed inside the slab.
     """
     lattice = np.asarray(lattice, dtype=float)
     real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
@@ -913,12 +962,16 @@ def _build_g0_marker_cell(
     intended_space_keys = _space_operation_keys(rotations, translations)
     failures = []
     for seeds in _MARKER_SEED_SETS:
+        if slab_axis is not None:
+            seeds = _seeds_inside_slab(seeds, real_positions, slab_axis)
         markers, marker_type_numbers, marker_types = (
             _marker_orbits_with_distinct_types(
                 seeds,
                 rotations,
                 translations,
                 real_type_numbers,
+                lattice,
+                symprec,
             )
         )
         helper_positions = [*real_positions.tolist(), *markers]
@@ -1203,6 +1256,7 @@ def prepare_submitted_cell_analysis(
                 physical_operations,
                 symprec=symprec,
                 expected_spacegroup_number=expected_spacegroup_number,
+                slab_axis=input_vacuum_axis,
             )
         except RuntimeError:
             if translation_index == 1:
@@ -1215,6 +1269,8 @@ def prepare_submitted_cell_analysis(
             real_types,
             space_operations,
             symprec=symprec,
+            real_positions=positions,
+            slab_axis=input_vacuum_axis,
         )
     else:
         if physical_helper is None:
@@ -1306,7 +1362,8 @@ def prepare_submitted_cell_analysis(
         input_vacuum_axis is not None or write_magnetic_diagnostic
     ):
         magnetic_primitive = _magnetic_primitive_marker_cell(
-            fsg_result, expected_spacegroup_number, symprec
+            fsg_result, expected_spacegroup_number, symprec,
+            submitted_lattice=lattice, vacuum_axis=input_vacuum_axis,
         )
     if input_vacuum_axis is not None:
         result["layer_cell_summary"] = _layer_cell_summary(

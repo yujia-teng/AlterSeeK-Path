@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import itertools
 
 import numpy as np
+import spglib
 
 @dataclass(frozen=True)
 class Lattice2D:
@@ -290,6 +291,17 @@ def to_input_fractional(points, lattice_2d):
     return fractional
 
 
+def slab_extent(heights):
+    """Return the bottom and thickness of the slab, in fractions of the cell.
+
+    The slab is everything outside the widest gap between the heights.
+    """
+    heights = np.sort(np.asarray(heights, dtype=float) % 1.0)
+    gaps = np.diff(np.append(heights, heights[0] + 1.0))
+    widest = int(np.argmax(gaps))
+    return heights[(widest + 1) % len(heights)], 1.0 - gaps[widest]
+
+
 def slab_centred_cell(cell, vacuum_axis):
     """Move the widest gap along the vacuum axis to the cell boundary.
 
@@ -298,10 +310,30 @@ def slab_centred_cell(cell, vacuum_axis):
     """
     lattice, positions, types = cell
     positions = np.array(positions, dtype=float) % 1.0
-    heights = np.sort(positions[:, vacuum_axis])
-    gaps = np.diff(np.append(heights, heights[0] + 1.0))
-    widest = int(np.argmax(gaps))
-    bottom = heights[(widest + 1) % len(heights)]
-    shift = 0.5 - (bottom + (1.0 - gaps[widest]) / 2.0)
+    bottom, thickness = slab_extent(positions[:, vacuum_axis])
+    shift = 0.5 - (bottom + thickness / 2.0)
     positions[:, vacuum_axis] = (positions[:, vacuum_axis] + shift) % 1.0
     return lattice, positions, types
+
+
+def layer_dataset(cell, vacuum_axis, symprec):
+    """Return spglib's layer-group dataset of a slab cell, or None.
+
+    Raises when it has a different number of point operations than the 3D
+    symmetry of the same cell; for a slab the two are the same group.
+    """
+    dataset = spglib.get_symmetry_layerdataset(
+        slab_centred_cell(cell, vacuum_axis),
+        aperiodic_dir=vacuum_axis,
+        symprec=symprec,
+    )
+    full = spglib.get_symmetry_dataset(cell, symprec=symprec)
+    if dataset is not None and full is not None:
+        found = len({tuple(np.ravel(rotation)) for rotation in dataset.rotations})
+        expected = len({tuple(np.ravel(rotation)) for rotation in full.rotations})
+        if found != expected:
+            raise RuntimeError(
+                f"The layer-group search found {found} point operations, but "
+                f"the 3D symmetry of the same cell has {expected}."
+            )
+    return dataset

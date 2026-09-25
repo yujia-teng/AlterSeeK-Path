@@ -79,6 +79,15 @@ def test_dedupe_frac_positions_wraps_periodic_images():
     assert len(unique) == 2
 
 
+def test_dedupe_frac_positions_with_a_lattice_uses_a_cartesian_distance():
+    from alterseek.io import _dedupe_frac_positions
+    positions = [[0.1, 0.2, 0.5], [0.1, 0.2, 0.50002]]  # 4e-4 A apart
+    lattice = np.diag([4.0, 4.0, 20.0])
+
+    assert len(_dedupe_frac_positions(positions)) == 2
+    assert len(_dedupe_frac_positions(positions, tol=1e-3, lattice=lattice)) == 1
+
+
 def test_reciprocal_basis_roundtrip():
     # k_input_frac = k_prim_frac @ B_prim @ inv(B_input) must be identity when
     # the bases coincide (the KPOINTS output-basis conversion contract).

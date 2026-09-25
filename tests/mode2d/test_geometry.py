@@ -6,6 +6,7 @@ from alterseek.compute_centroid_3d import run as compute_centroid
 from alterseek.mode2d.geometry import (
     analyze_lattice,
     build_bz,
+    layer_dataset,
     polygon_area_centroid_2d,
     to_input_fractional,
 )
@@ -1009,6 +1010,20 @@ def test_conventional_centered_ibz_reproduces_submitted_basis_centroid():
 
     assert labels == ["SIGMA_0", GAMMA_LABEL, "Y", "C_0"]
     assert np.allclose(fractional, [-0.09162815, 0.35137431, 0.0])
+
+
+def test_layer_dataset_stops_when_the_layer_search_loses_an_operation():
+    """Points in the vacuum at 0.12, 0.17, 0.83, 0.88 leave two equally wide
+    gaps beside the slab, so centring on the wrong one drops the mirror."""
+    lattice = np.diag([4.0, 4.0, 25.0])
+    positions = [
+        [0.0, 0.0, 0.5], [0.5, 0.5, 0.43], [0.5, 0.5, 0.57],
+        [0.1, 0.2, 0.12], [0.1, 0.2, 0.88], [0.3, 0.1, 0.17], [0.3, 0.1, 0.83],
+    ]
+    cell = (lattice, positions, [1, 2, 2, 3, 3, 4, 4])
+
+    with pytest.raises(RuntimeError, match="layer-group search found 1"):
+        layer_dataset(cell, 2, 1e-3)
 
 
 def test_screen_to_fractional_restores_submitted_vacuum_axis():

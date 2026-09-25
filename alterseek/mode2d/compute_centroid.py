@@ -9,7 +9,7 @@ from pymatgen.core import Structure
 from ..geometry import get_symmetry_operations
 from ..symmetry import laue_group_from_point_group, no_altermagnetism_reason
 from .geometry import (
-    analyze_lattice, build_bz, slab_centred_cell, to_input_fractional,
+    analyze_lattice, build_bz, layer_dataset, to_input_fractional,
 )
 from .lattice_kpoints import build_ibz, build_path
 from .symmetry import project_point_operations
@@ -72,12 +72,10 @@ def run(
     )
     if dataset is None:
         raise RuntimeError("Could not determine submitted-cell symmetry")
-    layer_dataset = spglib.get_symmetry_layerdataset(
-        slab_centred_cell((lattice, positions, numbers), input_vacuum_axis),
-        aperiodic_dir=input_vacuum_axis,
-        symprec=tolerance,
+    layer_group = layer_dataset(
+        (lattice, positions, numbers), input_vacuum_axis, tolerance
     )
-    if layer_dataset is None:
+    if layer_group is None:
         raise RuntimeError("Could not determine the submitted-cell layer group")
     shortest = max(float(np.min(np.linalg.norm(lattice, axis=1))), 1e-12)
     lattice_2d = analyze_lattice(
@@ -141,9 +139,9 @@ def run(
         "spacegroup": int(dataset.number),
         "sg_symbol": str(dataset.international),
         "point_group": str(dataset.pointgroup),
-        "layer_group_number": int(layer_dataset.number),
-        "layer_group_symbol": str(layer_dataset.international),
-        "layer_point_group": str(layer_dataset.pointgroup),
+        "layer_group_number": int(layer_group.number),
+        "layer_group_symbol": str(layer_group.international),
+        "layer_point_group": str(layer_group.pointgroup),
         "laue_group": laue_group,
         "no_altermagnetism": no_altermag,
         "kpoints_frac": path_points,

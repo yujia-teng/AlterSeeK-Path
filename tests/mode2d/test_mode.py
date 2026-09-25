@@ -118,6 +118,46 @@ def test_2d_magnetic_layer_group_of_a_supercell_is_the_full_group(tmp_path):
     assert magnetic["sites"] == 4
 
 
+def test_2d_magnetic_layer_group_of_a_spin_flipping_translation_cell(tmp_path):
+    """V2Se2O (2D Case 04) in a 2x1 cell with V moments 1 1 -1 -1."""
+    structure = Path(__file__).parents[1] / "references" / "case2d04_square_2x1_POSCAR"
+    analysis = prepare_submitted_cell_analysis(
+        str(structure), moments_str="1 1 -1 -1", spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path / "out"), input_vacuum_axis=2,
+    )
+    magnetic = analysis["layer_cell_summary"]["magnetic_primitive_cell"]
+
+    assert magnetic["label"] == "pm2m (27)"
+    assert magnetic["point_group"] == "mm2"
+
+
+@pytest.mark.parametrize(
+    "stem, moments",
+    [
+        ("case2d06_square_4m", "1 -1 -1 1 6*0"),
+        # A supercell: the zone cell holds markers only.
+        ("case2d04_square_2x1", "1 1 -1 -1"),
+    ],
+)
+def test_2d_markers_stay_inside_the_slab(tmp_path, stem, moments):
+    from ase.io import read
+
+    structure = Path(__file__).parents[1] / "references" / f"{stem}_POSCAR"
+    analysis = prepare_submitted_cell_analysis(
+        str(structure), moments_str=moments, spin_axis_cart="0 0 1",
+        output_dir=str(tmp_path / "out"), input_vacuum_axis=2,
+    )
+    real = np.mod(read(structure).get_scaled_positions()[:, 2], 1.0)
+    heights = np.mod(np.asarray(analysis["analysis_cell"][1])[:, 2], 1.0)
+    markers = (
+        heights if analysis["uses_conventional_supercell_bz"]
+        else heights[analysis["submitted_sites"]:]
+    )
+
+    assert len(markers) > 0
+    assert np.all((markers >= real.min()) & (markers <= real.max()))
+
+
 def test_2d_zone_layer_group_of_a_slab_on_the_cell_boundary(tmp_path):
     from alterseek import brillouin_zone
 

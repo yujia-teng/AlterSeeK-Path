@@ -87,7 +87,11 @@ def _write_without_species(source_path, target_path, species_to_remove, title):
     _write_poscar_from_sites(target_path, title, lattice, list(kept_elements), list(kept_positions))
 
 
-def _dedupe_frac_positions(positions, tol=1e-7):
+def _dedupe_frac_positions(positions, tol=1e-7, lattice=None):
+    """Drop positions closer than ``tol`` to an earlier one.
+
+    ``tol`` is a Cartesian distance when ``lattice`` is given.
+    """
     unique = []
     for pos in positions:
         wrapped = np.mod(np.array(pos, dtype=float), 1.0)
@@ -95,6 +99,8 @@ def _dedupe_frac_positions(positions, tol=1e-7):
         for existing in unique:
             delta = wrapped - existing
             delta -= np.rint(delta)
+            if lattice is not None:
+                delta = delta @ lattice
             if np.linalg.norm(delta) < tol:
                 duplicate = True
                 break
