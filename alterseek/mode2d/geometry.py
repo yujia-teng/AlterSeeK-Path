@@ -27,6 +27,21 @@ class Lattice2D:
     centered_branch: str | None
 
 
+def reduced_basis_transform_2d(basis):
+    """Unimodular integer M such that M @ basis is a shortest pair of the same 2D lattice."""
+    reduced = np.array(basis, dtype=float)
+    transform = np.eye(2, dtype=int)
+    while True:
+        if reduced[1] @ reduced[1] < reduced[0] @ reduced[0]:
+            reduced = reduced[::-1].copy()
+            transform = transform[::-1].copy()
+        shift = int(np.rint((reduced[0] @ reduced[1]) / (reduced[0] @ reduced[0])))
+        if shift == 0:
+            return transform
+        reduced[1] -= shift * reduced[0]
+        transform[1] -= shift * transform[0]
+
+
 def _relative_close(first, second, tol):
     scale = max(abs(float(first)), abs(float(second)), 1.0)
     return abs(float(first) - float(second)) <= tol * scale
@@ -82,6 +97,16 @@ def _classify_2d_lattice(direct_2d, tol):
             matches[kind] = (transform, candidate)
 
     # Metric specializations must win over their lower-symmetry descriptions.
+    if not matches:
+        # A cell more skewed than the small transforms reach: search again
+        # from its shortest basis.
+        reduction = reduced_basis_transform_2d(direct_2d)
+        for transform in _BASIS_TRANSFORMS:
+            candidate = transform @ reduction @ direct_2d
+            kind = _basis_metric_kind(candidate, tol)
+            if kind is not None and kind not in matches:
+                matches[kind] = (transform @ reduction, candidate)
+
     for kind in ("square", "hexagonal", "rectangular", "centered_rectangular"):
         if kind in matches:
             transform, candidate = matches[kind]
@@ -261,6 +286,13 @@ def build_bz(reciprocal_2d, grid_radius=3):
             if np.linalg.norm(vector) > 1e-12:
                 vectors.append(vector)
     span = 2.0 * max(np.linalg.norm(vector) for vector in vectors)
+    # A skewed submitted basis can leave a BZ face outside the grid above, so
+    # the same grid on the shortest basis is clipped afterwards.
+    reduced = reduced_basis_transform_2d(reciprocal_2d) @ reciprocal_2d
+    for first in range(-grid_radius, grid_radius + 1):
+        for second in range(-grid_radius, grid_radius + 1):
+            if first or second:
+                vectors.append(first * reduced[0] + second * reduced[1])
     polygon = np.array(
         [[-span, -span], [span, -span], [span, span], [-span, span]],
         dtype=float,

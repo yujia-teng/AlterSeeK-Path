@@ -1,6 +1,7 @@
 """Special k-points, paths, and conventional IBZs for 2D mode."""
 
 from dataclasses import replace
+import itertools
 
 import numpy as np
 
@@ -9,6 +10,7 @@ from .geometry import (
     _clip_polygon,
     build_bz,
     polygon_area_centroid_2d,
+    reduced_basis_transform_2d,
 )
 
 
@@ -21,6 +23,10 @@ def _to_submitted_fractional(lattice_2d, first, second):
     return point.tolist()
 
 
+# The default relative metric tolerance of ``analyze_lattice``.
+_EQUAL_DISTANCE_TOL = 2e-3
+
+
 def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
     """Return the copy of a Bilbao oblique point that lies nearest Gamma.
 
@@ -30,25 +36,40 @@ def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
     canonical = np.array([first, second], dtype=float)
     base = canonical @ np.linalg.inv(lattice_2d.canonical_transform).T
     reciprocal = lattice_2d.reciprocal_2d
+    # The same shifts along the shortest basis reach the BZ copy when the
+    # submitted basis is too skewed for the plain range.
+    reduction = reduced_basis_transform_2d(reciprocal)
+    steps = range(-search_limit, search_limit + 1)
+    shifts = list(itertools.product(steps, steps))
+    shifts += [
+        tuple(int(x) for x in np.array(pair) @ reduction)
+        for pair in itertools.product(steps, steps)
+    ]
     candidates = []
-    for shift_first in range(-search_limit, search_limit + 1):
-        for shift_second in range(-search_limit, search_limit + 1):
-            shift = np.array([shift_first, shift_second], dtype=float)
-            fractional = base + shift
-            cartesian = fractional @ reciprocal
-            # Nearest Gamma, then least shifted.  The remaining parts only
-            # fix which of two equally shifted copies wins; shortening them
-            # changes the answer on 13 of the 29 2D cases, so they stay.
-            score = (
-                float(np.dot(cartesian, cartesian)),
-                abs(shift_first) + abs(shift_second),
-                abs(shift_first),
-                abs(shift_second),
-                shift_first,
-                shift_second,
-            )
-            candidates.append((score, fractional))
-    fractional = min(candidates, key=lambda item: item[0])[1]
+    for shift_first, shift_second in dict.fromkeys(shifts):
+        shift = np.array([shift_first, shift_second], dtype=float)
+        fractional = base + shift
+        cartesian = fractional @ reciprocal
+        # Nearest Gamma, then least shifted.  The remaining parts only
+        # fix which of two equally shifted copies wins; shortening them
+        # changes the answer on 13 of the 29 2D cases, so they stay.
+        score = (
+            abs(shift_first) + abs(shift_second),
+            abs(shift_first),
+            abs(shift_second),
+            shift_first,
+            shift_second,
+        )
+        candidates.append((float(np.dot(cartesian, cartesian)), score, fractional))
+    # Copies as near Gamma as the nearest within the 2D metric tolerance count
+    # as equally near: on a lattice rectangular within that tolerance the four
+    # BZ corners are all copies of one point, and rounding must not pick one.
+    nearest = min(distance for distance, _score, _fractional in candidates)
+    fractional = min(
+        (item for item in candidates
+         if item[0] <= nearest * (1.0 + _EQUAL_DISTANCE_TOL)),
+        key=lambda item: item[1],
+    )[2]
     point = np.zeros(3)
     point[lattice_2d.in_plane_axes[0]] = fractional[0]
     point[lattice_2d.in_plane_axes[1]] = fractional[1]
@@ -122,6 +143,22 @@ def _canonical_hexagonal_centered_basis(lattice_2d, primitive_basis):
     return transform, canonical
 
 
+def _rectangular_basis_candidates(lattice_2d, rotations):
+    """The small transforms, or, when none puts its vectors on mirror lines, the same ones applied to the shortest basis."""
+    def on_mirrors(transform):
+        first, second = transform
+        return (
+            (_is_common_axis(first, rotations) and _is_common_axis(second, rotations))
+            or (_is_common_axis(first + second, rotations)
+                and _is_common_axis(first - second, rotations))
+        )
+
+    if any(on_mirrors(transform) for transform in _BASIS_TRANSFORMS):
+        return _BASIS_TRANSFORMS
+    reduction = reduced_basis_transform_2d(lattice_2d.direct_2d)
+    return [transform @ reduction for transform in _BASIS_TRANSFORMS]
+
+
 def _oriented_rectangular_path_lattice(lattice_2d, operations):
     """Return the rectangular or centred basis the two mirrors fix.
 
@@ -130,7 +167,7 @@ def _oriented_rectangular_path_lattice(lattice_2d, operations):
     """
     rotations = _cell_rotations(lattice_2d, operations)
     candidates = []
-    for transform in _BASIS_TRANSFORMS:
+    for transform in _rectangular_basis_candidates(lattice_2d, rotations):
         first, second = transform
         forms = []
         if (
@@ -366,9 +403,12 @@ def _half_bz_normal(lattice_2d, path_data):
     path_lattice = path_data.get("path_lattice", lattice_2d)
     if path_lattice.lattice_class == "oblique":
         # Bilbao's p2 representation domain is cut through Gamma along the
-        # Y direction and keeps the side containing B.  In submitted
-        # fractional coordinates this is k1 >= 0.
-        return np.array([1.0, 0.0])
+        # Y direction and keeps the side containing B.  Y is taken where it
+        # sits in the BZ, which is b2/2 only when b2 is a shortest vector.
+        y = _in_plane_fractional(lattice_2d, path_data["points"]["Y"])
+        b = _in_plane_fractional(lattice_2d, path_data["points"]["B"])
+        normal = np.array([y[1], -y[0]])
+        return normal if float(normal @ b) > 0.0 else -normal
 
     points = {}
     for label, coords in path_data["points"].items():
@@ -447,6 +487,9 @@ def _oblique_half_bz_labels(lattice_2d, path_data, polygon):
 
     The cut endpoints are Bilbao's Y orbit.  Q and its suffixes are
     AlterSeeK-Path geometric labels, not further Bilbao k-vector types.
+    When the lattice is rectangular but only C2 survives, Y can sit on a BZ
+    corner; the cut then runs corner to corner, the half BZ is a triangle,
+    and its third corner is one more copy of Y, named Y_B.
     """
     submitted_fractional = [
         _in_plane_fractional(
@@ -470,6 +513,21 @@ def _oblique_half_bz_labels(lattice_2d, path_data, polygon):
             rtol=0.0,
         )
     ]
+    if len(polygon) == 3 and len(y_indices) == 3:
+        ends = next(
+            (first, second)
+            for first in range(3) for second in range(first + 1, 3)
+            if np.allclose(polygon[first], -polygon[second], atol=1e-9)
+        )
+        labels = [""] * 3
+        y_index = min(
+            ends,
+            key=lambda index: float(np.linalg.norm(fractional[index] - y_point)),
+        )
+        labels[y_index] = "Y"
+        labels[next(index for index in ends if index != y_index)] = "Y_A"
+        labels[labels.index("")] = "Y_B"
+        return labels
     if len(y_indices) != 2 or len(polygon) < 4:
         raise RuntimeError(
             "The p2 half-BZ must have two Y-orbit cut endpoints and at "
@@ -510,6 +568,10 @@ def _half_bz_ibz(lattice_2d, path_data):
         reciprocal = (
             np.linalg.inv(path_lattice.canonical_transform).T @ reciprocal
         )
+        # A and -A are the same point; keep the copy on B's side of the cut.
+        a_point = _in_plane_fractional(lattice_2d, path_data["points"]["A"])
+        if float(normal_frac @ a_point) < -1e-12:
+            path_data["points"]["A"] = [-float(x) for x in path_data["points"]["A"]]
     normal_plane = np.linalg.inv(reciprocal) @ normal_frac
     bz = build_bz(lattice_2d.reciprocal_2d)
     polygon = _clip_polygon(bz, -normal_plane, 0.0)
@@ -520,10 +582,11 @@ def _half_bz_ibz(lattice_2d, path_data):
         else _half_bz_corner_labels(lattice_2d, path_data, polygon)
     )
     if path_lattice.lattice_class == "oblique":
-        start = labels.index("Q")
+        first, second = ("Q", "Q_A") if "Q" in labels else ("Y_B", "Y")
+        start = labels.index(first)
         polygon = np.roll(polygon, -start, axis=0)
         labels = labels[start:] + labels[:start]
-        if labels[1] != "Q_A":
+        if labels[1] != second:
             polygon = np.concatenate([polygon[:1], polygon[:0:-1]])
             labels = labels[:1] + labels[:0:-1]
     # Register the copied corners so they are drawn and labeled like any other

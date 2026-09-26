@@ -606,6 +606,89 @@ def test_general_k_path_slab_mode_on_a_sixty_degree_hexagonal_cell(tmp_path):
         assert got == pytest.approx(want, abs=1e-9)
 
 
+def test_brillouin_zone_cuts_the_oblique_half_bz_through_y_in_a_skewed_cell(tmp_path):
+    """Oblique p1 slab written as (a+b, b): b2/2 lies outside the BZ, so the cut runs through Y's copy inside it."""
+    from alterseek import brillouin_zone
+
+    zone = brillouin_zone(
+        str(Path(__file__).parent / "references" / "oblique_p1_skewed_cell_POSCAR"),
+        mode_2d=True,
+        output_dir=str(tmp_path / "out"),
+        show_plot=False,
+    )
+
+    b = np.asarray(zone["b_matrix"])[:2, :2]
+    points = {label: np.asarray(value[:2]) @ b for label, value in zone["kpoints_frac"].items()}
+    corners = dict(zip(zone["ibz_polygon_labels"], np.asarray(zone["ibz_polygon_frac"])[:, :2] @ b))
+    assert zone["kpoints_frac"]["Y"] == pytest.approx([1.0, 0.5, 0.0], abs=1e-12)
+    assert corners["Y"] == pytest.approx(points["Y"], abs=1e-12)
+    assert corners["Y_A"] == pytest.approx(-points["Y"], abs=1e-12)
+    normal = np.array([points["Y"][1], -points["Y"][0]])
+    assert float(normal @ points["B"]) * float(normal @ points["A"]) > 0.0
+    assert zone["ibz_volume"] * 2 == pytest.approx(abs(np.linalg.det(b)))
+
+
+def test_brillouin_zone_builds_the_2d_bz_of_a_strongly_skewed_cell(tmp_path):
+    """Oblique p1 slab written as (a, 3a+b): one BZ face comes from 4 b2, beyond the plain -3..3 grid."""
+    from alterseek import brillouin_zone
+
+    zone = brillouin_zone(
+        str(Path(__file__).parent / "references" / "oblique_p1_a_3a+b_POSCAR"),
+        mode_2d=True,
+        output_dir=str(tmp_path / "out"),
+        show_plot=False,
+    )
+
+    b = np.asarray(zone["b_matrix"])[:2, :2]
+    assert zone["ibz_volume"] * 2 == pytest.approx(abs(np.linalg.det(b)))
+    assert zone["ibz_polygon_labels"] == ["Q", "Q_A", "Y", "Y_A", "Q_B"]
+
+
+@pytest.mark.parametrize("second", [[0, 1], [3, 1], [5, 1]])
+def test_brillouin_zone_orients_a_rectangular_slab_in_a_strongly_skewed_cell(tmp_path, second):
+    """A pmm rectangular slab written as (a, b), (a, 3a+b) and (a, 5a+b) gets the same zone and path."""
+    from ase import Atoms
+    from ase.io import write
+    from alterseek import brillouin_zone
+
+    direct = np.array([[1, 0], second]) @ np.array([[4.0, 0.0], [0.0, 6.0]])
+    cell = np.zeros((3, 3))
+    cell[:2, :2] = direct
+    cell[2, 2] = 20.0
+    frac = np.mod(np.array([[0.0, 0.0], [2.0, 3.0]]) @ np.linalg.inv(direct), 1.0)
+    path = tmp_path / "POSCAR"
+    write(path, Atoms("FeO", cell=cell, scaled_positions=np.column_stack([frac, [0.5, 0.5]]), pbc=True),
+          format="vasp", direct=True)
+
+    zone = brillouin_zone(str(path), mode_2d=True, output_dir=str(tmp_path / "out"), show_plot=False)
+
+    b = np.asarray(zone["b_matrix"])[:2, :2]
+    lengths = sorted(float(np.linalg.norm(np.asarray(v[:2]) @ b)) for v in zone["kpoints_frac"].values())
+    assert zone["sc_type"] == "rectangular"
+    assert zone["sp_path"] == [("Γ", "X"), ("X", "S"), ("S", "Y"), ("Y", "Γ")]
+    assert lengths == pytest.approx([0.0, np.pi / 6, np.pi / 4, np.hypot(np.pi / 6, np.pi / 4)], abs=1e-9)
+
+
+def test_brillouin_zone_names_a_triangle_half_bz_when_y_is_a_corner(tmp_path):
+    """FeBr3 sqrt3 cm2m doubled along a: rectangular lattice, only k and -k in the plane, Y on a BZ corner."""
+    from alterseek import brillouin_zone
+
+    zone = brillouin_zone(
+        str(Path(__file__).parent / "references" / "febr3_sqrt3_cm2m_2x1_POSCAR"),
+        moments="1 1 1 -1 -1 -1 1 1 1 -1 -1 -1",
+        mode_2d=True,
+        output_dir=str(tmp_path / "out"),
+        show_plot=False,
+    )
+
+    assert zone["ibz_polygon_labels"] == ["Y_B", "Y", "Y_A"]
+    # All four corners are equally near Gamma; Y stays at b2/2, the cut's end.
+    assert zone["kpoints_frac"]["Y"] == pytest.approx([0.0, 0.5, 0.0], abs=1e-12)
+    b = np.asarray(zone["b_matrix"])[:2, :2]
+    ops = len(zone["projected_point_operations_2d"])
+    assert zone["ibz_volume"] * ops == pytest.approx(abs(np.linalg.det(b)))
+
+
 @pytest.mark.parametrize(
     "degeneracy_forcing, valid_in_plane, expected_reason",
     [

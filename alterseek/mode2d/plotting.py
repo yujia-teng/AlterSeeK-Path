@@ -19,6 +19,7 @@ basis for the remaining two in-plane directions is chosen by
 import os
 import numpy as np
 
+from .geometry import reduced_basis_transform_2d
 from ..plotting_common import (
     IBZ_FACE_COLORS, _figure_output_paths, _math_label, _print_saved_paths,
     _save_figure, combine_point_labels, generated_plain_path_segments,
@@ -171,7 +172,16 @@ def _bz_polygon_2d(
                 out.append(prev + t * (cur - prev))
         return np.array(out, dtype=float)
 
-    for g in sorted(vectors, key=lambda v: np.linalg.norm(v)):
+    # A skewed basis can leave a BZ face outside the grid above; the same grid
+    # on the shortest basis is clipped afterwards.
+    plane_b = np.array([b_matrix[in_plane_axes[0]], b_matrix[in_plane_axes[1]]], dtype=float)
+    reduced = reduced_basis_transform_2d(plane_b) @ plane_b
+    extra = [
+        _to_2d(i * reduced[0] + j * reduced[1], basis)
+        for i in range(-radius, radius + 1) for j in range(-radius, radius + 1)
+        if i or j
+    ]
+    for g in sorted(vectors, key=lambda v: np.linalg.norm(v)) + extra:
         poly = clip_polygon(poly, g, 0.5 * np.dot(g, g))
         if len(poly) == 0:
             raise RuntimeError("2D BZ polygon clipping failed")
