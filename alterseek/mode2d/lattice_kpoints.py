@@ -23,10 +23,6 @@ def _to_submitted_fractional(lattice_2d, first, second):
     return point.tolist()
 
 
-# The default relative metric tolerance of ``analyze_lattice``.
-_EQUAL_DISTANCE_TOL = 2e-3
-
-
 def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
     """Return the copy of a Bilbao oblique point that lies nearest Gamma.
 
@@ -36,13 +32,14 @@ def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
     canonical = np.array([first, second], dtype=float)
     base = canonical @ np.linalg.inv(lattice_2d.canonical_transform).T
     reciprocal = lattice_2d.reciprocal_2d
-    # The same shifts along the shortest basis reach the BZ copy when the
-    # submitted basis is too skewed for the plain range.
-    reduction = reduced_basis_transform_2d(reciprocal)
     steps = range(-search_limit, search_limit + 1)
     shifts = list(itertools.product(steps, steps))
+    # A skewed submitted basis can put the BZ copy outside the plain range;
+    # the same range on the shortest basis, centred on the point, reaches it.
+    reduction = reduced_basis_transform_2d(reciprocal)
+    centre = -np.rint(base @ np.linalg.inv(reduction))
     shifts += [
-        tuple(int(x) for x in np.array(pair) @ reduction)
+        tuple(int(x) for x in np.rint((centre + np.array(pair)) @ reduction))
         for pair in itertools.product(steps, steps)
     ]
     candidates = []
@@ -54,22 +51,15 @@ def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
         # fix which of two equally shifted copies wins; shortening them
         # changes the answer on 13 of the 29 2D cases, so they stay.
         score = (
+            float(np.dot(cartesian, cartesian)),
             abs(shift_first) + abs(shift_second),
             abs(shift_first),
             abs(shift_second),
             shift_first,
             shift_second,
         )
-        candidates.append((float(np.dot(cartesian, cartesian)), score, fractional))
-    # Copies as near Gamma as the nearest within the 2D metric tolerance count
-    # as equally near: on a lattice rectangular within that tolerance the four
-    # BZ corners are all copies of one point, and rounding must not pick one.
-    nearest = min(distance for distance, _score, _fractional in candidates)
-    fractional = min(
-        (item for item in candidates
-         if item[0] <= nearest * (1.0 + _EQUAL_DISTANCE_TOL)),
-        key=lambda item: item[1],
-    )[2]
+        candidates.append((score, fractional))
+    fractional = min(candidates, key=lambda item: item[0])[1]
     point = np.zeros(3)
     point[lattice_2d.in_plane_axes[0]] = fractional[0]
     point[lattice_2d.in_plane_axes[1]] = fractional[1]
@@ -503,44 +493,29 @@ def _oblique_half_bz_labels(lattice_2d, path_data, polygon):
     y_submitted = _in_plane_fractional(
         lattice_2d, path_data["points"]["Y"]
     )
-    y_point = y_submitted @ transform_t
-    y_indices = [
-        index for index, point in enumerate(fractional)
-        if np.allclose(
-            point - y_point - np.rint(point - y_point),
-            0.0,
-            atol=1e-7,
-            rtol=0.0,
-        )
-    ]
-    if len(polygon) == 3 and len(y_indices) == 3:
-        ends = next(
-            (first, second)
-            for first in range(3) for second in range(first + 1, 3)
-            if np.allclose(polygon[first], -polygon[second], atol=1e-9)
-        )
-        labels = [""] * 3
-        y_index = min(
-            ends,
-            key=lambda index: float(np.linalg.norm(fractional[index] - y_point)),
-        )
-        labels[y_index] = "Y"
-        labels[next(index for index in ends if index != y_index)] = "Y_A"
-        labels[labels.index("")] = "Y_B"
-        return labels
-    if len(y_indices) != 2 or len(polygon) < 4:
+    # The cut runs through Y and -Y, so its ends are the corners at those
+    # points; a tolerance match on the Y orbit could also catch nearby corners.
+    y_plane = y_submitted @ lattice_2d.reciprocal_2d
+    distances = np.linalg.norm(np.asarray(polygon) - y_plane, axis=1)
+    opposite = np.linalg.norm(np.asarray(polygon) + y_plane, axis=1)
+    y_index, ya_index = int(np.argmin(distances)), int(np.argmin(opposite))
+    scale = max(float(np.linalg.norm(y_plane)), 1e-12)
+    if (
+        y_index == ya_index
+        or distances[y_index] > 1e-6 * scale
+        or opposite[ya_index] > 1e-6 * scale
+        or len(polygon) < 3
+    ):
         raise RuntimeError(
             "The p2 half-BZ must have two Y-orbit cut endpoints and at "
             "least two generic Wigner-Seitz corners."
         )
-
     labels = [""] * len(polygon)
-    y_index = min(
-        y_indices,
-        key=lambda index: float(np.linalg.norm(fractional[index] - y_point)),
-    )
     labels[y_index] = "Y"
-    labels[next(index for index in y_indices if index != y_index)] = "Y_A"
+    labels[ya_index] = "Y_A"
+    if len(polygon) == 3:
+        labels[labels.index("")] = "Y_B"
+        return labels
 
     generic = [index for index, label in enumerate(labels) if not label]
     q_index = max(

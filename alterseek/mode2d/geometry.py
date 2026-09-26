@@ -36,9 +36,12 @@ def reduced_basis_transform_2d(basis):
             reduced = reduced[::-1].copy()
             transform = transform[::-1].copy()
         shift = int(np.rint((reduced[0] @ reduced[1]) / (reduced[0] @ reduced[0])))
-        if shift == 0:
+        shorter = reduced[1] - shift * reduced[0]
+        # Stop once a step no longer shortens the vector: at an exact tie the
+        # rounding can otherwise flip between two equal pairs forever.
+        if shift == 0 or shorter @ shorter >= reduced[1] @ reduced[1]:
             return transform
-        reduced[1] -= shift * reduced[0]
+        reduced[1] = shorter
         transform[1] -= shift * transform[0]
 
 
@@ -221,8 +224,12 @@ def analyze_lattice(
     )
 
 
-def _clip_polygon(poly, normal, bound, tol=1e-11):
-    """Clip a convex polygon to ``normal . x <= bound``."""
+def _clip_polygon(poly, normal, bound, tol=1e-11, keep_on_edge=False):
+    """Clip a convex polygon to ``normal . x <= bound``.
+
+    ``keep_on_edge`` keeps each cut point on its edge when both ends lie
+    within ``tol`` of the line.
+    """
     poly = np.asarray(poly, dtype=float)
     if len(poly) == 0:
         return poly
@@ -237,6 +244,8 @@ def _clip_polygon(poly, normal, bound, tol=1e-11):
             denominator = previous_value - current_value
             if abs(denominator) > 1e-15:
                 fraction = previous_value / denominator
+                if keep_on_edge:
+                    fraction = min(max(fraction, 0.0), 1.0)
                 result.append(previous + fraction * (current - previous))
         if current_inside:
             result.append(current)

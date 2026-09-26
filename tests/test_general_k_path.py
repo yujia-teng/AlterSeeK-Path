@@ -682,6 +682,74 @@ def test_brillouin_zone_orients_a_rectangular_slab_in_a_strongly_skewed_cell(tmp
     assert lengths == pytest.approx([0.0, np.pi / 6, np.pi / 4, np.hypot(np.pi / 6, np.pi / 4)], abs=1e-9)
 
 
+def _outside_bz(zone, fractional):
+    """How far, in 1/A, an in-plane point lies outside the 2D BZ polygon (<= 0 inside)."""
+    b = np.asarray(zone["b_matrix"])[:2, :2]
+    polygon = np.asarray(zone["bz_polygon_2d"])
+    point = np.asarray(fractional[:2]) @ b
+    worst = -np.inf
+    for first, second in zip(polygon, np.roll(polygon, -1, axis=0)):
+        edge = second - first
+        normal = np.array([edge[1], -edge[0]]) / np.linalg.norm(edge)
+        if normal @ -first > 0:
+            normal = -normal
+        worst = max(worst, float(normal @ (point - first)))
+    return worst
+
+
+@pytest.mark.parametrize(
+    "structure",
+    [
+        "oblique_p1_a_8a+b_POSCAR",
+        "nearly_rectangular_p1_POSCAR",
+        "nearly_hexagonal_p1_POSCAR",
+        "near_hexagonal_20a+b_POSCAR",
+        "near_square_shear100_POSCAR",
+        "near_rectangle_1e-8_POSCAR",
+    ],
+)
+def test_brillouin_zone_keeps_the_oblique_points_in_the_bz(tmp_path, structure):
+    """Skewed and nearly degenerate p1 slabs: B, Y and A lie in the BZ, and the plotted BZ is the BZ."""
+    from alterseek import brillouin_zone
+    from alterseek.mode2d.plotting import _bz_polygon_2d
+
+    zone = brillouin_zone(
+        str(Path(__file__).parent / "references" / structure),
+        mode_2d=True,
+        output_dir=str(tmp_path / "out"),
+        show_plot=False,
+    )
+
+    for label in ("B", "Y", "A"):
+        assert _outside_bz(zone, zone["kpoints_frac"][label]) < 1e-9
+    plotted, _ = _bz_polygon_2d(np.asarray(zone["b_matrix"]), 2)
+    x, y = plotted[:, 0], plotted[:, 1]
+    plotted_area = 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+    assert plotted_area == pytest.approx(abs(np.linalg.det(np.asarray(zone["b_matrix"])[:2, :2])))
+
+
+@pytest.mark.parametrize(
+    ("structure", "expected"),
+    [
+        ("rectangular_p1_a_3a+b_POSCAR", {"B": [0.5, 2.0], "A": [0.5, 1.5], "Q": [0.5, 2.0], "Q_A": [0.5, 1.0]}),
+        ("near_square_1e-6_turned_POSCAR", {"B": [0.5, 0.0], "A": [0.5, -0.5], "Q": [0.5, 0.5], "Q_A": [0.5, -0.5]}),
+    ],
+)
+def test_brillouin_zone_keeps_the_released_oblique_labels(tmp_path, structure, expected):
+    """Of two equally near copies, the one version 1.0.1 wrote is kept."""
+    from alterseek import brillouin_zone
+
+    zone = brillouin_zone(
+        str(Path(__file__).parent / "references" / structure),
+        mode_2d=True,
+        output_dir=str(tmp_path / "out"),
+        show_plot=False,
+    )
+
+    for label, coords in expected.items():
+        assert zone["kpoints_frac"][label][:2] == pytest.approx(coords, abs=1e-6)
+
+
 def test_brillouin_zone_names_a_triangle_half_bz_when_y_is_a_corner(tmp_path):
     """FeBr3 sqrt3 cm2m doubled along a: rectangular lattice, only k and -k in the plane, Y on a BZ corner."""
     from alterseek import brillouin_zone
@@ -694,9 +762,11 @@ def test_brillouin_zone_names_a_triangle_half_bz_when_y_is_a_corner(tmp_path):
         show_plot=False,
     )
 
-    assert zone["ibz_polygon_labels"] == ["Y_B", "Y", "Y_A"]
-    # All four corners are equally near Gamma; Y stays at b2/2, the cut's end.
-    assert zone["kpoints_frac"]["Y"] == pytest.approx([0.0, 0.5, 0.0], abs=1e-12)
+    assert sorted(zone["ibz_polygon_labels"]) == ["Y", "Y_A", "Y_B"]
+    corners = dict(zip(zone["ibz_polygon_labels"], np.asarray(zone["ibz_polygon_frac"])))
+    # The path's Y is the cut's end, a corner of the half BZ.
+    assert zone["kpoints_frac"]["Y"] == pytest.approx(corners["Y"], abs=1e-12)
+    assert corners["Y_A"] == pytest.approx(-corners["Y"], abs=1e-12)
     b = np.asarray(zone["b_matrix"])[:2, :2]
     ops = len(zone["projected_point_operations_2d"])
     assert zone["ibz_volume"] * ops == pytest.approx(abs(np.linalg.det(b)))
