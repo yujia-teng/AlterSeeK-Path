@@ -430,13 +430,87 @@ def _magnetic_type_label(msg_type):
     return labels.get(msg_type, str(msg_type))
 
 
-def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis):
+def _integer_row_basis(rows):
+    """Three integer rows spanning the same integer lattice as ``rows``."""
+    rows = [[int(value) for value in row] for row in rows]
+    basis = []
+    for column in range(3):
+        while True:
+            active = [row for row in rows if row[column] != 0]
+            if len(active) <= 1:
+                break
+            pivot = min(active, key=lambda row: abs(row[column]))
+            rows = [pivot] + [
+                [a - (row[column] // pivot[column]) * b for a, b in zip(row, pivot)]
+                if row[column] != 0 else row
+                for row in rows if row is not pivot
+            ]
+        active = [row for row in rows if row[column] != 0]
+        if active:
+            basis.append(active[0])
+            rows = [row for row in rows if row is not active[0]]
+    return basis
+
+
+def _msg_type_in_reduced_cell(rotations, translations, time_reversals, lattice):
+    """spglib's MSG type after rewriting the operations in the Niggli-reduced cell of their pure translations.
+
+    spglib names a group only from operations written in a near-standard cell;
+    a skewed cell or a supercell with extra translations otherwise gives None.
+    """
+    lattice = np.asarray(lattice, dtype=float)
+    denominator = 2520
+    generators = [list(row) for row in np.eye(3, dtype=int) * denominator]
+    for rotation, translation, reversed_ in zip(rotations, translations, time_reversals):
+        if reversed_ or not np.array_equal(rotation, np.eye(3, dtype=int)):
+            continue
+        scaled = np.mod(translation, 1.0) * denominator
+        if not np.allclose(scaled, np.rint(scaled), atol=1e-3):
+            return None
+        generators.append(list(np.rint(scaled).astype(int)))
+    primitive = np.array(_integer_row_basis(generators), dtype=float).T / denominator
+    reduced = spglib.niggli_reduce((lattice.T @ primitive).T)
+    if reduced is None:
+        return None
+    # Columns: the reduced vectors in the submitted fractional coordinates.
+    change = np.linalg.solve(lattice.T, np.asarray(reduced, dtype=float).T)
+    inverse = np.linalg.inv(change)
+    new_rotations, new_translations, new_reversals = [], [], []
+    for rotation, translation, reversed_ in zip(rotations, translations, time_reversals):
+        new_rotation = inverse @ rotation @ change
+        if not np.allclose(new_rotation, np.rint(new_rotation), atol=1e-6):
+            return None
+        new_rotation = np.rint(new_rotation).astype(int)
+        new_translation = np.mod(inverse @ translation, 1.0)
+        new_translation[np.isclose(new_translation, 1.0, atol=1e-6)] = 0.0
+        if any(
+            np.array_equal(new_rotation, old_rotation)
+            and reversed_ == old_reversed
+            and np.allclose((new_translation - old_translation + 0.5) % 1.0 - 0.5, 0.0, atol=1e-6)
+            for old_rotation, old_translation, old_reversed
+            in zip(new_rotations, new_translations, new_reversals)
+        ):
+            continue
+        new_rotations.append(new_rotation)
+        new_translations.append(new_translation)
+        new_reversals.append(bool(reversed_))
+    return spglib.get_magnetic_spacegroup_type_from_symmetry(
+        np.asarray(new_rotations, dtype=int),
+        np.asarray(new_translations, dtype=float),
+        np.asarray(new_reversals, dtype=bool),
+        lattice=np.asarray(reduced, dtype=float),
+    )
+
+
+def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis, lattice=None):
     """
     Compute the MSG without SOC from spin-space operations.
 
     Only the original FindSpinGroup operations are used here. The
     inversion-extended point operations written for k mapping are intentionally
     excluded because they are not physical space-group operations.
+    ``lattice`` is the cell the operations are written in; when spglib cannot
+    name the group there, it is named in the reduced cell instead.
     """
     msg_rotations = []
     msg_translations = []
@@ -466,6 +540,10 @@ def compute_msg_without_soc(rotations, translations, spin_rotations, spin_axis):
         np.asarray(msg_translations, dtype=float),
         np.asarray(msg_time_reversals, dtype=bool),
     )
+    if msg_type is None and lattice is not None:
+        msg_type = _msg_type_in_reduced_cell(
+            msg_rotations, msg_translations, msg_time_reversals, lattice
+        )
     return msg_type, len(msg_rotations), sum(bool(value) for value in msg_time_reversals)
 
 
@@ -768,7 +846,7 @@ def _run(structure_file, moments, spin_axis="0 0 1", symprec=None,
         f"OG {fsg_basic.get('msg_og_number', 'Unknown')})"
     )
     msg_without_soc, msg_without_soc_ops, msg_without_soc_tr_ops = compute_msg_without_soc(
-        rotations, translations, spin_rotations, spin_axis
+        rotations, translations, spin_rotations, spin_axis, lattice=lattice
     )
     msg_without_soc_label = format_msg_without_soc(msg_without_soc)
     ssg_label = fsg_basic.get("index", "Unknown")

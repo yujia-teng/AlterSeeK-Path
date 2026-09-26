@@ -628,6 +628,19 @@ def test_brillouin_zone_cuts_the_oblique_half_bz_through_y_in_a_skewed_cell(tmp_
     assert zone["ibz_volume"] * 2 == pytest.approx(abs(np.linalg.det(b)))
 
 
+def test_general_k_path_names_the_msg_in_a_skewed_cell(tmp_path):
+    """Case 12 written as (a+b, b, c): spglib cannot name the group there, the reduced cell can."""
+    from alterseek import general_k_path
+
+    result = general_k_path(
+        str(Path(__file__).parent / "references" / "case12_a_plus_b_POSCAR"),
+        moments="5 -5 0 0 0 0",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["magnetic_space_group_without_soc"] == "P4_2'/mn'm (BNS 136.498), Type III"
+
+
 def test_brillouin_zone_builds_the_2d_bz_of_a_strongly_skewed_cell(tmp_path):
     """Oblique p1 slab written as (a, 3a+b): one BZ face comes from 4 b2, beyond the plain -3..3 grid."""
     from alterseek import brillouin_zone

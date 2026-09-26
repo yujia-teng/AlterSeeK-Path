@@ -430,7 +430,7 @@ def _magnet_operations_in_submitted_cell(
         for primitive, submitted in zip(primitive_lattice, submitted_lattice)
     )
     msg_type, _, _ = compute_msg_without_soc(
-        rotations, translations, spin_rotations, spin_axis
+        rotations, translations, spin_rotations, spin_axis, lattice=primitive_lattice
     )
     return {
         "ssg_symbol": _display_ssg_symbol(
