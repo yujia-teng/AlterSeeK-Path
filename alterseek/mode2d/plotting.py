@@ -1131,7 +1131,7 @@ def plot_2d_figures(centroid_result, general_kpoint, R_for_kpts, basename,
     _draw_labeled_points(ax1, kpoints_cart, "red", "darkred", label_color="black",
                          path_labels=path_labels, bz_poly=bz_poly,
                          avoid_dirs=reciprocal_axis_dirs)
-    ax1.scatter(*centroid_xy, c="gold", marker="*", s=420, edgecolors="k",
+    ax1.scatter(*centroid_xy, c="gold", marker="*", s=300, edgecolors="k",
                 zorder=112, label=r"$k$")
     # Place the legend outside the axes so it cannot overlap plotted points or
     # labels and the BZ itself needs no extra padding.

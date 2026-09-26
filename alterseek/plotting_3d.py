@@ -334,9 +334,9 @@ def plot_ibz(ax, kpoints_cart, kpath, hull, centroid_cart,
                 fontsize=22, color='black',
                 zorder=111, ha='center', va='center')
     if hull is not None:
-        ax.scatter(*centroid_cart, c='gold', marker='*', s=400,
-                   edgecolors='k', zorder=112, label="Vol. Centroid")
-        ax.legend(loc='upper right')
+        ax.scatter(*centroid_cart, c='gold', marker='*', s=300,
+                   edgecolors='k', zorder=112, label=r'$k$')
+        ax.legend(loc='upper right', fontsize=18)
 
 
 def _screen_xy(ax, pt3):
@@ -1311,10 +1311,10 @@ def plot_spin_bz_figure(b_matrix, bz_loops, bz_center,
                 IBZ_FACE_COLORS[main_key], IBZ_FACE_COLORS[extra_key],
                 main_alpha=alpha, extra_alpha=0.10)
         # Gold star at the original IBZ centroid
-        ax.scatter(*centroid_cart, c='gold', s=350, marker='*',
+        ax.scatter(*centroid_cart, c='gold', s=300, marker='*',
                    edgecolors='k', linewidths=0.8, zorder=200,
-                   label=r'$k$ (IBZ centroid)', depthshade=False)
-        ax.legend(loc='upper right', fontsize=10)
+                   label=r'$k$', depthshade=False)
+        ax.legend(loc='upper right', fontsize=18)
 
     fig, ax = setup_3d_ax("Spin-up (red) / Spin-down (blue) BZ",
                           bz_loops, b_matrix, bz_center,
