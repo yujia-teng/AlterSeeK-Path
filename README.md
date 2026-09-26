@@ -1,6 +1,7 @@
 # AlterSeeK-Path
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22133630.svg)](https://doi.org/10.5281/zenodo.22133630)
+[![PyPI](https://img.shields.io/pypi/v/alterseek-path.svg)](https://pypi.org/project/alterseek-path/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 AlterSeeK-Path generates general-k paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
