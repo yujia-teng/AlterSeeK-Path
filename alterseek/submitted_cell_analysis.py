@@ -7,6 +7,7 @@ import numpy as np
 import seekpath
 import spglib
 from findspingroup import find_spin_group_acc_primitive_from_data
+from seekpath.hpkot import SymmetryDetectionError
 
 from .find_sf_operations import (
     _display_ssg_symbol,
@@ -27,12 +28,12 @@ from .mode2d.geometry import layer_dataset, slab_extent
 from .symmetry import describe_spinflip_op, laue_group_from_point_group
 
 
-# Generic fractional seeds for the marker orbits; the trailing 1e-8 keeps a seed off special positions.
+# Generic fractional seeds for the marker orbits; the irregular digits, about halfway between two-decimal values, keep a seed off special positions and off atoms placed at round coordinates.
 _MARKER_SEEDS = [
-    np.array([0.11000000, 0.12000000, 0.15000001]),
-    np.array([0.13000000, 0.17000000, 0.23000001]),
-    np.array([0.07100000, 0.19300000, 0.31700001]),
-    np.array([0.21100000, 0.13700000, 0.29300001]),
+    np.array([0.1153719, 0.1246281, 0.1548613]),
+    np.array([0.1352846, 0.1747193, 0.2351468]),
+    np.array([0.0753182, 0.1954627, 0.3147351]),
+    np.array([0.2152739, 0.1353861, 0.2953174]),
 ]
 
 # A lone orbit can gain unintended symmetry (one seed under {E, C2z} also
@@ -752,6 +753,18 @@ def _marker_slab(real_positions, slab_axis, lattice, symprec):
     return bottom, thickness
 
 
+def _closest_marker_to_atom(markers, real_positions, lattice):
+    """Return the shortest periodic distance, in A, from any marker to any real atom."""
+    if not len(markers) or not len(real_positions):
+        return float("inf")
+    delta = (
+        np.asarray(markers, dtype=float)[:, None, :]
+        - np.asarray(real_positions, dtype=float)[None, :, :]
+    )
+    delta -= np.rint(delta)
+    return float(np.min(np.linalg.norm(delta @ np.asarray(lattice, dtype=float), axis=-1)))
+
+
 def _seeds_inside_slab(seeds, slab, slab_axis):
     """Scale each seed's out-of-plane coordinate from the cell to ``slab``."""
     bottom, thickness = slab
@@ -1006,8 +1019,15 @@ def _build_g0_marker_cell(
             ],
             [*real_type_numbers, *marker_type_numbers],
         )
-        dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
         seed_label = [seed.tolist() for seed in seeds]
+        # spglib accepts a marker on top of an atom, but SeeK-path then cannot build the primitive cell.
+        closest = _closest_marker_to_atom(markers, real_positions, lattice)
+        if closest < _MARKER_MIN_SPREAD * float(symprec):
+            failures.append(
+                f"seeds {seed_label}: a marker lies {closest:.3g} A from an atom"
+            )
+            continue
+        dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
         if dataset is None:
             failures.append(f"seeds {seed_label}: spglib found no symmetry")
             continue
@@ -1050,11 +1070,15 @@ def _build_g0_marker_cell(
                 category=DeprecationWarning,
                 module=r"seekpath\.hpkot(\..*)?",
             )
-            sp_result = seekpath.get_path(
-                cell,
-                with_time_reversal=True,
-                symprec=symprec,
-            )
+            try:
+                sp_result = seekpath.get_path(
+                    cell,
+                    with_time_reversal=True,
+                    symprec=symprec,
+                )
+            except (ValueError, SymmetryDetectionError) as exc:
+                failures.append(f"seeds {seed_label}: SeeK-path failed: {exc}")
+                continue
         volume_ratio = float(sp_result["volume_original_wrt_prim"])
         if not np.isfinite(volume_ratio) or volume_ratio <= 0.0:
             failures.append(

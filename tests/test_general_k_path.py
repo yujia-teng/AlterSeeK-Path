@@ -247,6 +247,27 @@ def test_general_k_path_handles_a_spin_flipping_translation_in_primitive_g0(
         assert points[label] == pytest.approx(coords, abs=1e-9)
 
 
+def test_general_k_path_moves_past_a_marker_seed_on_an_atom(tmp_path, monkeypatch):
+    """Case 40 in its conventional cell has Mn at (0.13, 0.17, 0.23); a marker seed there is skipped."""
+    import alterseek.submitted_cell_analysis as analysis
+    from alterseek import general_k_path
+
+    on_atom = (np.array([0.13, 0.17, 0.23]), analysis._MARKER_SEEDS[0])
+    monkeypatch.setattr(
+        analysis, "_MARKER_SEED_SETS", (on_atom, *analysis._MARKER_SEED_SETS)
+    )
+
+    result = general_k_path(
+        str(Path(__file__).parent / "references" / "case40_oC2_conventional_POSCAR"),
+        moments="5 -5 5 -5 5 -5 5 -5 0 0 0 0 0 0 0 0",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["lattice"] == "oP1"
+    assert result["no_splitting_reason"] is None
+    assert result["flip_option_count"] == 4
+
+
 def test_general_k_path_reads_moments_from_an_mcif(tmp_path):
     """La2NiO4 in the SSG setting, against a path file written by the workflow."""
     from alterseek import general_k_path
