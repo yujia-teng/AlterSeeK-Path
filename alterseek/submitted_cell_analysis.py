@@ -730,9 +730,31 @@ def _standard_physical_symmetry(spacegroup_number):
     return fallback
 
 
-def _seeds_inside_slab(seeds, real_positions, slab_axis):
-    """Scale each seed's out-of-plane coordinate from the cell to the slab."""
+# Markers closer in height than a few symprec look flat to spglib, which then
+# finds a mirror through the layer that the structure may not have.
+_MARKER_MIN_SPREAD = 10.0
+
+
+def _marker_slab(real_positions, slab_axis, lattice, symprec):
+    """Return the bottom and thickness, as cell fractions, of the heights the markers use.
+
+    This is the slab of the real atoms, widened about its middle to at least
+    ``_MARKER_MIN_SPREAD`` times symprec.
+    """
     bottom, thickness = slab_extent(np.asarray(real_positions)[:, slab_axis])
+    lattice = np.asarray(lattice, dtype=float)
+    normal = np.cross(*[lattice[i] for i in range(3) if i != slab_axis])
+    height = abs(float(lattice[slab_axis] @ normal)) / np.linalg.norm(normal)
+    minimum = _MARKER_MIN_SPREAD * float(symprec) / height
+    if thickness < minimum:
+        bottom -= (minimum - thickness) / 2.0
+        thickness = minimum
+    return bottom, thickness
+
+
+def _seeds_inside_slab(seeds, slab, slab_axis):
+    """Scale each seed's out-of-plane coordinate from the cell to ``slab``."""
+    bottom, thickness = slab
     moved = []
     for seed in seeds:
         seed = np.array(seed, dtype=float)
@@ -756,8 +778,7 @@ def _marker_orbits_with_distinct_types(
     used_types = {int(value) for value in reserved_type_numbers}
     next_marker_type = max(used_types, default=0) + 1
     for seed in seeds:
-        # spglib counts points closer than symprec as one; in a flat layer a
-        # marker and its mirror image come that close.
+        # spglib counts points closer than symprec as one.
         orbit = _dedupe_frac_positions(
             [
                 seed @ rotation.T + translation
@@ -811,9 +832,9 @@ def _build_nonprimitive_bz_marker_cell(
     translations = [np.zeros(3) for _rotation in rotations]
     if slab_axis is not None:
         real_positions = np.mod(np.asarray(real_positions, dtype=float), 1.0)
-        bottom, thickness = slab_extent(real_positions[:, slab_axis])
+        slab = _marker_slab(real_positions, slab_axis, lattice, symprec)
         middle = np.zeros(3)
-        middle[slab_axis] = bottom + thickness / 2.0
+        middle[slab_axis] = slab[0] + slab[1] / 2.0
         translations = [
             _wrapped_translation(middle - rotation @ middle)
             for rotation in rotations
@@ -827,7 +848,7 @@ def _build_nonprimitive_bz_marker_cell(
     failures = []
     for seeds in _MARKER_SEED_SETS:
         if slab_axis is not None:
-            seeds = _seeds_inside_slab(seeds, real_positions, slab_axis)
+            seeds = _seeds_inside_slab(seeds, slab, slab_axis)
         helper_positions, helper_types, marker_types = (
             _marker_orbits_with_distinct_types(
                 seeds,
@@ -960,10 +981,12 @@ def _build_g0_marker_cell(
     translations = [operation["translation"] for operation in operations]
     intended_keys = _point_operation_keys(rotations)
     intended_space_keys = _space_operation_keys(rotations, translations)
+    if slab_axis is not None:
+        slab = _marker_slab(real_positions, slab_axis, lattice, symprec)
     failures = []
     for seeds in _MARKER_SEED_SETS:
         if slab_axis is not None:
-            seeds = _seeds_inside_slab(seeds, real_positions, slab_axis)
+            seeds = _seeds_inside_slab(seeds, slab, slab_axis)
         markers, marker_type_numbers, marker_types = (
             _marker_orbits_with_distinct_types(
                 seeds,

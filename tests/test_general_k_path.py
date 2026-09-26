@@ -516,6 +516,38 @@ def test_general_k_path_slab_mode_on_a_nearly_square_cell(tmp_path):
         assert got == pytest.approx(want, abs=1e-9)
 
 
+@pytest.mark.parametrize("thickness", [0.0, 0.001, 0.002, 0.003])
+def test_general_k_path_slab_mode_on_a_slab_about_as_thin_as_the_tolerance(
+    tmp_path, thickness
+):
+    """A P1 slab in a 2x1 cell, flattened to ``thickness`` angstrom (symprec 1e-3)."""
+    import spglib
+    from ase.io import read, write
+
+    from alterseek import general_k_path
+
+    atoms = read(Path(__file__).parent / "references" / "thin_p1_2x1_POSCAR")
+    positions = atoms.get_scaled_positions()
+    heights = positions[:, 2]
+    spread = heights.max() - heights.min()
+    positions[:, 2] = 0.5 + (heights - heights.mean()) / spread * thickness / 20.0
+    atoms.set_scaled_positions(positions)
+    structure = tmp_path / "POSCAR"
+    write(structure, atoms, format="vasp", direct=True, sort=False)
+
+    result = general_k_path(
+        str(structure), mode_2d=True, vacuum_axis="c",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    assert result["lattice"] == "rectangular"
+    real = spglib.get_symmetry_dataset(
+        (atoms.cell[:], atoms.get_scaled_positions(), atoms.get_atomic_numbers()),
+        symprec=1e-3,
+    )
+    assert result["brillouin_zone"]["layer_point_group"] == real.pointgroup
+
+
 def test_general_k_path_slab_mode_on_a_sixty_degree_hexagonal_cell(tmp_path):
     """FeBr3 (2D Case 01) in its 60-degree cell against the 120-degree cell."""
     from alterseek import general_k_path
