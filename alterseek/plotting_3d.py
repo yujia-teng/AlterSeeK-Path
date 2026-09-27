@@ -660,11 +660,16 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         else:
             display_order = {3: 6, 4: 4, 6: 3}.get(order, order)
             improper = True
-        # Show n+ or n- by measuring rotation sense about the drawn upper-hemisphere axis; order two needs no sign.
+        # Measure the Schoenflies rotation sense about the drawn upper-hemisphere
+        # axis. The same physical turn has the opposite sign in the barred
+        # International symbol for a rotoinversion.
         sense = _rotation_sense(R_cart, axis)
-        sgn = '' if (order < 3 or sense == 0) else ('+' if sense > 0 else '-')
-        # The arc's increasing angle is counterclockwise about the positive axis in the right-handed basis, so reverse it for an n- operation.
-        dir_sign = -1 if sense < 0 else 1
+        label_sense = -sense if improper else sense
+        sgn = '' if (order < 3 or label_sense == 0) else ('+' if label_sense > 0 else '-')
+        # The arc illustrates the rotation in the displayed symbol. For a
+        # barred symbol this is the rotation before inversion, not the
+        # opposite-sense rotation before horizontal reflection.
+        dir_sign = -1 if label_sense < 0 else 1
         idx = _reduce_int_vector(np.asarray(axis) @ np.linalg.inv(np.asarray(b_matrix)))
         axis_sub = "".join(rf"\bar{{{abs(i)}}}" if i < 0 else f"{i}" for i in idx)
         digit = rf"\bar{{{display_order}}}" if improper else f"{display_order}"
@@ -687,7 +692,8 @@ def _draw_op_visual(ax, R_cart, bz_loops, bz_radius, b_matrix,
         cu, cv = float(view0 @ u), float(view0 @ v)
         phi_front = np.arctan2(cv, cu) if (abs(cu) + abs(cv)) > 1e-9 else 0.0
 
-        # Center the 300-degree arc on the front so its 60-degree gap lies behind, and match the sweep direction to the rotation sense.
+        # Center the 300-degree direction glyph on the front so its gap lies
+        # behind, and match its sweep to the displayed symbol's sense.
         theta = np.linspace(phi_front - dir_sign * span / 2,
                              phi_front + dir_sign * span / 2, 121)
         arc_pts = (arc_center[None, :]

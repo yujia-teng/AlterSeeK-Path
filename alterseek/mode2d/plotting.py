@@ -730,7 +730,8 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
         else:
             display_order = {3: 6, 4: 4, 6: 3}.get(order, order)
             improper = True
-        sgn = '' if sense == 0 else ('+' if sense > 0 else '-')
+        label_sense = -sense if improper else sense
+        sgn = '' if label_sense == 0 else ('+' if label_sense > 0 else '-')
         idx = _reduce_int_vector(axis @ np.linalg.inv(b_matrix))
         axis_sub = "".join(rf"\bar{{{abs(i)}}}" if i < 0 else f"{i}" for i in idx)
         digit = rf"\bar{{{display_order}}}" if improper else f"{display_order}"
@@ -740,7 +741,7 @@ def _draw_op_visual_2d(ax, R_frac, b_matrix, basis, bz_poly, avoid_pts=None):
         r_arc = 0.14 * span
         # Match the arc direction to the displayed rotation sense so n+ is
         # counterclockwise and n- is clockwise.
-        dir_sign = -1 if sense < 0 else 1
+        dir_sign = -1 if label_sense < 0 else 1
         theta = np.radians(np.linspace(180.0 - dir_sign * 150.0,
                                         180.0 + dir_sign * 150.0, 100))  # 300 deg, gap at bottom
         arc = origin + r_arc * np.column_stack([np.cos(theta), np.sin(theta)])
