@@ -58,8 +58,27 @@ def _fold_oblique_special_point(lattice_2d, first, second, search_limit=3):
             shift_first,
             shift_second,
         )
-        candidates.append((score, fractional))
-    fractional = min(candidates, key=lambda item: item[0])[1]
+        candidates.append((score, fractional, cartesian))
+    nearest_distance = min(item[0][0] for item in candidates)
+    # Distances this close are indistinguishable at the precision used to
+    # choose a BZ boundary copy. Genuinely different distances stay decisive.
+    distance_tie = 1e-10 * nearest_distance
+    tied = [
+        item for item in candidates
+        if item[0][0] <= nearest_distance + distance_tie
+    ]
+    # Prefer the positive submitted first coordinate, then the positive
+    # Cartesian copy. Keep every established shift key after those choices.
+    # Y (first == 0) retains its original shift ordering.
+    fractional = min(
+        tied,
+        key=lambda item: (
+            (-float(item[1][0]),
+             *(-float(component) for component in item[2]))
+            if first != 0.0 else (),
+            item[0][1:],
+        ),
+    )[1]
     point = np.zeros(3)
     point[lattice_2d.in_plane_axes[0]] = fractional[0]
     point[lattice_2d.in_plane_axes[1]] = fractional[1]
@@ -518,9 +537,11 @@ def _oblique_half_bz_labels(lattice_2d, path_data, polygon):
         return labels
 
     generic = [index for index, label in enumerate(labels) if not label]
+    greatest_first = max(fractional[index][0] for index in generic)
     q_index = max(
-        generic,
-        key=lambda index: (fractional[index][0], fractional[index][1]),
+        (index for index in generic
+         if fractional[index][0] >= greatest_first - 1e-10),
+        key=lambda index: fractional[index][1],
     )
     labels[q_index] = "Q"
     remaining = sorted(
