@@ -6,6 +6,8 @@
 
 AlterSeeK-Path generates general-k paths for altermagnet band-structure calculations. It inserts a general k point `k` and its spin-flip partner `k'` into a standard high-symmetry path, using the IBZ centroid as the default general point.
 
+Website: [alterseekpath.physics.rutgers.edu](https://alterseekpath.physics.rutgers.edu/)
+
 ![AlterSeeK-Path example](./example/GdAuGe/VASP/HEX.png)
 
 ---
