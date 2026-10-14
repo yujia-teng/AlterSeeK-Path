@@ -71,6 +71,8 @@ def test_interactive_build_case12_golden(tmp_path, monkeypatch, capsys):
     assert "IBZ centroid (standardized basis)" in stdout
     assert "IBZ centroid (input-cell basis)" in stdout
     assert "IBZ centroid (KPOINTS output basis)" not in stdout
+    assert "k' (standardized basis) = [" in stdout
+    assert "k' (input-cell basis) = [" in stdout
     assert flip_headers == [
         "# Basis: submitted structure 'case12_POSCAR' real-space "
         "fractional basis (a1, a2, a3).",

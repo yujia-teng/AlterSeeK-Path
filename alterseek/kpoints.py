@@ -2339,7 +2339,17 @@ class KPathBuilder:
 
         # Report the partner that will actually be written to KPOINTS.
         k_prime = self.transform_kpoint(general_kpoint, R_for_output)
-        print(f"k' = [{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]")
+        if not path_source_2d:
+            print(
+                "k' (standardized basis) = "
+                f"[{k_prime[0]:.4f}, {k_prime[1]:.4f}, {k_prime[2]:.4f}]"
+            )
+        k_prime_input = k_prime if path_source_2d else self._general_kpoint_output_basis(k_prime)
+        if k_prime_input is not None:
+            print(
+                "k' (input-cell basis) = "
+                f"[{k_prime_input[0]:.4f}, {k_prime_input[1]:.4f}, {k_prime_input[2]:.4f}]"
+            )
 
         butterfly_path_points = (
             self.butterfly_kpoints_data
