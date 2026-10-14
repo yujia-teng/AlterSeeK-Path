@@ -52,7 +52,7 @@ A dictionary containing, among other entries:
 
 | Exception | Condition |
 |-----------|-----------|
-| `SpinSymmetryError` | The structure or magnetic input cannot be read or analysed. |
+| `SpinSymmetryError` | The structure or magnetic input cannot be read or analyzed. |
 
 ### Example
 

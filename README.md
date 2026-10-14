@@ -75,6 +75,20 @@ for the full field reference.
 
 ---
 
+## Python API
+
+```python
+from alterseek import general_k_path
+
+kp = general_k_path("POSCAR", moments="5 -5 4*0", flip_option=2)
+kp["path"]                    # general-k path
+kp["k"], kp["k_prime"]        # general k point and its spin-flip image
+```
+
+The path is returned as a dictionary; no k-point file is written. See the [API page](https://yujia-teng.github.io/AlterSeeK-Path/api/) and [example/python](./example/python/analyze_structures.py).
+
+---
+
 ## Inputs
 
 - Structure file: `POSCAR` / `.vasp` / `.cif` (moments entered manually) or
@@ -94,7 +108,7 @@ supplied via `alterseek_input.toml` — see Quick Start above.
 ## Example Run
 
 ```text
-=== AlterSeeK-Path 1.1.0 ===
+=== AlterSeeK-Path 1.1.1 ===
 
 >>> Step 0: Spin symmetry
 Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): POSCAR
